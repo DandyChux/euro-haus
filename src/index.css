@@ -134,3 +134,41 @@
 		@apply bg-background text-foreground;
 	}
 }
+
+@layer utilities {
+	.shadow-neumorph {
+		box-shadow:
+			8px 8px 16px rgba(0, 0, 0, 0.05),
+			-8px -8px 16px rgba(255, 255, 255, 0.8);
+	}
+
+	.shadow-neumorph-hover {
+		box-shadow:
+			10px 10px 20px rgba(0, 0, 0, 0.06),
+			-10px -10px 20px rgba(255, 255, 255, 0.9);
+	}
+
+	.shadow-neumorph-active {
+		box-shadow:
+			inset 2px 2px 5px rgba(0, 0, 0, 0.05),
+			inset -2px -2px 5px rgba(255, 255, 255, 0.8);
+	}
+
+	.shadow-neumorph-inset {
+		box-shadow:
+			inset 4px 4px 8px rgba(0, 0, 0, 0.05),
+			inset -4px -4px 8px rgba(255, 255, 255, 0.8);
+	}
+
+	.shadow-neumorph-button {
+		box-shadow:
+			4px 4px 8px rgba(0, 0, 0, 0.05),
+			-4px -4px 8px rgba(255, 255, 255, 0.8);
+	}
+
+	.shadow-neumorph-button-hover {
+		box-shadow:
+			6px 6px 12px rgba(0, 0, 0, 0.06),
+			-6px -6px 12px rgba(255, 255, 255, 0.9);
+	}
+}
