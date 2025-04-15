@@ -1,84 +1,138 @@
+import { Facebook, Instagram, Mail, Phone, Youtube } from 'lucide-react';
 import { Image } from './ui/image';
+
+const socialLinks = [
+	{
+		name: 'Facebook',
+		url: '#',
+		icon: '/facebook.svg',
+	},
+	{
+		name: 'Instagram',
+		url: '#',
+		icon: '/instagram.svg',
+	},
+	{
+		name: 'YouTube',
+		url: '#',
+		icon: '/youtube.svg',
+	},
+];
 
 export function Footer() {
 	return (
-		<footer className='w-full py-12 px-6 bg-neutral-100 border-t border-neutral-200'>
-			<div className='max-w-7xl mx-auto'>
-				<div className='flex flex-col md:flex-row gap-8'>
-					<div className='flex-1'>
-						<Image
-							src='/placeholder.svg?height=40&width=120'
-							alt='Euro Haus'
-							width={120}
-							height={40}
-							className='h-10 w-auto mb-4'
-						/>
-						<p className='text-neutral-600 mb-4'>
-							Specialized European auto service and performance shop dedicated
-							to excellence.
-						</p>
-						<div className='flex gap-3'>
-							{['facebook', 'instagram', 'youtube'].map((social) => (
-								<a
-									key={social}
-									href='#'
-									className='p-2 rounded-lg bg-neutral-100 shadow-neumorph hover:shadow-neumorph-hover transition-all duration-300'
-								>
-									<span className='sr-only'>{social}</span>
-									<div className='h-5 w-5 text-neutral-700'>
-										{social.charAt(0).toUpperCase()}
-									</div>
-								</a>
-							))}
+		<footer className="bg-muted py-12">
+			<div className="px-4 md:px-6">
+				<div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
+					<div>
+						<h3 className="text-lg font-bold">Euro Haus</h3>
+						<p className="mt-2 text-sm text-muted-foreground">Building a community around car enthusiasm since 2015.</p>
+						<div className="mt-4 flex space-x-3">
+							<a href="https://instagram.com" className="text-muted-foreground hover:text-primary">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="icon icon-tabler icons-tabler-outline icon-tabler-brand-instagram"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M4 8a4 4 0 0 1 4 -4h8a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-8a4 4 0 0 1 -4 -4z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M16.5 7.5v.01" /></svg>
+								<span className="sr-only">Instagram</span>
+							</a>
+							<a href="https://facebook.com" className="text-muted-foreground hover:text-primary">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="icon icon-tabler icons-tabler-outline icon-tabler-brand-facebook"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M7 10v4h3v7h4v-7h3l1 -4h-4v-2a1 1 0 0 1 1 -1h3v-4h-3a5 5 0 0 0 -5 5v2h-3" /></svg>
+								<span className="sr-only">Facebook</span>
+							</a>
+							<a href="https://youtube.com" className="text-muted-foreground hover:text-primary">
+								<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="icon icon-tabler icons-tabler-outline icon-tabler-brand-youtube"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M2 8a4 4 0 0 1 4 -4h12a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-12a4 4 0 0 1 -4 -4v-8z" /><path d="M10 9l5 3l-5 3z" /></svg>
+								<span className="sr-only">YouTube</span>
+							</a>
 						</div>
 					</div>
-
-					{[
-						// {
-						// 	title: 'Services',
-						// 	links: [
-						// 		'Performance Tuning',
-						// 		'Maintenance',
-						// 		'Custom Builds',
-						// 		'Detailing',
-						// 	],
-						// },
-						{
-							title: 'Company',
-							links: ['About Us', 'Our Team', 'Careers', 'Contact Us'],
-						},
-						{
-							title: 'Information',
-							links: [
-								'FAQ',
-								'Shipping & Returns',
-								'Privacy Policy',
-								'Terms of Service',
-							],
-						},
-					].map((column, index) => (
-						<div key={index} className='flex-1'>
-							<h3 className='font-semibold text-neutral-800 mb-4'>
-								{column.title}
-							</h3>
-							<ul className='space-y-2'>
-								{column.links.map((link) => (
-									<li key={link}>
-										<a
-											href='#'
-											className='text-neutral-600 hover:text-neutral-800 transition-colors'
-										>
-											{link}
-										</a>
-									</li>
-								))}
-							</ul>
-						</div>
-					))}
+					<div>
+						<h3 className="text-lg font-bold">Shop</h3>
+						<ul className="mt-2 space-y-2 text-sm">
+							<li>
+								<a href="/shop/apparel" className="text-muted-foreground hover:text-foreground">
+									Apparel
+								</a>
+							</li>
+							<li>
+								<a href="/shop/accessories" className="text-muted-foreground hover:text-foreground">
+									Accessories
+								</a>
+							</li>
+							<li>
+								<a href="/shop/tickets" className="text-muted-foreground hover:text-foreground">
+									Event Tickets
+								</a>
+							</li>
+							<li>
+								<a href="/shop/gift-cards" className="text-muted-foreground hover:text-foreground">
+									Gift Cards
+								</a>
+							</li>
+						</ul>
+					</div>
+					<div>
+						<h3 className="text-lg font-bold">Community</h3>
+						<ul className="mt-2 space-y-2 text-sm">
+							<li>
+								<a href="/events" className="text-muted-foreground hover:text-foreground">
+									Events
+								</a>
+							</li>
+							<li>
+								<a href="/community/forum" className="text-muted-foreground hover:text-foreground">
+									Forum
+								</a>
+							</li>
+							<li>
+								<a href="/community/gallery" className="text-muted-foreground hover:text-foreground">
+									Car Gallery
+								</a>
+							</li>
+							<li>
+								<a href="/videos" className="text-muted-foreground hover:text-foreground">
+									Videos
+								</a>
+							</li>
+						</ul>
+					</div>
+					<div>
+						<h3 className="text-lg font-bold">Contact</h3>
+						<ul className="mt-2 space-y-2 text-sm">
+							<li className="flex items-center">
+								<Mail className="mr-2 h-4 w-4 text-muted-foreground" />
+								<a href="mailto:info@eurohaus.com" className="text-muted-foreground hover:text-foreground">
+									info@eurohaus.com
+								</a>
+							</li>
+							<li className="flex items-center">
+								<Phone className="mr-2 h-4 w-4 text-muted-foreground" />
+								<a href="tel:+1234567890" className="text-muted-foreground hover:text-foreground">
+									(123) 456-7890
+								</a>
+							</li>
+						</ul>
+					</div>
 				</div>
-
-				<div className='mt-12 pt-6 border-t border-neutral-200 text-center text-neutral-600 text-sm'>
-					© {new Date().getFullYear()} The Euro Haus. All rights reserved.
+				<div className="mt-12 border-t pt-6">
+					<div className="flex flex-col items-center justify-between gap-4 md:flex-row">
+						<p className="text-sm text-muted-foreground">
+							© {new Date().getFullYear()} Euro Haus. All rights reserved.
+						</p>
+						<ul className="flex space-x-4 text-sm">
+							<li>
+								<a href="/terms" className="text-muted-foreground hover:text-foreground">
+									Terms
+								</a>
+							</li>
+							<li>
+								<a href="/privacy" className="text-muted-foreground hover:text-foreground">
+									Privacy
+								</a>
+							</li>
+							<li>
+								<a href="/cookies" className="text-muted-foreground hover:text-foreground">
+									Cookies
+								</a>
+							</li>
+						</ul>
+					</div>
 				</div>
 			</div>
 		</footer>

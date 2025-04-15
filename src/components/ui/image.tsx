@@ -27,7 +27,7 @@ export const Image: React.FC<ImageWithFallbackProps> = ({
 				}}
 				style={{ display: isLoading ? 'none' : 'block' }}
 			/>
-			{error && <div className='text-destructive'>Failed to load image</div>}
+			{/* {error && <div className='text-destructive'>Failed to load image</div>} */}
 		</>
 	);
 };
