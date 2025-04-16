@@ -6,37 +6,16 @@ import { Image } from '~/components/ui/image';
 import EuroHausIntro from '~/assets/euro-haus-intro.mp4';
 import { ProductCard } from '~/components/product-card';
 import { SocialSection } from '~/components/social-section';
+import EventCards from '~/components/event-cards';
+import { Video } from '~/components/ui/video';
+
+import PorscheReel from '~/assets/tonysporsche[1].mp4';
 
 export const Route = createFileRoute('/')({
 	component: Index,
 });
 
-const events = [
-	{
-		title: 'Porsche Club Meetup',
-		date: '2025-06-01',
-		location: 'Euro Haus',
-		price: 149.99,
-		image:
-			'https://sjc.microlink.io/Yq5ofAAPGt4bNWKW0734GeHqeBt0mXxKjnOP8BlRYRQ18wyUo2cuA9MQZKFtiaigsv49fo0U8vP6oBJH0SwhJQ.jpeg',
-	},
-	{
-		title: 'BMW Club Meetup',
-		date: '2025-06-01',
-		location: 'Euro Haus',
-		price: 149.99,
-		image:
-			'https://sjc.microlink.io/Yq5ofAAPGt4bNWKW0734GeHqeBt0mXxKjnOP8BlRYRQ18wyUo2cuA9MQZKFtiaigsv49fo0U8vP6oBJH0SwhJQ.jpeg',
-	},
-	{
-		title: 'Audi Club Meetup',
-		date: '2025-06-01',
-		location: 'Euro Haus',
-		price: 149.99,
-		image:
-			'https://sjc.microlink.io/Yq5ofAAPGt4bNWKW0734GeHqeBt0mXxKjnOP8BlRYRQ18wyUo2cuA9MQZKFtiaigsv49fo0U8vP6oBJH0SwhJQ.jpeg',
-	},
-];
+
 
 function Index() {
 	return (
@@ -44,12 +23,18 @@ function Index() {
 			{/* Hero Section */}
 			<section className='w-full py-12 px-6 relative overflow-hidden'>
 				<div className='absolute top-0 left-0 w-full h-full z-0'>
-					<video className='w-full h-full object-cover brightness-75' autoPlay loop muted playsInline>
+					{/* <video className='w-full h-full object-cover brightness-75' autoPlay loop muted playsInline>
 						<source
 							src={EuroHausIntro}
 							type='video/mp4'
 						/>
-					</video>
+					</video> */}
+					<Video
+						src={EuroHausIntro}
+						autoPlay
+						loop
+						className='w-full h-full object-cover brightness-75'
+					/>
 				</div>
 				<div className='absolute inset-0 bg-black/50' />
 
@@ -80,33 +65,7 @@ function Index() {
 						Upcoming Events
 					</h2>
 
-					<div className='grid grid-cols-1 md:grid-cols-3 gap-8'>
-						{events.map((event, index) => (
-							<div
-								key={index}
-								className='rounded-2xl bg-neutral-100 shadow-neumorph p-6 hover:shadow-neumorph-hover transition-all duration-300'
-							>
-								<div className='relative aspect-[16/9] rounded-2xl overflow-hidden shadow-neumorph-inset'>
-									<Image
-										src={event.image}
-										alt={event.title}
-										className='absolute object-cover w-full h-full'
-									/>
-								</div>
-								<h3 className='text-xl font-semibold mb-2'>
-									{event.title}
-								</h3>
-								<p className='text-neutral-500 text-sm mb-2'>{event.date}</p>
-								<p className='text-neutral-500 text-sm mb-2'>
-									From ${event.price} USD
-								</p>
-								<Button variant={'outline'} className='mt-4 font-medium flex items-center gap-1 group w-full'>
-									View Details
-									<ChevronRight className='h-4 w-4 group-hover:translate-x-1 transition-transform' />
-								</Button>
-							</div>
-						))}
-					</div>
+					<EventCards />
 				</div>
 			</section>
 
@@ -168,31 +127,17 @@ function Index() {
 
 					<div className='rounded-3xl bg-muted text-muted-foreground shadow-neumorph p-6 overflow-hidden'>
 						<div className='relative aspect-video rounded-2xl overflow-hidden shadow-neumorph-inset'>
-							{/* This would be replaced with an actual video embed */}
-							<div className='absolute inset-0 bg-neutral-200 flex items-center justify-center'>
-								<div className='relative z-10 flex flex-col items-center'>
-									<Button className='h-20 w-20 rounded-full shadow-neumorph flex items-center justify-center mb-4 hover:shadow-neumorph-hover transition-all duration-300 hover:bg-secondary'>
-										<Play className='h-8 w-8 ml-1' />
-									</Button>
-									<p className='text-neutral-700 font-medium'>
-										Project Spotlight: Porsche 911 Turbo Build
-									</p>
-								</div>
-								<Image
-									src='/placeholder.svg?height=720&width=1280&text=Video%20Thumbnail'
-									alt='Video thumbnail'
-									className='absolute w-full h-full object-cover'
-								/>
-							</div>
+							<Video
+								src={PorscheReel}
+								controls
+							/>
 						</div>
 						<div className='mt-6 text-center'>
 							<h3 className='text-xl font-semibold mb-2'>
-								Behind the Scenes: Complete Porsche Build
+								Behind the Wheel: 1997 Porsche 911
 							</h3>
 							<p className='text-neutral-600 max-w-2xl mx-auto'>
-								Watch our team transform a stock Porsche 911 into a track-ready
-								masterpiece with custom performance upgrades and meticulous
-								attention to detail.
+								Experience the thrill of the Porsche 911 in action, showcasing the engineering marvel and pure driving experience that makes this vehicle a favorite among automotive enthusiasts.
 							</p>
 						</div>
 					</div>
