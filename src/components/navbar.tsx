@@ -57,7 +57,7 @@ export function Navbar() {
 			<div className="px-8 flex h-16 items-center">
 				<MainNav />
 				<div className="ml-auto flex items-center space-x-4">
-					<Link to="/search" className="text-muted-foreground hover:text-foreground">
+					<a href="/search" className="text-muted-foreground hover:text-foreground">
 						<span className="sr-only">Search</span>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -74,8 +74,8 @@ export function Navbar() {
 							<circle cx="11" cy="11" r="8" />
 							<path d="m21 21-4.3-4.3" />
 						</svg>
-					</Link>
-					<Link to="/account" className="text-muted-foreground hover:text-foreground">
+					</a>
+					<a href="/account" className="text-muted-foreground hover:text-foreground">
 						<span className="sr-only">Account</span>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -92,8 +92,8 @@ export function Navbar() {
 							<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
 							<circle cx="12" cy="7" r="4" />
 						</svg>
-					</Link>
-					<Link to="/cart" className="text-muted-foreground hover:text-foreground">
+					</a>
+					<a href="/cart" className="text-muted-foreground hover:text-foreground">
 						<span className="sr-only">Cart</span>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -111,7 +111,7 @@ export function Navbar() {
 							<circle cx="19" cy="21" r="1" />
 							<path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
 						</svg>
-					</Link>
+					</a>
 				</div>
 			</div>
 		</header>
