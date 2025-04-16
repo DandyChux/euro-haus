@@ -11,7 +11,7 @@ import { Button } from './ui/button';
 
 import GT4Photo from '~/assets/gt4 reel photo.jpg';
 import BMWMeetupPhoto from '~/assets/PANA1638.jpg';
-import AudiPhoto from '~/assets/IMG_5047.jpg';
+import AudiPhoto from '~/assets/lineup.jpg';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '~/lib/utils';
 
