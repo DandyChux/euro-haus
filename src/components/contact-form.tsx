@@ -23,8 +23,10 @@ const contactFormSchema = z.object({
 	message: z.string().min(10, 'Message must be at least 10 characters long').max(500, 'Message cannot exceed 500 characters')
 })
 
+type ContactForm = z.infer<typeof contactFormSchema>
+
 export function ContactForm() {
-	const form = useForm<z.infer<typeof contactFormSchema>>({
+	const form = useForm<ContactForm>({
 		resolver: zodResolver(contactFormSchema),
 		defaultValues: {
 			name: "",
@@ -35,7 +37,7 @@ export function ContactForm() {
 		}
 	})
 
-	function onSubmit(data: z.infer<typeof contactFormSchema>) {
+	function onSubmit(data: ContactForm) {
 		// Send email with this data
 		console.log(data);
 	}
