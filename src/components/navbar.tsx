@@ -42,12 +42,12 @@ const navLinks: NavLink[] = [
 		href: '/',
 	},
 	{
-		title: 'Catalog',
-		href: '/catalog',
+		title: 'About',
+		href: '/about',
 	},
 	{
-		title: 'Contact',
-		href: '/contact',
+		title: 'Catalog',
+		href: '/catalog',
 	},
 ]
 

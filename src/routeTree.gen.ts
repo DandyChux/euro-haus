@@ -11,22 +11,22 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
-import { Route as ContactImport } from './routes/contact'
 import { Route as CatalogImport } from './routes/catalog'
+import { Route as AboutImport } from './routes/about'
 import { Route as IndexImport } from './routes/index'
 import { Route as AuthRegisterImport } from './routes/auth/register'
 
 // Create/Update Routes
 
-const ContactRoute = ContactImport.update({
-  id: '/contact',
-  path: '/contact',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const CatalogRoute = CatalogImport.update({
   id: '/catalog',
   path: '/catalog',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AboutRoute = AboutImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -53,18 +53,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutImport
+      parentRoute: typeof rootRoute
+    }
     '/catalog': {
       id: '/catalog'
       path: '/catalog'
       fullPath: '/catalog'
       preLoaderRoute: typeof CatalogImport
-      parentRoute: typeof rootRoute
-    }
-    '/contact': {
-      id: '/contact'
-      path: '/contact'
-      fullPath: '/contact'
-      preLoaderRoute: typeof ContactImport
       parentRoute: typeof rootRoute
     }
     '/auth/register': {
@@ -81,46 +81,46 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/catalog': typeof CatalogRoute
-  '/contact': typeof ContactRoute
   '/auth/register': typeof AuthRegisterRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/catalog': typeof CatalogRoute
-  '/contact': typeof ContactRoute
   '/auth/register': typeof AuthRegisterRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/catalog': typeof CatalogRoute
-  '/contact': typeof ContactRoute
   '/auth/register': typeof AuthRegisterRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/catalog' | '/contact' | '/auth/register'
+  fullPaths: '/' | '/about' | '/catalog' | '/auth/register'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/catalog' | '/contact' | '/auth/register'
-  id: '__root__' | '/' | '/catalog' | '/contact' | '/auth/register'
+  to: '/' | '/about' | '/catalog' | '/auth/register'
+  id: '__root__' | '/' | '/about' | '/catalog' | '/auth/register'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   CatalogRoute: typeof CatalogRoute
-  ContactRoute: typeof ContactRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   CatalogRoute: CatalogRoute,
-  ContactRoute: ContactRoute,
   AuthRegisterRoute: AuthRegisterRoute,
 }
 
@@ -135,19 +135,19 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/about",
         "/catalog",
-        "/contact",
         "/auth/register"
       ]
     },
     "/": {
       "filePath": "index.tsx"
     },
+    "/about": {
+      "filePath": "about.tsx"
+    },
     "/catalog": {
       "filePath": "catalog.tsx"
-    },
-    "/contact": {
-      "filePath": "contact.tsx"
     },
     "/auth/register": {
       "filePath": "auth/register.tsx"

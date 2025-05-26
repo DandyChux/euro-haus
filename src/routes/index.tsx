@@ -3,13 +3,13 @@ import { ChevronRight, Play } from 'lucide-react';
 import { NewsletterSubscription } from '~/components/newsletter-subscription';
 import { Button } from '~/components/ui/button';
 import { Image } from '~/components/ui/image';
-import EuroHausIntro from '~/assets/euro-haus-intro.mp4';
 import { ProductCard } from '~/components/product-card';
 import { SocialSection } from '~/components/social-section';
 import EventCards from '~/components/event-cards';
 import { Video } from '~/components/ui/video';
 
-import PorscheReel from '~/assets/tonysporsche[1].mp4';
+import EuroHausIntro from '~/assets/euro-haus-intro.webm';
+import PorscheReel from '~/assets/tonysporsche[1].webm';
 
 export const Route = createFileRoute('/')({
 	component: Index,

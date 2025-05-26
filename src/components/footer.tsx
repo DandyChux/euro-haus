@@ -101,12 +101,6 @@ export function Footer() {
 									info@eurohaus.com
 								</a>
 							</li>
-							<li className="flex items-center">
-								<Phone className="mr-2 h-4 w-4 text-muted-foreground" />
-								<a href="tel:+1234567890" className="text-muted-foreground hover:text-foreground">
-									(123) 456-7890
-								</a>
-							</li>
 						</ul>
 					</div>
 				</div>
