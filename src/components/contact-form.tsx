@@ -32,7 +32,7 @@ export function ContactForm() {
 			name: "",
 			email: "",
 			phone: "",
-			subject: subjectsEnum.enum['General Inquiry'],
+			subject: subjects[0],
 			message: ""
 		}
 	})
