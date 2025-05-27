@@ -13,8 +13,7 @@ const phoneRegex = new RegExp(
 
 const subjects = ['General Inquiry', 'Event Information', 'Partnership/Collaboration', 'Merchandise Question', 'Media/Press Inquiry', 'Feedback', 'Other'] as const
 
-// const subjectsEnum = z.enum(subjects)
-const subjectsEnum = z.enum(['General Inquiry', 'Event Information', 'Partnership/Collaboration', 'Merchandise Question', 'Media/Press Inquiry', 'Feedback', 'Other'])
+const subjectsEnum = z.enum(subjects)
 
 const contactFormSchema = z.object({
 	name: z.string().min(2).max(100),
@@ -33,7 +32,7 @@ export function ContactForm() {
 			name: "",
 			email: "",
 			phone: "",
-			subject: subjects[0],
+			subject: "General Inquiry",
 			message: ""
 		}
 	})
