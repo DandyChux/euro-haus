@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 
 import { routeTree } from './routeTree.gen';
+import { SearchProvider } from './lib/search-context';
 
 const router = createRouter({ routeTree });
 
@@ -18,7 +19,9 @@ if (!rootElement.innerHTML) {
 	const root = createRoot(rootElement);
 	root.render(
 		<StrictMode>
-			<RouterProvider router={router} />
+			<SearchProvider>
+				<RouterProvider router={router} />
+			</SearchProvider>
 		</StrictMode>
 	);
 }

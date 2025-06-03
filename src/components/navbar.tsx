@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Search, ShoppingBag, User, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 import { cn } from '~/lib/utils';
 import { Image } from './ui/image';
@@ -23,6 +23,8 @@ import {
 } from './ui/sheet';
 import { Link } from '@tanstack/react-router';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { SearchBar } from './search-bar';
+import { useSearch } from '~/lib/search-context';
 
 type NavLink = {
 	title: string;
@@ -52,29 +54,18 @@ const navLinks: NavLink[] = [
 ]
 
 export function Navbar() {
+	const { setSearchQuery } = useSearch()
+
+	const handleSearch = (query: string) => {
+		setSearchQuery(query)
+	}
+
 	return (
 		<header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			<div className="px-8 flex h-16 items-center">
 				<MainNav />
 				<div className="ml-auto flex items-center space-x-4">
-					<a href="/search" className="text-muted-foreground hover:text-foreground">
-						<span className="sr-only">Search</span>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							className="h-5 w-5"
-						>
-							<circle cx="11" cy="11" r="8" />
-							<path d="m21 21-4.3-4.3" />
-						</svg>
-					</a>
+					<SearchBar onSearch={handleSearch} />
 					<a href="/account" className="text-muted-foreground hover:text-foreground">
 						<span className="sr-only">Account</span>
 						<svg

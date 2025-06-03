@@ -1,10 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Calendar, Users, Trophy, Heart, Mail, Phone, MapPin } from 'lucide-react'
+import { Calendar, Users, Trophy, Heart, Mail, MapPin } from 'lucide-react'
 import { Card, CardContent } from '~/components/ui/card'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '~/components/ui/breadcrumb'
 import { SocialSection } from '~/components/social-section'
 import { NewsletterSubscription } from '~/components/newsletter-subscription'
 import { ContactForm } from '~/components/contact-form'
+import { Image } from '~/components/ui/image'
+
+import LineupImage from '~/assets/PANA1748.jpg'
 
 export const Route = createFileRoute('/about')({
 	component: RouteComponent,
@@ -32,7 +35,7 @@ function RouteComponent() {
 				</Breadcrumb>
 			</div>
 
-			<section className='relative bg-gradient-to-br from-primary/10 via-background to-secondary/10 py-16 md:py-24'>
+			<section className='relative bg-gradient-to-br from-primary/15 via-background to-secondary/15 py-16 md:py-24'>
 				<div className='px-4 md:px-6'>
 					<div className='mx-auto max-w-4xl text-center'>
 						<h1 className='text-4xl font-bold tracking-tight text-secondary md:text-6xl lg:text-7xl'>
@@ -72,9 +75,9 @@ function RouteComponent() {
 									</p>
 								</div>
 								<div className="relative">
-									<img
-										src="/placeholder.svg?height=400&width=600"
-										alt="Euro Haus founding members"
+									<Image
+										src={LineupImage}
+										alt=""
 										className="rounded-lg shadow-lg"
 									/>
 									<div className="absolute inset-0 bg-gradient-to-t from-primary/20 to-transparent rounded-lg"></div>
@@ -259,17 +262,6 @@ function RouteComponent() {
 									</div>
 
 									<div className="flex items-start space-x-4">
-										<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-											<Phone className="h-5 w-5" />
-										</div>
-										<div>
-											<h4 className="font-semibold">Phone</h4>
-											<p className="text-muted-foreground">(555) 123-EURO</p>
-											<p className="text-sm text-muted-foreground">Monday - Friday, 9AM - 6PM EST</p>
-										</div>
-									</div>
-
-									<div className="flex items-start space-x-4">
 										<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
 											<MapPin className="h-5 w-5" />
 										</div>
@@ -286,27 +278,21 @@ function RouteComponent() {
 									<div className="flex space-x-4">
 										<a
 											href="https://instagram.com"
-											className="rounded-full bg-primary/10 p-3 text-primary hover:bg-primary hover:text-white transition-colors"
+											className="rounded-full bg-primary/10 p-2 text-primary hover:bg-primary hover:text-white transition-colors"
 										>
-											<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-												<path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 6.62 5.367 11.987 11.988 11.987s11.987-5.367 11.987-11.987C24.004 5.367 18.637.001 12.017.001zM8.449 16.988c-1.297 0-2.448-.49-3.323-1.297C4.198 14.864 3.708 13.713 3.708 12.416s.49-2.448 1.418-3.323c.875-.875 2.026-1.297 3.323-1.297s2.448.422 3.323 1.297c.928.875 1.418 2.026 1.418 3.323s-.49 2.448-1.418 3.275c-.875.807-2.026 1.297-3.323 1.297zm7.83-9.608c-.49 0-.928-.422-.928-.928 0-.49.422-.928.928-.928.49 0 .928.422.928.928 0 .49-.422.928-.928.928zm-3.323 9.608c-2.448 0-4.474-1.959-4.474-4.407 0-2.448 1.959-4.474 4.474-4.474s4.407 1.959 4.407 4.474c0 2.448-1.959 4.407-4.407 4.407z" />
-											</svg>
+											<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" stroke-linejoin="round" className="lucide lucide-instagram-icon lucide-instagram"><rect width="20" height="20" x="2" y="2" rx="5" ry="5" /><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" /><line x1="17.5" x2="17.51" y1="6.5" y2="6.5" /></svg>
 										</a>
 										<a
 											href="https://facebook.com"
-											className="rounded-full bg-secondary/10 p-3 text-secondary hover:bg-secondary hover:text-white transition-colors"
+											className="rounded-full bg-secondary/10 p-2 text-secondary hover:bg-secondary hover:text-white transition-colors"
 										>
-											<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-												<path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-											</svg>
+											<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" stroke-linejoin="round" className="lucide lucide-facebook-icon lucide-facebook"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" /></svg>
 										</a>
 										<a
 											href="https://youtube.com"
-											className="rounded-full bg-primary/10 p-3 text-primary hover:bg-primary hover:text-white transition-colors"
+											className="rounded-full bg-primary/10 p-2 text-primary hover:bg-primary hover:text-white transition-colors"
 										>
-											<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-												<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-											</svg>
+											<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" stroke-linejoin="round" className="lucide lucide-youtube-icon lucide-youtube"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" /><path d="m10 15 5-3-5-3z" /></svg>
 										</a>
 									</div>
 								</div>

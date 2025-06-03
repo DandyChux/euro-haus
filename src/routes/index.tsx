@@ -1,8 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ChevronRight, Play } from 'lucide-react';
 import { NewsletterSubscription } from '~/components/newsletter-subscription';
 import { Button } from '~/components/ui/button';
-import { Image } from '~/components/ui/image';
 import { ProductCard } from '~/components/product-card';
 import { SocialSection } from '~/components/social-section';
 import EventCards from '~/components/event-cards';

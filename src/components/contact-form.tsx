@@ -124,7 +124,7 @@ export function ContactForm() {
 						<FormItem>
 							<FormLabel>Message</FormLabel>
 							<FormControl>
-								<Textarea placeholder='Your message' {...field} />
+								<Textarea placeholder='Your message' rows={4} {...field} />
 							</FormControl>
 							<FormMessage />
 						</FormItem>
