@@ -4,7 +4,9 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 
 import { routeTree } from './routeTree.gen';
-import { SearchProvider } from './lib/search-context';
+import { SearchProvider } from './lib/contexts/search-context';
+import { CartProvider } from './lib/contexts/cart-context';
+import { AuthProvider } from './lib/contexts/auth-context';
 
 const router = createRouter({ routeTree });
 
@@ -19,9 +21,13 @@ if (!rootElement.innerHTML) {
 	const root = createRoot(rootElement);
 	root.render(
 		<StrictMode>
-			<SearchProvider>
-				<RouterProvider router={router} />
-			</SearchProvider>
+			<AuthProvider>
+				<SearchProvider>
+					<CartProvider>
+						<RouterProvider router={router} />
+					</CartProvider>
+				</SearchProvider>
+			</AuthProvider>
 		</StrictMode>
 	);
 }

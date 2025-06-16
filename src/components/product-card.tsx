@@ -4,6 +4,8 @@ import { Badge } from "./ui/badge"
 import { ShoppingCart, Heart } from "lucide-react"
 import { useState } from "react"
 import { cn } from "~/lib/utils"
+import { useCart } from "~/lib/contexts/cart-context"
+import { toast } from "sonner"
 
 interface ProductCardProps {
 	id: string
@@ -28,15 +30,25 @@ export function ProductCard({
 }: ProductCardProps) {
 	const [isHovered, setIsHovered] = useState(false)
 	const [isFavorite, setIsFavorite] = useState(false)
+	const { addItem } = useCart()
 
 	const handleAddToCart = (e: React.MouseEvent) => {
 		e.preventDefault()
-		// In a real implementation, this would add the product to the cart
-		console.log(`Adding ${title} to cart`)
 
-		// This would typically dispatch to a cart context or Redux store
-		// dispatch({ type: 'ADD_TO_CART', payload: { id, title, price, quantity: 1 } })
+		if (!inStock) {
+			toast.error('This item is out of stock')
+			return
+		}
+
+		addItem({
+			id,
+			title,
+			description,
+			price,
+			imageUrl,
+		})
 	}
+
 
 	const handleToggleFavorite = (e: React.MouseEvent) => {
 		e.preventDefault()
@@ -50,7 +62,7 @@ export function ProductCard({
 
 	return (
 		<a
-			href={`/product/${id}`}
+			href={`/catalog/${id}`}
 			className="group relative flex flex-col overflow-hidden rounded-lg border bg-background transition-all hover:shadow-md"
 			onMouseEnter={() => setIsHovered(true)}
 			onMouseLeave={() => setIsHovered(false)}

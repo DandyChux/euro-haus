@@ -24,7 +24,9 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
 import { SearchBar } from './search-bar';
-import { useSearch } from '~/lib/search-context';
+import { useSearch } from '~/lib/contexts/search-context';
+import { useCart } from '~/lib/contexts/cart-context';
+import { Badge } from './ui/badge';
 
 type NavLink = {
 	title: string;
@@ -48,6 +50,10 @@ const navLinks: NavLink[] = [
 		href: '/about',
 	},
 	{
+		title: 'Events',
+		href: '/events',
+	},
+	{
 		title: 'Catalog',
 		href: '/catalog',
 	},
@@ -55,6 +61,7 @@ const navLinks: NavLink[] = [
 
 export function Navbar() {
 	const { setSearchQuery } = useSearch()
+	const { totalItems } = useCart()
 
 	const handleSearch = (query: string) => {
 		setSearchQuery(query)
@@ -65,26 +72,12 @@ export function Navbar() {
 			<div className="px-8 flex h-16 items-center">
 				<MainNav />
 				<div className="ml-auto flex items-center space-x-4">
-					<SearchBar onSearch={handleSearch} />
-					<a href="/account" className="text-muted-foreground hover:text-foreground">
-						<span className="sr-only">Account</span>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							className="h-5 w-5"
-						>
-							<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-							<circle cx="12" cy="7" r="4" />
-						</svg>
-					</a>
-					<a href="/cart" className="text-muted-foreground hover:text-foreground">
+					<SearchBar
+						onSearch={handleSearch}
+						enableProductSearch={true}
+						placeholder="Search products..."
+					/>
+					<Link to="/cart" className="text-muted-foreground hover:text-foreground relative">
 						<span className="sr-only">Cart</span>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -102,6 +95,32 @@ export function Navbar() {
 							<circle cx="19" cy="21" r="1" />
 							<path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
 						</svg>
+						{totalItems > 0 && (
+							<Badge
+								className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
+								variant="destructive"
+							>
+								{totalItems}
+							</Badge>
+						)}
+					</Link>
+					<a href="/admin/products" className="text-muted-foreground hover:text-foreground">
+						<span className="sr-only">Account</span>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="24"
+							height="24"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							className="h-5 w-5"
+						>
+							<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+							<circle cx="12" cy="7" r="4" />
+						</svg>
 					</a>
 				</div>
 			</div>
@@ -114,7 +133,12 @@ export function MainNav() {
 		<div className='flex items-center gap-6 md:gap-10'>
 			<Link to='/' className='hidden items-center space-x-2 md:flex'>
 				{/* <span className='hidden font-bold sm:inline-block'>EURO HAUS</span> */}
-				<Image src="/eurohaus-logo.png" alt="Euro Haus Logo" width={100} height={100} />
+				<Image
+					src="https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/eurohaus-logo.png"
+					alt="Euro Haus Logo"
+					width={100}
+					height={100}
+				/>
 			</Link>
 			<NavigationMenu className='flex'>
 				<Sheet>

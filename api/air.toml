@@ -1,0 +1,34 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Add more flags for better builds
+cmd = "go build -ldflags '-s -w' -o ./tmp/main ./main.go"
+bin = "tmp/main"
+full_bin = "./tmp/main"
+include_ext = ["go", "mod", "sum"]
+exclude_dir = ["tmp", "vendor", ".git", "node_modules"]
+include_dir = ["handlers", "middleware"]
+exclude_file = []
+delay = 500
+stop_on_error = true
+send_interrupt = true
+kill_delay = 1500
+# Force restart on build
+restart_delay = 100
+
+[log]
+time = true
+# Add more verbose logging
+level = "debug"
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true
+# Clear screen on each build
+clear_on_build = true

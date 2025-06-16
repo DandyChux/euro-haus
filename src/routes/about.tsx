@@ -7,8 +7,6 @@ import { NewsletterSubscription } from '~/components/newsletter-subscription'
 import { ContactForm } from '~/components/contact-form'
 import { Image } from '~/components/ui/image'
 
-import LineupImage from '~/assets/PANA1748.jpg'
-
 export const Route = createFileRoute('/about')({
 	component: RouteComponent,
 })
@@ -76,7 +74,7 @@ function RouteComponent() {
 								</div>
 								<div className="relative">
 									<Image
-										src={LineupImage}
+										src={'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/PANA1748.webp'}
 										alt=""
 										className="rounded-lg shadow-lg"
 									/>
@@ -142,7 +140,7 @@ function RouteComponent() {
 			</section>
 
 			{/* Timeline Section */}
-			<section className="py-16 md:py-20">
+			{/* <section className="py-16 md:py-20">
 				<div className="px-4 md:px-6">
 					<div className="mx-auto max-w-4xl">
 						<div className="text-center mb-12">
@@ -232,7 +230,7 @@ function RouteComponent() {
 						</div>
 					</div>
 				</div>
-			</section>
+			</section> */}
 
 			{/* Contact Section */}
 			<section className="py-16 md:py-20">
