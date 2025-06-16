@@ -15,9 +15,16 @@ import (
 )
 
 func init() {
-	// Load environment variables
-	if err := godotenv.Load("../.env"); err != nil {
-		log.Println("No .env file found")
+	// Load environment variables from .env file in development
+	env := os.Getenv("GO_ENV")
+	if env == "" {
+		env = "development"
+	}
+
+	if env == "development" {
+		if err := godotenv.Load("../.env"); err != nil {
+			log.Println("No .env file found")
+		}
 	}
 
 	// Initialize stripe
