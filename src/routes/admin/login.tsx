@@ -19,7 +19,7 @@ function AdminLoginPage() {
 
 	// Redirect if already authenticated
 	if (isAuthenticated) {
-		navigate({ to: '/admin/products' });
+		navigate({ to: `${import.meta.env.VITE_API_URL}/admin/products` });
 		return null;
 	}
 
@@ -30,7 +30,7 @@ function AdminLoginPage() {
 		const success = await login(password);
 
 		if (success) {
-			navigate({ to: '/admin/products' });
+			navigate({ to: `${import.meta.env.VITE_API_URL}/admin/products` });
 		}
 
 		setIsLoading(false);
