@@ -46,6 +46,3 @@ export type BaseFormData = z.infer<typeof baseSchema>;
 export type ProductFormData = z.infer<typeof productSchema>;
 export type EventFormData = z.infer<typeof eventSchema>;
 export type FormData = z.infer<typeof formSchema>;
-
-// Password for admin access
-export const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'eurohaus2024';
