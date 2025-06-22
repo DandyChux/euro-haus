@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiClient } from '~/lib/api';
+import { apiClient, apiRequest } from '~/lib/api';
 import { toast } from 'sonner';
 
 interface AuthContextType {
@@ -67,19 +67,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const login = async (password: string): Promise<boolean> => {
 		try {
-			const response = await apiClient.post('/auth/login', { password });
+			const response = await apiRequest<{ success: boolean; token: string; message?: string }>({
+				method: 'post',
+				url: '/auth/login',
+				data: { password }
+			});
 
-			if (response.data.success) {
-				setToken(response.data.token);
+			if (response.success) {
+				setToken(response.token);
 				setIsAuthenticated(true);
 				toast.success('Logged in successfully');
 				return true;
 			} else {
-				toast.error(response.data.message || 'Login failed');
+				toast.error(response.message || 'Login failed');
 				return false;
 			}
 		} catch (error: any) {
-			const message = error.response?.data?.message || 'Invalid password';
+			const message = error.response?.message || 'Invalid password';
 			toast.error(message);
 			return false;
 		}
@@ -88,7 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const logout = async () => {
 		try {
 			if (token) {
-				await apiClient.post('/auth/logout');
+				await apiRequest({
+					method: 'post',
+					url: '/auth/logout',
+					headers: {
+						Authorization: `Bearer ${token}`
+					}
+				});
 			}
 		} catch (error) {
 			console.error('Logout error:', error);
