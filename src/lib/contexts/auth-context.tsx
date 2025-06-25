@@ -70,7 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			const response = await apiRequest<{ success: boolean; token: string; message?: string }>({
 				method: 'post',
 				url: '/auth/login',
-				data: { password }
+				data: { password },
+				allowAbsoluteUrls: true,
+				baseURL: import.meta.env.VITE_API_URL
 			});
 
 			if (response.success) {
