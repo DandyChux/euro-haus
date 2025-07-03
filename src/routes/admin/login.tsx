@@ -19,7 +19,7 @@ function AdminLoginPage() {
 
 	// Redirect if already authenticated
 	if (isAuthenticated) {
-		navigate({ to: '/admin/products' });
+		navigate({ to: '/admin' });
 		return null;
 	}
 

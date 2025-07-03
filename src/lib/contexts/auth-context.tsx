@@ -26,16 +26,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		if (token) {
 			apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-			localStorage.setItem('auth_token', token);
+			localStorage.setItem('accessToken', token);
 		} else {
 			delete apiClient.defaults.headers.common['Authorization'];
-			localStorage.removeItem('auth_token');
+			localStorage.removeItem('accessToken');
 		}
 	}, [token]);
 
 	const checkAuth = async () => {
 		try {
-			const storedToken = localStorage.getItem('auth_token');
+			const storedToken = localStorage.getItem('accessToken');
 			if (!storedToken) {
 				setIsAuthenticated(false);
 				setIsLoading(false);

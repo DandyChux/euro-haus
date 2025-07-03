@@ -39,6 +39,11 @@ export function EventForm({ form, onGenerateSlug }: EventFormProps) {
 		name: 'includes',
 	});
 
+	const sponsorsArray = useFieldArray({
+		control: form.control,
+		name: 'sponsors',
+	});
+
 	return (
 		<>
 			<div className="grid md:grid-cols-2 gap-4">
@@ -303,6 +308,77 @@ export function EventForm({ form, onGenerateSlug }: EventFormProps) {
 								</FormItem>
 							)}
 						/>
+					))}
+				</div>
+			</div>
+
+			{/* Sponsors */}
+			<div>
+				<div className="flex justify-between items-center mb-2">
+					<FormLabel>Event Sponsors</FormLabel>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onClick={() => sponsorsArray.append({ name: '', logoUrl: '', link: '' })}
+					>
+						<Plus className="h-4 w-4 mr-1" /> Add Sponsor
+					</Button>
+				</div>
+				<div className="space-y-4">
+					{sponsorsArray.fields.map((field, index) => (
+						<div key={field.id} className="p-4 border rounded-lg space-y-3">
+							<div className="flex justify-between items-start">
+								<h4 className="text-sm font-medium">Sponsor {index + 1}</h4>
+								<Button
+									type="button"
+									size="icon"
+									variant="outline"
+									onClick={() => sponsorsArray.remove(index)}
+								>
+									<Trash2 className="h-4 w-4" />
+								</Button>
+							</div>
+							<FormField
+								control={form.control}
+								name={`sponsors.${index}.name`}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel className="text-xs">Company Name</FormLabel>
+										<FormControl>
+											<Input {...field} placeholder="e.g., Porsche AG" />
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={form.control}
+								name={`sponsors.${index}.logoUrl`}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel className="text-xs">Logo URL</FormLabel>
+										<FormControl>
+											<Input {...field} placeholder="https://example.com/logo.png" />
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+							<FormField
+								control={form.control}
+								name={`sponsors.${index}.link`}
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel className="text-xs">Website (optional)</FormLabel>
+										<FormControl>
+											<Input {...field} placeholder="https://example.com" />
+										</FormControl>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						</div>
 					))}
 				</div>
 			</div>

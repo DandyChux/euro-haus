@@ -1,24 +1,26 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { NewsletterSubscription } from '~/components/newsletter-subscription';
 import { Button } from '~/components/ui/button';
-import { ProductCard } from '~/components/product-card';
 import { SocialSection } from '~/components/social-section';
 import EventCards from '~/components/event-cards';
-import { Video } from '~/components/ui/video';
 import FeaturedProducts from '~/components/featured-products';
+import { ManagedVideo } from '~/components/ui/managed-video';
 
 export const Route = createFileRoute('/')({
 	component: Index,
 });
 
 function Index() {
+
 	return (
 		<>
 			{/* Hero Section */}
 			<section className='w-full py-12 px-6 relative overflow-hidden'>
 				<div className='absolute top-0 left-0 w-full h-full z-0'>
-					<Video
-						src={'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/videos/euro-haus-intro.webm'}
+					<ManagedVideo
+						src='https://euro-haus.nyc3.cdn.digitaloceanspaces.com/videos/euro-haus-intro.webm'
+						name='Hero Background Video'
+						description='Main hero section background video'
 						autoPlay
 						loop
 						className='w-full h-full object-cover brightness-75'
@@ -73,8 +75,10 @@ function Index() {
 
 					<div className='rounded-3xl bg-muted text-muted-foreground shadow-neumorph p-6 overflow-hidden'>
 						<div className='relative aspect-video rounded-2xl overflow-hidden shadow-neumorph-inset'>
-							<Video
-								src={'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/videos/tonysporsche%5B1%5D.webm'}
+							<ManagedVideo
+								src='https://euro-haus.nyc3.cdn.digitaloceanspaces.com/videos/tonysporsche%5B1%5D.webm'
+								name='Featured Video'
+								description='Featured video showcase'
 								controls
 							/>
 						</div>

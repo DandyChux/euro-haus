@@ -31,6 +31,12 @@ export interface Product {
 	maxQuantity?: number;
 }
 
+export interface EventSponsor {
+	name: string;
+	logoUrl: string;
+	link?: string;
+}
+
 export interface EventProduct extends Product {
 	slug: string;
 	date: string;
@@ -42,6 +48,7 @@ export interface EventProduct extends Product {
 	status?: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' | 'soldout';
 	agenda?: { time: string; activity: string }[];
 	includes?: string[];
+	sponsors?: EventSponsor[];
 }
 
 export const stripeService = {
@@ -204,7 +211,8 @@ export const stripeService = {
 			status,
 			agenda: stripeProduct.metadata.agenda ? JSON.parse(stripeProduct.metadata.agenda) : [],
 			includes: stripeProduct.metadata.includes ? JSON.parse(stripeProduct.metadata.includes) : [],
-			maxQuantity: availableSpots || 10, // Limit ticket purchases to available spots
+			maxQuantity: availableSpots || 10, // Limit ticket purchases to available spots,
+			sponsors: stripeProduct.metadata.sponsors ? JSON.parse(stripeProduct.metadata.sponsors) : [],
 		};
 	},
 };

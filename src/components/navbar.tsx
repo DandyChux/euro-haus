@@ -104,7 +104,7 @@ export function Navbar() {
 							</Badge>
 						)}
 					</Link>
-					<a href="/admin/products" className="text-muted-foreground hover:text-foreground">
+					<a href="/admin" className="text-muted-foreground hover:text-foreground">
 						<span className="sr-only">Account</span>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"

@@ -8,6 +8,7 @@ import (
 
 	"euro-haus-api/handlers"
 	"euro-haus-api/middleware"
+	"euro-haus-api/services"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -32,6 +33,17 @@ func init() {
 	if stripe.Key == "" {
 		log.Fatal("STRIPE_SECRET_KEY environment variable not set")
 	}
+
+	// Initialize S3 client
+	services.InitS3Client()
+
+	// Initialize Redis
+	if err := services.InitRedis(); err != nil {
+		log.Printf("Redis not available, using in-memory storage: %v", err)
+	} else {
+		log.Println("Redis initialized successfully")
+	}
+
 }
 
 // loggingMiddleware logs each request with method, path, status, and duration
@@ -81,10 +93,23 @@ func main() {
 	api.HandleFunc("/create-payment-intent", handlers.CreatePaymentIntent).Methods("POST")
 	api.HandleFunc("/create-checkout-session", handlers.CreateCheckoutSession).Methods("POST")
 
+	// Content placement endpoints
+	api.HandleFunc("/content-placements", handlers.GetAllContentPlacements).Methods("GET", "OPTIONS")
+	api.HandleFunc("/content-placements/register", handlers.RegisterContentPlacement).Methods("POST", "OPTIONS")
+	api.HandleFunc("/content-placements/dynamic", handlers.GetDynamicContentPlacements).Methods("GET", "OPTIONS")
+	api.HandleFunc("/content-placements/{id}", handlers.GetContentPlacement).Methods("GET", "OPTIONS")
+	api.HandleFunc("/content-placements/{id}", handlers.UpdateContentPlacement).Methods("PUT", "OPTIONS")
+	api.HandleFunc("/content-placements/by-media/{key}", handlers.GetContentPlacementsByMedia).Methods("GET", "OPTIONS")
+
 	// Admin endpoints (requires authentication)
 	api.HandleFunc("/admin/create-product", handlers.CreateProduct).Methods("POST", "OPTIONS")
 	api.HandleFunc("/admin/update-product/{id}", handlers.UpdateProduct).Methods("PUT", "OPTIONS")
 	api.HandleFunc("/admin/delete-product/{id}", handlers.DeleteProduct).Methods("DELETE", "OPTIONS")
+
+	// Media management endpoints (requires authentication)
+	api.HandleFunc("/admin/media", handlers.ListMedia).Methods("GET", "OPTIONS")
+	api.HandleFunc("/admin/media/upload", handlers.UploadMedia).Methods("POST", "OPTIONS")
+	api.HandleFunc("/admin/media/delete", handlers.DeleteMedia).Methods("DELETE", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	r.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

@@ -5,7 +5,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbS
 import { SocialSection } from '~/components/social-section'
 import { NewsletterSubscription } from '~/components/newsletter-subscription'
 import { ContactForm } from '~/components/contact-form'
-import { Image } from '~/components/ui/image'
+import { ManagedImage } from '~/components/ui/managed-image'
 
 export const Route = createFileRoute('/about')({
 	component: RouteComponent,
@@ -73,9 +73,11 @@ function RouteComponent() {
 									</p>
 								</div>
 								<div className="relative">
-									<Image
-										src={'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/PANA1748.webp'}
-										alt=""
+									<ManagedImage
+										src='https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/PANA1748.webp'
+										alt="About Euro Haus"
+										name="Our Story Image"
+										description="Main image showcasing Euro Haus community and culture"
 										className="rounded-lg shadow-lg"
 									/>
 									<div className="absolute inset-0 bg-gradient-to-t from-primary/20 to-transparent rounded-lg"></div>

@@ -22,7 +22,8 @@ import {
 	Search,
 	Package,
 	Calendar,
-	RefreshCw
+	RefreshCw,
+	LayoutDashboard
 } from 'lucide-react';
 import { ProductForm } from '~/components/product-form';
 import { EventForm } from '~/components/event-form';
@@ -117,10 +118,24 @@ function AdminProductsContent() {
 			imageUrl: '',
 			featured: false,
 			maxQuantity: '10',
+			// Product specific
 			category: 'merchandise',
 			inStock: true,
 			isNew: false,
 			compareAtPrice: '',
+			// Event specific
+			slug: '',
+			eventDate: '',
+			eventTime: '09:00',
+			location: 'Euro Haus Headquarters, Orlando',
+			capacity: '100',
+			availableSpots: '100',
+			organizer: 'Euro Haus Events Team',
+			status: 'upcoming',
+			tags: [{ value: '' }],
+			agenda: [{ time: '9:00 AM', activity: '' }],
+			includes: [{ value: '' }],
+			sponsors: [],
 		} as FormData,
 	});
 
@@ -221,10 +236,12 @@ function AdminProductsContent() {
 				formData.tags = JSON.parse(product.metadata.tags || '[]').map((t: string) => ({ value: t }));
 				formData.agenda = JSON.parse(product.metadata.agenda || '[]');
 				formData.includes = JSON.parse(product.metadata.includes || '[]').map((i: string) => ({ value: i }));
+				formData.sponsors = JSON.parse(product.metadata.sponsors || '[]');
 			} catch {
 				formData.tags = [{ value: '' }];
 				formData.agenda = [{ time: '9:00 AM', activity: '' }];
 				formData.includes = [{ value: '' }];
+				formData.sponsors = [];
 			}
 		} else {
 			// Product-specific data
@@ -270,6 +287,7 @@ function AdminProductsContent() {
 				metadata.tags = JSON.stringify(data.tags.map(t => t.value).filter(Boolean));
 				metadata.agenda = JSON.stringify(data.agenda);
 				metadata.includes = JSON.stringify(data.includes.map(i => i.value).filter(Boolean));
+				metadata.sponsors = JSON.stringify(data.sponsors || []);
 			}
 
 			const requestData = {
@@ -365,6 +383,10 @@ function AdminProductsContent() {
 				{ value: 'Professional photography' },
 				{ value: 'Certificate of participation' },
 			],
+			sponsors: [
+				{ name: 'Porsche USA', logoUrl: 'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/porsche-logo.png', link: 'https://www.porsche.com' },
+				{ name: 'Michelin', logoUrl: 'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/michelin-logo.png', link: 'https://www.michelin.com' },
+			],
 		});
 		toast.success('Event template loaded');
 		setActiveTab('create');
@@ -412,6 +434,10 @@ function AdminProductsContent() {
 						<p className="text-muted-foreground">Manage your Stripe products and events</p>
 					</div>
 					<div className="flex gap-2">
+						<Button variant="outline" onClick={() => navigate({ to: '/admin' })}>
+							<LayoutDashboard className="h-4 w-4 mr-2" />
+							Dashboard
+						</Button>
 						<Button variant="outline" onClick={() => navigate({ to: '/' })}>
 							Back to Site
 						</Button>

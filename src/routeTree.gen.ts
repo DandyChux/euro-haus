@@ -17,10 +17,12 @@ import { Route as AboutImport } from './routes/about'
 import { Route as IndexImport } from './routes/index'
 import { Route as EventsIndexImport } from './routes/events/index'
 import { Route as CatalogIndexImport } from './routes/catalog/index'
+import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as EventsSlugImport } from './routes/events/$slug'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
 import { Route as AuthRegisterImport } from './routes/auth/register'
 import { Route as AdminProductsImport } from './routes/admin/products'
+import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
 
 // Create/Update Routes
@@ -61,6 +63,12 @@ const CatalogIndexRoute = CatalogIndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminIndexRoute = AdminIndexImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const EventsSlugRoute = EventsSlugImport.update({
   id: '/events/$slug',
   path: '/events/$slug',
@@ -82,6 +90,12 @@ const AuthRegisterRoute = AuthRegisterImport.update({
 const AdminProductsRoute = AdminProductsImport.update({
   id: '/admin/products',
   path: '/admin/products',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminMediaRoute = AdminMediaImport.update({
+  id: '/admin/media',
+  path: '/admin/media',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -130,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginImport
       parentRoute: typeof rootRoute
     }
+    '/admin/media': {
+      id: '/admin/media'
+      path: '/admin/media'
+      fullPath: '/admin/media'
+      preLoaderRoute: typeof AdminMediaImport
+      parentRoute: typeof rootRoute
+    }
     '/admin/products': {
       id: '/admin/products'
       path: '/admin/products'
@@ -158,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsSlugImport
       parentRoute: typeof rootRoute
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexImport
+      parentRoute: typeof rootRoute
+    }
     '/catalog/': {
       id: '/catalog/'
       path: '/catalog'
@@ -183,10 +211,12 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
 }
@@ -197,10 +227,12 @@ export interface FileRoutesByTo {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
 }
@@ -212,10 +244,12 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
 }
@@ -228,10 +262,12 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/login'
+    | '/admin/media'
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
     | '/events/$slug'
+    | '/admin'
     | '/catalog'
     | '/events'
   fileRoutesByTo: FileRoutesByTo
@@ -241,10 +277,12 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/login'
+    | '/admin/media'
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
     | '/events/$slug'
+    | '/admin'
     | '/catalog'
     | '/events'
   id:
@@ -254,10 +292,12 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/login'
+    | '/admin/media'
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
     | '/events/$slug'
+    | '/admin/'
     | '/catalog/'
     | '/events/'
   fileRoutesById: FileRoutesById
@@ -269,10 +309,12 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   PaymentRoute: typeof PaymentRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
   EventsSlugRoute: typeof EventsSlugRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
 }
@@ -283,10 +325,12 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   PaymentRoute: PaymentRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
   EventsSlugRoute: EventsSlugRoute,
+  AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
 }
@@ -306,10 +350,12 @@ export const routeTree = rootRoute
         "/cart",
         "/payment",
         "/admin/login",
+        "/admin/media",
         "/admin/products",
         "/auth/register",
         "/catalog/$id",
         "/events/$slug",
+        "/admin/",
         "/catalog/",
         "/events/"
       ]
@@ -329,6 +375,9 @@ export const routeTree = rootRoute
     "/admin/login": {
       "filePath": "admin/login.tsx"
     },
+    "/admin/media": {
+      "filePath": "admin/media.tsx"
+    },
     "/admin/products": {
       "filePath": "admin/products.tsx"
     },
@@ -340,6 +389,9 @@ export const routeTree = rootRoute
     },
     "/events/$slug": {
       "filePath": "events/$slug.tsx"
+    },
+    "/admin/": {
+      "filePath": "admin/index.tsx"
     },
     "/catalog/": {
       "filePath": "catalog/index.tsx"

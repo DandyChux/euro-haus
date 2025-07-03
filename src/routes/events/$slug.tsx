@@ -8,10 +8,10 @@ import { Separator } from '~/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { stripeService } from '~/lib/services/stripe-service';
-import type { EventProduct } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { InfiniteMovingCards } from '~/components/ui/infinite-moving-cards';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
@@ -309,6 +309,28 @@ function EventDetailPage() {
 						</Card>
 					</div>
 				</div>
+
+				{/* Sponsors Section */}
+				{event.sponsors && event.sponsors.length > 0 && (
+					<div className="mt-16">
+						<div className="text-center mb-8">
+							<h2 className="text-3xl font-bold mb-2">Event Sponsors</h2>
+							<p className="text-muted-foreground">Thank you to our partners who make this event possible</p>
+						</div>
+						<InfiniteMovingCards
+							items={event.sponsors.map(sponsor => ({
+								name: sponsor.name,
+								logoUrl: sponsor.logoUrl,
+								link: sponsor.link
+							}))}
+							variant="logo"
+							direction="left"
+							speed="normal"
+							pauseOnHover={true}
+							className="mb-8"
+						/>
+					</div>
+				)}
 			</div>
 		</div>
 	);

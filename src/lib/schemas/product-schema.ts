@@ -19,6 +19,13 @@ export const productSchema = baseSchema.extend({
 	compareAtPrice: z.string().regex(/^\d*\.?\d{0,2}$/, 'Invalid price format').optional().or(z.literal('')),
 });
 
+// Sponsor schema
+export const sponsorSchema = z.object({
+	name: z.string().min(1, 'Sponsor name is required'),
+	logoUrl: z.string().url('Invalid logo URL').or(z.literal('')),
+	link: z.string().url('Invalid sponsor URL').optional().or(z.literal('')),
+});
+
 // Event schema
 export const eventSchema = baseSchema.extend({
 	type: z.literal('event'),
@@ -36,6 +43,7 @@ export const eventSchema = baseSchema.extend({
 		activity: z.string().min(1, 'Activity is required'),
 	})).min(1),
 	includes: z.array(z.object({ value: z.string() })).min(1),
+	sponsors: z.array(sponsorSchema).optional(),
 });
 
 // Combined schema
