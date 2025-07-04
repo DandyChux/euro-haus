@@ -122,8 +122,8 @@ function ProductDetailPage() {
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null)
 
 	// Type guards
-	const isEventProduct = (p: any): p is EventWithTiers => isEvent;
-	const hasProductVariants = (p: any): p is ProductWithVariants => hasVariants && !isEvent;
+	const isEventProduct = (p: typeof product): p is EventWithTiers => isEvent;
+	const hasProductVariants = (p: typeof product): p is ProductWithVariants => (hasVariants ?? false) && !isEvent;
 
 	// Event specific data
 	const eventData = isEventProduct(product) ? product : null;
@@ -173,6 +173,7 @@ function ProductDetailPage() {
 	// Handle tier selection for events
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
 		try {
+			setSelectedTier(tier);
 			const response = await apiClient.post('/checkout/session', {
 				priceId: tier.priceId,
 				quantity: tierQuantity,
@@ -187,7 +188,7 @@ function ProductDetailPage() {
 			if (stripe && response.data.sessionId) {
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
 			}
-		} catch (error) {
+		} catch {
 			toast.error('Failed to start checkout');
 		}
 	};
@@ -229,7 +230,6 @@ function ProductDetailPage() {
 			quantity,
 			imageUrl: selectedVariant?.images?.[0] || product.imageUrl,
 			maxQuantity: getMaxQuantity(),
-			variant: selectedVariant?.variant,
 			type: isEvent ? 'event' : 'product',
 			eventDate: eventData?.date,
 		})
@@ -376,7 +376,7 @@ function ProductDetailPage() {
 
 								{/* Category or Event Status */}
 								<p className="text-sm text-muted-foreground mt-2">
-									{isEvent ? `Status: ${eventData?.status || 'upcoming'}` : `Category: ${product.category?.charAt(0).toUpperCase() + product.category?.slice(1)}`}
+									{isEvent ? `Status: ${eventData?.status || 'upcoming'}` : `Category: ${product.category ? product.category.charAt(0).toUpperCase() + product.category.slice(1) : 'General'}`}
 								</p>
 							</div>
 

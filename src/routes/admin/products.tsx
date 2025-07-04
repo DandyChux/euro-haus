@@ -66,7 +66,8 @@ import {
 import {
 	formSchema,
 	FormData,
-	ProductFormData
+	ProductFormData,
+	EventFormData
 } from '~/lib/schemas/product-schema';
 import { ExistingPricesManager } from '~/components/admin/existing-prices-manager';
 
@@ -77,12 +78,18 @@ interface StripeProduct {
 	description: string | null;
 	images: string[];
 	metadata: Record<string, string>;
-	active: boolean;
 	default_price: {
 		id: string;
 		unit_amount: number;
 		currency: string;
 	} | null;
+	prices?: Array<{
+		id: string;
+		unit_amount: number;
+		currency: string;
+		nickname: string | null;
+		metadata: Record<string, string>;
+	}>;
 }
 
 export const Route = createFileRoute('/admin/products')({
@@ -221,6 +228,7 @@ function AdminProductsContent() {
 				eventTime: eventDate.toTimeString().slice(0, 5),
 				location: product.metadata.location || 'Euro Haus Headquarters, Orlando',
 				capacity: product.metadata.capacity || '100',
+				availableSpots: product.metadata.available_spots || product.metadata.capacity || '100',
 				organizer: product.metadata.organizer || 'Euro Haus Events Team',
 				status: (product.metadata.status as EventFormData['status']) || 'upcoming',
 				hasTiers: product.metadata.has_tiers === 'true',
@@ -290,7 +298,7 @@ function AdminProductsContent() {
 			if (data.type === 'product') {
 				// Product metadata
 				metadata.category = data.category;
-				metadata.in_stock = data.inStock.toString();
+				metadata.in_stock = data.inStock?.toString() || '0';
 				metadata.is_new = data.isNew.toString();
 				if (data.compareAtPrice) {
 					metadata.compare_at_price = data.compareAtPrice;
@@ -336,8 +344,8 @@ function AdminProductsContent() {
 				} else {
 					// Single price product
 					metadata.has_variants = 'false';
-					metadata.max_quantity = data.maxQuantity;
-					requestData.price = Math.round(parseFloat(data.price) * 100);
+					metadata.max_quantity = data.maxQuantity || '0';
+					requestData.price = Math.round(parseFloat(data.price || '0') * 100);
 					requestData.currency = 'usd';
 
 					if (editingProduct) {
@@ -404,9 +412,9 @@ function AdminProductsContent() {
 				} else {
 					// Single price event
 					metadata.has_tiers = 'false';
-					metadata.max_quantity = data.maxQuantity;
-					metadata.available_spots = data.availableSpots;
-					requestData.price = Math.round(parseFloat(data.price) * 100);
+					metadata.max_quantity = data.maxQuantity || '';
+					metadata.available_spots = data.availableSpots || '';
+					requestData.price = Math.round(parseFloat(data.price || '') * 100);
 					requestData.currency = 'usd';
 
 					if (editingProduct) {
@@ -435,55 +443,6 @@ function AdminProductsContent() {
 			setIsLoading(false);
 		}
 	};
-
-	// When switching product types, reset the form with proper defaults
-	const handleProductTypeChange = (newType: 'product' | 'event') => {
-		setProductType(newType);
-
-		if (newType === 'event') {
-			const eventDefaults: EventFormData = {
-				type: 'event',
-				name: '',
-				description: '',
-				imageUrl: '',
-				featured: false,
-				slug: '',
-				eventDate: '',
-				eventTime: '09:00',
-				location: 'Euro Haus Headquarters, Orlando',
-				capacity: '100',
-				organizer: 'Euro Haus Events Team',
-				status: 'upcoming',
-				hasTiers: false,
-				price: '',
-				maxQuantity: '10',
-				priceTiers: [],
-				tags: [{ value: '' }],
-				agenda: [{ time: '9:00 AM', activity: '' }],
-				includes: [{ value: '' }],
-				sponsors: [],
-			};
-			form.reset(eventDefaults);
-		} else {
-			const productDefaults: ProductFormData = {
-				type: 'product',
-				name: '',
-				description: '',
-				imageUrl: '',
-				featured: false,
-				category: 'merchandise',
-				hasVariants: false,
-				price: '',
-				compareAtPrice: '',
-				inStock: true,
-				isNew: false,
-				maxQuantity: '10',
-				variants: [],
-			};
-			form.reset(productDefaults);
-		}
-	};
-
 
 	// Handle delete confirmation
 	const handleDeleteProduct = async () => {
@@ -520,6 +479,7 @@ function AdminProductsContent() {
 			eventTime: '09:00',
 			location: 'Euro Haus Headquarters, Orlando',
 			capacity: '100',
+			availableSpots: '100',
 			organizer: 'Euro Haus Events Team',
 			status: 'upcoming',
 			tags: [
@@ -562,10 +522,11 @@ function AdminProductsContent() {
 			featured: false,
 			maxQuantity: '10',
 			category: 'apparel',
-			inStock: true,
-			isNew: false,
-			compareAtPrice: '39.99',
 			hasVariants: false,
+			compareAtPrice: '',
+			inStock: true,
+			isNew: true,
+			variants: [],
 		});
 		toast.success('Product template loaded');
 		setActiveTab('create');
@@ -842,6 +803,7 @@ function AdminProductsContent() {
 																	agenda: [{ time: '9:00 AM', activity: '' }],
 																	includes: [{ value: '' }],
 																	sponsors: [],
+																	availableSpots: '',
 																};
 																form.reset(eventDefaults);
 															} else {

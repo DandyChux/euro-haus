@@ -7,7 +7,7 @@ export const priceTierSchema = z.object({
 	description: z.string().optional(),
 	features: z.array(z.string()).optional(),
 	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
-	sortOrder: z.number().default(0),
+	sortOrder: z.number(),
 });
 
 // Product variant schema for size/color variations
@@ -17,8 +17,8 @@ export const productVariantSchema = z.object({
 	color: z.string().optional(),
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
 	sku: z.string().optional(),
-	inStock: z.boolean().default(true),
-	sortOrder: z.number().default(0),
+	inStock: z.boolean(),
+	sortOrder: z.number(),
 });
 
 // Base schema for all products
@@ -27,14 +27,13 @@ export const baseSchema = z.object({
 	description: z.string().min(1, 'Description is required'),
 	imageUrl: z.string().url('Invalid URL').or(z.literal('')),
 	featured: z.boolean(),
-	// Remove single price fields as we'll use variants/tiers
 });
 
 // Regular product schema with variants
 export const productSchema = baseSchema.extend({
 	type: z.literal('product'),
 	category: z.enum(['merchandise', 'apparel', 'accessories', 'collectibles']),
-	hasVariants: z.boolean().default(false),
+	hasVariants: z.boolean(),
 	// Single price for products without variants
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format').optional(),
 	compareAtPrice: z.string().regex(/^\d*\.?\d{0,2}$/, 'Invalid price format').optional().or(z.literal('')),
@@ -60,6 +59,7 @@ export const eventSchema = baseSchema.extend({
 	eventTime: z.string().min(1, 'Event time is required'),
 	location: z.string().min(1, 'Location is required'),
 	capacity: z.string().regex(/^\d+$/, 'Must be a number'),
+	availableSpots: z.string().regex(/^\d+$/, 'Must be a number'),
 	organizer: z.string(),
 	status: z.enum(['upcoming', 'ongoing', 'completed', 'cancelled', 'soldout']),
 	tags: z.array(z.object({ value: z.string() })).min(1),
@@ -70,7 +70,7 @@ export const eventSchema = baseSchema.extend({
 	includes: z.array(z.object({ value: z.string() })).min(1),
 	sponsors: z.array(sponsorSchema).optional(),
 	// Price tiers for events
-	hasTiers: z.boolean().default(false),
+	hasTiers: z.boolean(),
 	// Single price for events without tiers
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format').optional(),
 	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
