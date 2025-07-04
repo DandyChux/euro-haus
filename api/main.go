@@ -80,9 +80,15 @@ func main() {
 	// API Routes
 	api := r.PathPrefix("/api").Subrouter()
 
+	// Healthcheck
+	api.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("GET")
+
 	// Products endpoints
 	api.HandleFunc("/products", handlers.GetProducts).Methods("GET")
 	api.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
+	api.HandleFunc("/products/{id}/prices", handlers.GetProductPrices).Methods("GET", "OPTIONS")
 
 	// Auth endpoints
 	api.HandleFunc("/auth/login", handlers.Login).Methods("POST", "OPTIONS")
@@ -110,6 +116,11 @@ func main() {
 	api.HandleFunc("/admin/media", handlers.ListMedia).Methods("GET", "OPTIONS")
 	api.HandleFunc("/admin/media/upload", handlers.UploadMedia).Methods("POST", "OPTIONS")
 	api.HandleFunc("/admin/media/delete", handlers.DeleteMedia).Methods("DELETE", "OPTIONS")
+
+	api.HandleFunc("/admin/create-price", handlers.CreatePrice).Methods("POST", "OPTIONS")
+	api.HandleFunc("/admin/update-price/{id}", handlers.UpdatePrice).Methods("PUT", "OPTIONS")
+	api.HandleFunc("/admin/archive-price/{id}", handlers.ArchivePrice).Methods("PUT", "OPTIONS")
+	api.HandleFunc("/admin/set-default-price/{id}", handlers.SetDefaultPrice).Methods("PUT", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	r.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

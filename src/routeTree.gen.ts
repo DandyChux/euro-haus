@@ -24,6 +24,7 @@ import { Route as AuthRegisterImport } from './routes/auth/register'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
+import { Route as EventsSlugCheckinImport } from './routes/events/$slug.checkin'
 
 // Create/Update Routes
 
@@ -103,6 +104,12 @@ const AdminLoginRoute = AdminLoginImport.update({
   id: '/admin/login',
   path: '/admin/login',
   getParentRoute: () => rootRoute,
+} as any)
+
+const EventsSlugCheckinRoute = EventsSlugCheckinImport.update({
+  id: '/checkin',
+  path: '/checkin',
+  getParentRoute: () => EventsSlugRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -200,10 +207,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsIndexImport
       parentRoute: typeof rootRoute
     }
+    '/events/$slug/checkin': {
+      id: '/events/$slug/checkin'
+      path: '/checkin'
+      fullPath: '/events/$slug/checkin'
+      preLoaderRoute: typeof EventsSlugCheckinImport
+      parentRoute: typeof EventsSlugImport
+    }
   }
 }
 
 // Create and export the route tree
+
+interface EventsSlugRouteChildren {
+  EventsSlugCheckinRoute: typeof EventsSlugCheckinRoute
+}
+
+const EventsSlugRouteChildren: EventsSlugRouteChildren = {
+  EventsSlugCheckinRoute: EventsSlugCheckinRoute,
+}
+
+const EventsSlugRouteWithChildren = EventsSlugRoute._addFileChildren(
+  EventsSlugRouteChildren,
+)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -215,10 +241,11 @@ export interface FileRoutesByFullPath {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRoute
+  '/events/$slug': typeof EventsSlugRouteWithChildren
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
+  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesByTo {
@@ -231,10 +258,11 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRoute
+  '/events/$slug': typeof EventsSlugRouteWithChildren
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
+  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesById {
@@ -248,10 +276,11 @@ export interface FileRoutesById {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRoute
+  '/events/$slug': typeof EventsSlugRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRouteTypes {
@@ -270,6 +299,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog'
     | '/events'
+    | '/events/$slug/checkin'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -285,6 +315,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog'
     | '/events'
+    | '/events/$slug/checkin'
   id:
     | '__root__'
     | '/'
@@ -300,6 +331,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/catalog/'
     | '/events/'
+    | '/events/$slug/checkin'
   fileRoutesById: FileRoutesById
 }
 
@@ -313,7 +345,7 @@ export interface RootRouteChildren {
   AdminProductsRoute: typeof AdminProductsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
-  EventsSlugRoute: typeof EventsSlugRoute
+  EventsSlugRoute: typeof EventsSlugRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
@@ -329,7 +361,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminProductsRoute: AdminProductsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
-  EventsSlugRoute: EventsSlugRoute,
+  EventsSlugRoute: EventsSlugRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
@@ -388,7 +420,10 @@ export const routeTree = rootRoute
       "filePath": "catalog/$id.tsx"
     },
     "/events/$slug": {
-      "filePath": "events/$slug.tsx"
+      "filePath": "events/$slug.tsx",
+      "children": [
+        "/events/$slug/checkin"
+      ]
     },
     "/admin/": {
       "filePath": "admin/index.tsx"
@@ -398,6 +433,10 @@ export const routeTree = rootRoute
     },
     "/events/": {
       "filePath": "events/index.tsx"
+    },
+    "/events/$slug/checkin": {
+      "filePath": "events/$slug.checkin.tsx",
+      "parent": "/events/$slug"
     }
   }
 }

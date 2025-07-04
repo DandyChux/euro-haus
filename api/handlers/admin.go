@@ -385,3 +385,291 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
+
+// CreatePrice creates a new price for a product
+func CreatePrice(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Check authorization
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		log.Printf("Missing or invalid authorization header")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token := authHeader[7:]
+	if !VerifyAuth(token) {
+		log.Printf("Invalid token: %s", token)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Product    string            `json:"product"`
+		UnitAmount int64             `json:"unit_amount"`
+		Currency   string            `json:"currency"`
+		Nickname   string            `json:"nickname"`
+		Metadata   map[string]string `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	params := &stripe.PriceParams{
+		Product:    stripe.String(req.Product),
+		UnitAmount: stripe.Int64(req.UnitAmount),
+		Currency:   stripe.String(req.Currency),
+		Nickname:   stripe.String(req.Nickname),
+		Metadata:   req.Metadata,
+	}
+
+	newPrice, err := price.New(params)
+	if err != nil {
+		log.Printf("Error creating price: %v", err)
+		http.Error(w, "Failed to create price", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"id":          newPrice.ID,
+		"product":     newPrice.Product.ID,
+		"unit_amount": newPrice.UnitAmount,
+		"nickname":    newPrice.Nickname,
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// UpdatePrice updates the metadata and nickname of a price
+func UpdatePrice(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Check authorization
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token := authHeader[7:]
+	if !VerifyAuth(token) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	priceID := vars["id"]
+
+	var req struct {
+		Nickname string            `json:"nickname"`
+		Metadata map[string]string `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get the existing price first to preserve metadata
+	existingPrice, err := price.Get(priceID, nil)
+	if err != nil {
+		log.Printf("Price not found: %v", err)
+		http.Error(w, "Price not found", http.StatusNotFound)
+		return
+	}
+
+	// Merge metadata
+	finalMetadata := existingPrice.Metadata
+	if finalMetadata == nil {
+		finalMetadata = make(map[string]string)
+	}
+	for k, v := range req.Metadata {
+		finalMetadata[k] = v
+	}
+
+	params := &stripe.PriceParams{
+		Metadata: finalMetadata,
+	}
+
+	// Only update nickname if provided
+	if req.Nickname != "" {
+		params.Nickname = stripe.String(req.Nickname)
+	}
+
+	updatedPrice, err := price.Update(priceID, params)
+	if err != nil {
+		log.Printf("Error updating price %s: %v", priceID, err)
+		http.Error(w, "Failed to update price: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Successfully updated price %s with nickname: %s", priceID, updatedPrice.Nickname)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"nickname": updatedPrice.Nickname,
+	})
+}
+
+// ArchivePrice archives a price (sets active to false)
+func ArchivePrice(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Check authorization
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token := authHeader[7:]
+	if !VerifyAuth(token) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	priceID := vars["id"]
+
+	// Get the price to check if it's a default price
+	priceObj, err := price.Get(priceID, nil)
+	if err != nil {
+		log.Printf("Price not found: %v", err)
+		http.Error(w, "Price not found", http.StatusNotFound)
+		return
+	}
+
+	// Get the product to check if this is the default price
+	productObj, err := product.Get(priceObj.Product.ID, nil)
+	if err != nil {
+		log.Printf("Product not found: %v", err)
+		http.Error(w, "Product not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if this is the default price
+	if productObj.DefaultPrice != nil && productObj.DefaultPrice.ID == priceID {
+		http.Error(w, "Cannot archive the default price. Please set another price as default first.", http.StatusBadRequest)
+		return
+	}
+
+	params := &stripe.PriceParams{
+		Active: stripe.Bool(false),
+	}
+
+	_, err = price.Update(priceID, params)
+	if err != nil {
+		log.Printf("Error archiving price: %v", err)
+		http.Error(w, "Failed to archive price", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// SetDefaultPrice sets a price as the default for a product
+func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Check authorization
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token := authHeader[7:]
+	if !VerifyAuth(token) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	productID := vars["id"]
+
+	var req struct {
+		PriceID string `json:"priceId"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the price exists - expand the product field
+	params := &stripe.PriceParams{}
+	params.AddExpand("product")
+	priceObj, err := price.Get(req.PriceID, params)
+	if err != nil {
+		log.Printf("Price not found: %v", err)
+		http.Error(w, "Price not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if the price belongs to the product
+	if priceObj.Product == nil || priceObj.Product.ID != productID {
+		log.Printf("Price product mismatch: price product=%v, requested product=%s", priceObj.Product, productID)
+		http.Error(w, "Price does not belong to this product", http.StatusBadRequest)
+		return
+	}
+
+	// Update the product's default price
+	productParams := &stripe.ProductParams{
+		DefaultPrice: stripe.String(req.PriceID),
+	}
+
+	updatedProduct, err := product.Update(productID, productParams)
+	if err != nil {
+		log.Printf("Error setting default price: %v", err)
+		http.Error(w, "Failed to set default price", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Successfully set default price %s for product %s", req.PriceID, productID)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"defaultPrice": updatedProduct.DefaultPrice.ID,
+	})
+}

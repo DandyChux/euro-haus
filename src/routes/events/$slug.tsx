@@ -7,27 +7,83 @@ import { Badge } from '~/components/ui/badge';
 import { Separator } from '~/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
-import { stripeService } from '~/lib/services/stripe-service';
+import { stripeService, TieredPrice, EventWithTiers } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { InfiniteMovingCards } from '~/components/ui/infinite-moving-cards';
+import { apiClient } from '~/lib/api';
+import { TieredPricing } from '~/components/tiered-pricing';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
+		// Try to fetch event with tiers first
+		const eventWithTiers = await stripeService.getEventWithPriceTiers(params.slug);
+		if (eventWithTiers) {
+			return { event: eventWithTiers, hasTiers: true };
+		}
+
+		// Fallback to regular event
 		const event = await stripeService.getEventBySlug(params.slug);
 		if (!event) {
 			throw new Error('Event not found');
 		}
-		return { event };
+		return { event, hasTiers: false };
 	},
 	component: EventDetailPage,
 });
 
 function EventDetailPage() {
-	const { event } = Route.useLoaderData();
+	const { event, hasTiers } = Route.useLoaderData();
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
+	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
+
+	console.log(event)
+
+	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
+		try {
+			const response = await apiClient.post('/checkout/session', {
+				priceId: tier.priceId,
+				quantity: tierQuantity,
+				metadata: {
+					eventId: event?.id,
+					eventName: event?.title,
+					tierName: tier.name,
+				},
+			});
+
+			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			if (stripe && response.data.sessionId) {
+				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
+			}
+		} catch (error) {
+			console.error('Checkout error:', error);
+			toast.error('Failed to start checkout');
+		}
+	};
+
+	const handleSingleCheckout = async () => {
+		try {
+			const response = await apiClient.post('/create-checkout-session', {
+				priceId: event?.priceId,
+				quantity,
+			});
+
+			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			if (stripe && response.data.sessionId) {
+				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
+			}
+		} catch (error) {
+			console.error('Checkout error:', error);
+			toast.error('Failed to start checkout');
+		}
+	};
+
+	const handleTierSelection = (tier: TieredPrice) => {
+		setSelectedTier(tier);
+		setQuantity(1); // Reset quantity when tier changes
+	};
 
 	const handleAddToCart = () => {
 		if (event.status === 'soldout') {
@@ -35,25 +91,37 @@ function EventDetailPage() {
 			return;
 		}
 
-		if (event.availableSpots && quantity > event.availableSpots) {
-			toast.error(`Only ${event.availableSpots} tickets remaining`);
+		// If has tiers and no tier selected
+		if (hasTiers && (event as EventWithTiers).priceTiers && !selectedTier) {
+			toast.error('Please select a ticket type');
+			return;
+		}
+
+		const ticketPrice = selectedTier ? selectedTier.amount : event.price;
+		const ticketType = selectedTier ? selectedTier.name : 'General Admission';
+		const maxAvailable = selectedTier?.maxQuantity ?
+			Math.min(selectedTier.maxQuantity, event.availableSpots || 10) :
+			(event.availableSpots || event.maxQuantity || 10);
+
+		if (quantity > maxAvailable) {
+			toast.error(`Only ${maxAvailable} tickets remaining for this type`);
 			return;
 		}
 
 		addItem({
 			id: event.id,
-			priceId: event.priceId,
-			title: `${event.title} - Ticket`,
+			priceId: selectedTier?.priceId || event.priceId,
+			title: `${event.title} - ${ticketType}`,
 			description: `Event on ${new Date(event.date).toLocaleDateString()}`,
-			price: event.price,
+			price: ticketPrice,
 			quantity,
 			imageUrl: event.imageUrl,
-			maxQuantity: event.availableSpots || event.maxQuantity,
+			maxQuantity: maxAvailable,
 			type: 'event',
 			eventDate: event.date,
 		});
 
-		toast.success(`Added ${quantity} ticket${quantity > 1 ? 's' : ''} to cart`);
+		toast.success(`Added ${quantity} ${ticketType} ticket${quantity > 1 ? 's' : ''} to cart`);
 	};
 
 	const handleShare = async () => {
@@ -68,7 +136,6 @@ function EventDetailPage() {
 				console.log('Error sharing:', error);
 			}
 		} else {
-			// Fallback - copy to clipboard
 			navigator.clipboard.writeText(window.location.href);
 			toast.success('Link copied to clipboard');
 		}
@@ -216,97 +283,182 @@ function EventDetailPage() {
 
 					{/* Right Column - Booking */}
 					<div className="space-y-4">
-						<Card className="sticky top-24">
-							<CardHeader>
-								<CardTitle>Book Your Spot</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								<div className="text-3xl font-bold">
-									${event.price.toFixed(2)}
-									<span className="text-sm font-normal text-muted-foreground"> per ticket</span>
-								</div>
-
-								{/* Quantity Selector */}
-								<div className="space-y-2">
-									<label className="text-sm font-medium">Number of Tickets</label>
-									<div className="flex items-center gap-2">
-										<Button
-											variant="outline"
-											size="icon"
-											className="h-8 w-8"
-											onClick={() => setQuantity(Math.max(1, quantity - 1))}
-											disabled={quantity <= 1}
-										>
-											<Minus className="h-3 w-3" />
-										</Button>
-										<Input
-											type="number"
-											value={quantity}
-											onChange={(e) => setQuantity(Math.max(1, Math.min(event.availableSpots || 10, parseInt(e.target.value) || 1)))}
-											className="w-16 h-8 text-center"
-											min="1"
-											max={event.availableSpots || 10}
+						{/* Tiered Pricing */}
+						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (
+							<div className="space-y-4">
+								<Card>
+									<CardHeader>
+										<CardTitle>Select Tickets</CardTitle>
+									</CardHeader>
+									<CardContent>
+										<TieredPricing
+											tiers={(event as EventWithTiers).priceTiers}
+											onSelectTier={(tier, qty) => {
+												handleTierSelection(tier);
+												handleSelectTier(tier, qty);
+											}}
 										/>
-										<Button
-											variant="outline"
-											size="icon"
-											className="h-8 w-8"
-											onClick={() => setQuantity(Math.min(event.availableSpots || 10, quantity + 1))}
-											disabled={quantity >= (event.availableSpots || 10)}
-										>
-											<Plus className="h-3 w-3" />
-										</Button>
-									</div>
-								</div>
+									</CardContent>
+								</Card>
 
-								<Separator />
+								{/* Add to Cart for Tiered Events */}
+								{selectedTier && (
+									<Card>
+										<CardHeader>
+											<CardTitle>Add to Cart</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-4">
+											<div className="text-lg">
+												<span className="font-semibold">{selectedTier.name}</span>
+												<span className="text-muted-foreground"> - ${selectedTier.amount}</span>
+											</div>
 
-								<div className="space-y-2 text-sm">
-									<p className="flex justify-between">
-										<span>Ticket Price</span>
-										<span className="font-medium">${event.price.toFixed(2)} × {quantity}</span>
-									</p>
-									<p className="flex justify-between">
-										<span>Processing Fee</span>
-										<span className="font-medium">$0.00</span>
-									</p>
-									<Separator />
-									<p className="flex justify-between text-base font-bold">
-										<span>Total</span>
-										<span>${(event.price * quantity).toFixed(2)}</span>
-									</p>
-								</div>
+											{/* Quantity Selector */}
+											<div className="space-y-2">
+												<label className="text-sm font-medium">Number of Tickets</label>
+												<div className="flex items-center gap-2">
+													<Button
+														variant="outline"
+														size="icon"
+														className="h-8 w-8"
+														onClick={() => setQuantity(Math.max(1, quantity - 1))}
+														disabled={quantity <= 1}
+													>
+														<Minus className="h-3 w-3" />
+													</Button>
+													<Input
+														type="number"
+														value={quantity}
+														onChange={(e) => setQuantity(Math.max(1, Math.min(selectedTier.maxQuantity || 10, parseInt(e.target.value) || 1)))}
+														className="w-16 h-8 text-center"
+														min="1"
+														max={selectedTier.maxQuantity || 10}
+													/>
+													<Button
+														variant="outline"
+														size="icon"
+														className="h-8 w-8"
+														onClick={() => setQuantity(Math.min(selectedTier.maxQuantity || 10, quantity + 1))}
+														disabled={quantity >= (selectedTier.maxQuantity || 10)}
+													>
+														<Plus className="h-3 w-3" />
+													</Button>
+												</div>
+											</div>
 
-								<div className="space-y-2">
-									<Button
-										className="w-full"
-										size="lg"
-										onClick={handleAddToCart}
-										disabled={event.status === 'soldout' || event.availableSpots === 0}
-									>
-										{event.status === 'soldout' ? 'Sold Out' : 'Add to Cart'}
-									</Button>
-									<div className="flex gap-2">
-										<Button variant="outline" size="icon" className="flex-1">
-											<Heart className="h-4 w-4" />
-										</Button>
-										<Button variant="outline" size="icon" className="flex-1" onClick={handleShare}>
-											<Share2 className="h-4 w-4" />
-										</Button>
-									</div>
-								</div>
-
-								{event.availableSpots && event.availableSpots < 10 && (
-									<p className="text-xs text-center text-orange-600 font-medium">
-										Only {event.availableSpots} tickets remaining!
-									</p>
+											<Button
+												className="w-full"
+												size="lg"
+												onClick={handleAddToCart}
+											>
+												Add to Cart - ${(selectedTier.amount * quantity).toFixed(2)}
+											</Button>
+										</CardContent>
+									</Card>
 								)}
+							</div>
+						) : (
+							/* Single Price Booking */
+							<Card className="sticky top-24">
+								<CardHeader>
+									<CardTitle>Book Your Spot</CardTitle>
+								</CardHeader>
+								<CardContent className="space-y-4">
+									<div className="text-3xl font-bold">
+										${event.price.toFixed(2)}
+										<span className="text-sm font-normal text-muted-foreground"> per ticket</span>
+									</div>
 
-								<p className="text-xs text-center text-muted-foreground">
-									Free cancellation up to 48 hours before the event
-								</p>
-							</CardContent>
-						</Card>
+									{/* Quantity Selector */}
+									<div className="space-y-2">
+										<label className="text-sm font-medium">Number of Tickets</label>
+										<div className="flex items-center gap-2">
+											<Button
+												variant="outline"
+												size="icon"
+												className="h-8 w-8"
+												onClick={() => setQuantity(Math.max(1, quantity - 1))}
+												disabled={quantity <= 1}
+											>
+												<Minus className="h-3 w-3" />
+											</Button>
+											<Input
+												type="number"
+												value={quantity}
+												onChange={(e) => setQuantity(Math.max(1, Math.min(event.availableSpots || 10, parseInt(e.target.value) || 1)))}
+												className="w-16 h-8 text-center"
+												min="1"
+												max={event.availableSpots || 10}
+											/>
+											<Button
+												variant="outline"
+												size="icon"
+												className="h-8 w-8"
+												onClick={() => setQuantity(Math.min(event.availableSpots || 10, quantity + 1))}
+												disabled={quantity >= (event.availableSpots || 10)}
+											>
+												<Plus className="h-3 w-3" />
+											</Button>
+										</div>
+									</div>
+
+									<Separator />
+
+									<div className="space-y-2 text-sm">
+										<p className="flex justify-between">
+											<span>Ticket Price</span>
+											<span className="font-medium">${event.price.toFixed(2)} × {quantity}</span>
+										</p>
+										<p className="flex justify-between">
+											<span>Processing Fee</span>
+											<span className="font-medium">$0.00</span>
+										</p>
+										<Separator />
+										<p className="flex justify-between text-base font-bold">
+											<span>Total</span>
+											<span>${(event.price * quantity).toFixed(2)}</span>
+										</p>
+									</div>
+
+									<div className="space-y-2">
+										<Button
+											className="w-full"
+											size="lg"
+											onClick={handleSingleCheckout}
+											disabled={event.status === 'soldout' || event.availableSpots === 0}
+										>
+											{event.status === 'soldout' ? 'Sold Out' : 'Book Now'}
+										</Button>
+										<Button
+											className="w-full"
+											variant="outline"
+											onClick={handleAddToCart}
+											disabled={event.status === 'soldout' || event.availableSpots === 0}
+										>
+											Add to Cart
+										</Button>
+										<div className="flex gap-2">
+											<Button variant="outline" size="icon" className="flex-1">
+												<Heart className="h-4 w-4" />
+											</Button>
+											<Button variant="outline" size="icon" className="flex-1" onClick={handleShare}>
+												<Share2 className="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+
+									{event.availableSpots && event.availableSpots < 10 && (
+										<p className="text-xs text-center text-orange-600 font-medium">
+											Only {event.availableSpots} tickets remaining!
+										</p>
+									)}
+
+									<p className="text-xs text-center text-muted-foreground">
+										Free cancellation up to 48 hours before the event
+									</p>
+								</CardContent>
+							</Card>
+						)}
 					</div>
 				</div>
 

@@ -131,6 +131,16 @@ const EventCard: React.FC<EventCardProps> = ({
 	index,
 	className
 }) => {
+	// Calculate the price display
+	const getPriceDisplay = () => {
+		// Use the new hasTiers and lowestPrice fields
+		if (event.hasTiers && event.lowestPrice) {
+			return `From $${event.lowestPrice.toFixed(2)} USD`;
+		}
+		// Regular single price
+		return `$${event.price.toFixed(2)} USD`;
+	};
+
 	return (
 		<Card className={cn('relative group rounded-none p-4 border-none flex flex-col', {
 			'bg-secondary/10 text-foreground': index % 2 === 0,
@@ -161,7 +171,7 @@ const EventCard: React.FC<EventCardProps> = ({
 						day: 'numeric'
 					})}</span>
 					<span className="line-clamp-2">{event.description}</span>
-					<span>From ${event.price} USD</span>
+					<span className="font-medium text-primary">{getPriceDisplay()}</span>
 				</CardDescription>
 			</CardHeader>
 			<CardContent

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '~/components/ui/button';
@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Checkbox } from '~/components/ui/checkbox';
 import { Separator } from '~/components/ui/separator';
 import { Badge } from '~/components/ui/badge';
+import { ProductVariantsForm } from '~/components/admin/product-variants-form';
+import { EventTiersForm } from '~/components/admin/event-tiers-form';
 import { Skeleton } from '~/components/ui/skeleton';
 import { toast } from 'sonner';
 import { apiClient } from '~/lib/api';
@@ -63,8 +65,10 @@ import {
 } from '~/components/ui/alert-dialog';
 import {
 	formSchema,
-	FormData
+	FormData,
+	ProductFormData
 } from '~/lib/schemas/product-schema';
+import { ExistingPricesManager } from '~/components/admin/existing-prices-manager';
 
 // Stripe Product interface
 interface StripeProduct {
@@ -114,33 +118,23 @@ function AdminProductsContent() {
 			type: 'product',
 			name: '',
 			description: '',
-			price: '',
 			imageUrl: '',
 			featured: false,
-			maxQuantity: '10',
-			// Product specific
+			// Product specific with all required fields
 			category: 'merchandise',
+			hasVariants: false,
+			price: '',
+			compareAtPrice: '',
 			inStock: true,
 			isNew: false,
-			compareAtPrice: '',
-			// Event specific
-			slug: '',
-			eventDate: '',
-			eventTime: '09:00',
-			location: 'Euro Haus Headquarters, Orlando',
-			capacity: '100',
-			availableSpots: '100',
-			organizer: 'Euro Haus Events Team',
-			status: 'upcoming',
-			tags: [{ value: '' }],
-			agenda: [{ time: '9:00 AM', activity: '' }],
-			includes: [{ value: '' }],
-			sponsors: [],
+			maxQuantity: '10',
+			variants: [],
+			// Event specific fields will be set when switching to event type
 		} as FormData,
 	});
 
 	// Fetch products
-	const fetchProducts = async () => {
+	const fetchProducts = useCallback(async () => {
 		setIsRefreshing(true);
 		try {
 			const response = await apiClient.get('/products');
@@ -153,7 +147,7 @@ function AdminProductsContent() {
 		} finally {
 			setIsRefreshing(false);
 		}
-	};
+	}, [searchQuery, filterType]);
 
 	// Filter products based on search and type
 	const filterProducts = (productList: StripeProduct[], query: string, type: string) => {
@@ -178,7 +172,7 @@ function AdminProductsContent() {
 	// Load products on mount
 	useEffect(() => {
 		fetchProducts();
-	}, []);
+	}, [fetchProducts]);
 
 	// Update filters
 	useEffect(() => {
@@ -187,8 +181,13 @@ function AdminProductsContent() {
 
 	// Generate slug from name
 	const generateSlug = () => {
+		const formType = form.getValues('type');
+		if (formType !== 'event') return;
+
 		const name = form.getValues('name');
-		const date = form.getValues('eventDate');
+		const eventData = form.getValues() as EventFormData;
+		const date = eventData.eventDate;
+
 		if (!name || !date) return;
 
 		const dateObj = new Date(date);
@@ -208,50 +207,64 @@ function AdminProductsContent() {
 			? (product.default_price.unit_amount / 100).toFixed(2)
 			: '0.00';
 
-		// Base form data
-		const formData: any = {
-			type: product.metadata.type || 'product',
-			name: product.name,
-			description: product.description || '',
-			price,
-			imageUrl: product.images[0] || '',
-			featured: product.metadata.featured === 'true',
-			maxQuantity: product.metadata.max_quantity || '10',
-		};
-
 		if (isEvent) {
-			// Parse event-specific data
+			// Event-specific data
 			const eventDate = product.metadata.event_date ? new Date(product.metadata.event_date) : new Date();
-			formData.slug = product.metadata.slug || '';
-			formData.eventDate = eventDate.toISOString().split('T')[0];
-			formData.eventTime = eventDate.toTimeString().slice(0, 5);
-			formData.location = product.metadata.location || '';
-			formData.capacity = product.metadata.capacity || '100';
-			formData.availableSpots = product.metadata.available_spots || '100';
-			formData.organizer = product.metadata.organizer || '';
-			formData.status = product.metadata.status || 'upcoming';
+			const eventFormData: EventFormData = {
+				type: 'event',
+				name: product.name,
+				description: product.description || '',
+				imageUrl: product.images[0] || '',
+				featured: product.metadata.featured === 'true',
+				slug: product.metadata.slug || '',
+				eventDate: eventDate.toISOString().split('T')[0],
+				eventTime: eventDate.toTimeString().slice(0, 5),
+				location: product.metadata.location || 'Euro Haus Headquarters, Orlando',
+				capacity: product.metadata.capacity || '100',
+				organizer: product.metadata.organizer || 'Euro Haus Events Team',
+				status: (product.metadata.status as EventFormData['status']) || 'upcoming',
+				hasTiers: product.metadata.has_tiers === 'true',
+				price: price,
+				maxQuantity: product.metadata.max_quantity || '10',
+				priceTiers: [],
+				tags: [{ value: '' }],
+				agenda: [{ time: '9:00 AM', activity: '' }],
+				includes: [{ value: '' }],
+				sponsors: [],
+			};
 
 			// Parse arrays
 			try {
-				formData.tags = JSON.parse(product.metadata.tags || '[]').map((t: string) => ({ value: t }));
-				formData.agenda = JSON.parse(product.metadata.agenda || '[]');
-				formData.includes = JSON.parse(product.metadata.includes || '[]').map((i: string) => ({ value: i }));
-				formData.sponsors = JSON.parse(product.metadata.sponsors || '[]');
+				eventFormData.tags = JSON.parse(product.metadata.tags || '[]').map((t: string) => ({ value: t }));
+				eventFormData.agenda = JSON.parse(product.metadata.agenda || '[]');
+				eventFormData.includes = JSON.parse(product.metadata.includes || '[]').map((i: string) => ({ value: i }));
+				eventFormData.sponsors = JSON.parse(product.metadata.sponsors || '[]');
 			} catch {
-				formData.tags = [{ value: '' }];
-				formData.agenda = [{ time: '9:00 AM', activity: '' }];
-				formData.includes = [{ value: '' }];
-				formData.sponsors = [];
+				// Keep defaults if parsing fails
 			}
+
+			form.reset(eventFormData);
 		} else {
 			// Product-specific data
-			formData.category = product.metadata.category || 'merchandise';
-			formData.inStock = product.metadata.in_stock !== 'false';
-			formData.isNew = product.metadata.is_new === 'true';
-			formData.compareAtPrice = product.metadata.compare_at_price || '';
+			const productFormData: ProductFormData = {
+				type: 'product',
+				name: product.name,
+				description: product.description || '',
+				imageUrl: product.images[0] || '',
+				featured: product.metadata.featured === 'true',
+				category: (product.metadata.category as ProductFormData['category']) || 'merchandise',
+				hasVariants: product.metadata.has_variants === 'true',
+				price: price,
+				compareAtPrice: product.metadata.compare_at_price || '',
+				inStock: product.metadata.in_stock !== 'false',
+				isNew: product.metadata.is_new === 'true',
+				maxQuantity: product.metadata.max_quantity || '10',
+				variants: [],
+			};
+
+			form.reset(productFormData);
 		}
 
-		form.reset(formData);
 		setActiveTab('create');
 	};
 
@@ -260,19 +273,78 @@ function AdminProductsContent() {
 		setIsLoading(true);
 
 		try {
-			// Prepare metadata
+			// Prepare base metadata
 			const metadata: Record<string, string> = {
 				type: data.type,
 				featured: data.featured.toString(),
-				max_quantity: data.maxQuantity,
+			};
+
+			// Base request data
+			let requestData: any = {
+				name: data.name,
+				description: data.description,
+				images: data.imageUrl ? [data.imageUrl] : [],
+				metadata,
 			};
 
 			if (data.type === 'product') {
+				// Product metadata
 				metadata.category = data.category;
 				metadata.in_stock = data.inStock.toString();
 				metadata.is_new = data.isNew.toString();
 				if (data.compareAtPrice) {
 					metadata.compare_at_price = data.compareAtPrice;
+				}
+
+				// Handle variants
+				if (data.hasVariants && data.variants && data.variants.length > 0) {
+					metadata.has_variants = 'true';
+					metadata.max_quantity = data.maxQuantity || '10';
+
+					// Don't include a default price for products with variants
+					requestData.default_price = null;
+
+					// Create/update product first
+					let productId: string;
+					if (editingProduct) {
+						await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
+						productId = editingProduct.id;
+					} else {
+						const productResponse = await apiClient.post('/admin/create-product', requestData);
+						productId = productResponse.data.productID || productResponse.data.product_id;
+					}
+
+					// Then create prices for each variant
+					for (const variant of data.variants) {
+						const variantPriceData = {
+							product: productId,
+							unit_amount: Math.round(parseFloat(variant.price) * 100),
+							currency: 'usd',
+							nickname: variant.variantName,
+							metadata: {
+								variant: variant.variantName,
+								size: variant.size || '',
+								color: variant.color || '',
+								sku: variant.sku || '',
+								in_stock: variant.inStock.toString(),
+								sort_order: variant.sortOrder.toString(),
+							},
+						};
+
+						await apiClient.post('/admin/create-price', variantPriceData);
+					}
+				} else {
+					// Single price product
+					metadata.has_variants = 'false';
+					metadata.max_quantity = data.maxQuantity;
+					requestData.price = Math.round(parseFloat(data.price) * 100);
+					requestData.currency = 'usd';
+
+					if (editingProduct) {
+						await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
+					} else {
+						await apiClient.post('/admin/create-product', requestData);
+					}
 				}
 			} else {
 				// Event metadata
@@ -281,33 +353,71 @@ function AdminProductsContent() {
 				metadata.event_date = eventDateTime;
 				metadata.location = data.location;
 				metadata.capacity = data.capacity;
-				metadata.available_spots = data.availableSpots;
 				metadata.organizer = data.organizer;
 				metadata.status = data.status;
 				metadata.tags = JSON.stringify(data.tags.map(t => t.value).filter(Boolean));
 				metadata.agenda = JSON.stringify(data.agenda);
 				metadata.includes = JSON.stringify(data.includes.map(i => i.value).filter(Boolean));
 				metadata.sponsors = JSON.stringify(data.sponsors || []);
+
+				// Handle tiered pricing
+				if (data.hasTiers && data.priceTiers && data.priceTiers.length > 0) {
+					metadata.has_tiers = 'true';
+					metadata.available_spots = data.capacity;
+
+					// ADD THIS: Calculate and store the lowest price
+					const prices = data.priceTiers.map(tier => parseFloat(tier.price));
+					const lowestPrice = Math.min(...prices);
+					metadata.lowest_price = lowestPrice.toString();
+
+					// Don't include a default price for events with tiers
+					requestData.default_price = null;
+
+					// Create/update product first
+					let productId: string;
+					if (editingProduct) {
+						await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
+						productId = editingProduct.id;
+					} else {
+						const productResponse = await apiClient.post('/admin/create-product', requestData);
+						productId = productResponse.data.productID || productResponse.data.product_id;
+					}
+
+					// Then create prices for each tier
+					for (const tier of data.priceTiers) {
+						const tierPriceData = {
+							product: productId,
+							unit_amount: Math.round(parseFloat(tier.price) * 100),
+							currency: 'usd',
+							nickname: tier.name,
+							metadata: {
+								tier_name: tier.name,
+								description: tier.description || '',
+								features: JSON.stringify(tier.features || []),
+								max_quantity: tier.maxQuantity || '',
+								sort_order: tier.sortOrder.toString(),
+							},
+						};
+
+						await apiClient.post('/admin/create-price', tierPriceData);
+					}
+				} else {
+					// Single price event
+					metadata.has_tiers = 'false';
+					metadata.max_quantity = data.maxQuantity;
+					metadata.available_spots = data.availableSpots;
+					requestData.price = Math.round(parseFloat(data.price) * 100);
+					requestData.currency = 'usd';
+
+					if (editingProduct) {
+						await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
+					} else {
+						await apiClient.post('/admin/create-product', requestData);
+					}
+				}
 			}
 
-			const requestData = {
-				name: data.name,
-				description: data.description,
-				price: Math.round(parseFloat(data.price) * 100), // Convert to cents
-				currency: 'usd',
-				images: data.imageUrl ? [data.imageUrl] : [],
-				metadata,
-			};
-
-			if (editingProduct) {
-				// Update existing product
-				await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
-				toast.success(`${data.type === 'event' ? 'Event' : 'Product'} updated successfully!`);
-			} else {
-				// Create new product
-				await apiClient.post('/admin/create-product', requestData);
-				toast.success(`${data.type === 'event' ? 'Event' : 'Product'} created successfully!`);
-			}
+			toast.success(`${data.type === 'event' ? 'Event' : 'Product'} ${editingProduct ? 'updated' : 'created'} successfully!`);
 
 			// Reset form and refresh list
 			form.reset();
@@ -325,6 +435,55 @@ function AdminProductsContent() {
 			setIsLoading(false);
 		}
 	};
+
+	// When switching product types, reset the form with proper defaults
+	const handleProductTypeChange = (newType: 'product' | 'event') => {
+		setProductType(newType);
+
+		if (newType === 'event') {
+			const eventDefaults: EventFormData = {
+				type: 'event',
+				name: '',
+				description: '',
+				imageUrl: '',
+				featured: false,
+				slug: '',
+				eventDate: '',
+				eventTime: '09:00',
+				location: 'Euro Haus Headquarters, Orlando',
+				capacity: '100',
+				organizer: 'Euro Haus Events Team',
+				status: 'upcoming',
+				hasTiers: false,
+				price: '',
+				maxQuantity: '10',
+				priceTiers: [],
+				tags: [{ value: '' }],
+				agenda: [{ time: '9:00 AM', activity: '' }],
+				includes: [{ value: '' }],
+				sponsors: [],
+			};
+			form.reset(eventDefaults);
+		} else {
+			const productDefaults: ProductFormData = {
+				type: 'product',
+				name: '',
+				description: '',
+				imageUrl: '',
+				featured: false,
+				category: 'merchandise',
+				hasVariants: false,
+				price: '',
+				compareAtPrice: '',
+				inStock: true,
+				isNew: false,
+				maxQuantity: '10',
+				variants: [],
+			};
+			form.reset(productDefaults);
+		}
+	};
+
 
 	// Handle delete confirmation
 	const handleDeleteProduct = async () => {
@@ -361,7 +520,6 @@ function AdminProductsContent() {
 			eventTime: '09:00',
 			location: 'Euro Haus Headquarters, Orlando',
 			capacity: '100',
-			availableSpots: '100',
 			organizer: 'Euro Haus Events Team',
 			status: 'upcoming',
 			tags: [
@@ -407,6 +565,7 @@ function AdminProductsContent() {
 			inStock: true,
 			isNew: false,
 			compareAtPrice: '39.99',
+			hasVariants: false,
 		});
 		toast.success('Product template loaded');
 		setActiveTab('create');
@@ -496,7 +655,7 @@ function AdminProductsContent() {
 											/>
 										</div>
 									</div>
-									<Select value={filterType} onValueChange={(value: any) => setFilterType(value)}>
+									<Select value={filterType} onValueChange={(value: 'all' | 'product' | 'event') => setFilterType(value)}>
 										<SelectTrigger className="w-[180px]">
 											<SelectValue placeholder="Filter by type" />
 										</SelectTrigger>
@@ -658,19 +817,51 @@ function AdminProductsContent() {
 														onValueChange={(value: 'product' | 'event') => {
 															setProductType(value);
 															field.onChange(value);
+
 															// Reset form with appropriate defaults
 															if (value === 'event') {
-																form.setValue('slug', '');
-																form.setValue('eventDate', '');
-																form.setValue('eventTime', '09:00');
-																form.setValue('location', 'Euro Haus Headquarters, Orlando');
-																form.setValue('capacity', '100');
-																form.setValue('availableSpots', '100');
-																form.setValue('organizer', 'Euro Haus Events Team');
-																form.setValue('status', 'upcoming');
-																form.setValue('tags', [{ value: '' }]);
-																form.setValue('agenda', [{ time: '9:00 AM', activity: '' }]);
-																form.setValue('includes', [{ value: '' }]);
+																const currentValues = form.getValues();
+																const eventDefaults: EventFormData = {
+																	type: 'event',
+																	name: currentValues.name || '',
+																	description: currentValues.description || '',
+																	imageUrl: currentValues.imageUrl || '',
+																	featured: currentValues.featured || false,
+																	slug: '',
+																	eventDate: '',
+																	eventTime: '09:00',
+																	location: 'Euro Haus Headquarters, Orlando',
+																	capacity: '100',
+																	organizer: 'Euro Haus Events Team',
+																	status: 'upcoming',
+																	hasTiers: false,
+																	price: '',
+																	maxQuantity: '10',
+																	priceTiers: [],
+																	tags: [{ value: '' }],
+																	agenda: [{ time: '9:00 AM', activity: '' }],
+																	includes: [{ value: '' }],
+																	sponsors: [],
+																};
+																form.reset(eventDefaults);
+															} else {
+																const currentValues = form.getValues();
+																const productDefaults: ProductFormData = {
+																	type: 'product',
+																	name: currentValues.name || '',
+																	description: currentValues.description || '',
+																	imageUrl: currentValues.imageUrl || '',
+																	featured: currentValues.featured || false,
+																	category: 'merchandise',
+																	hasVariants: false,
+																	price: '',
+																	compareAtPrice: '',
+																	inStock: true,
+																	isNew: false,
+																	maxQuantity: '10',
+																	variants: [],
+																};
+																form.reset(productDefaults);
 															}
 														}}
 														disabled={!!editingProduct}
@@ -754,10 +945,36 @@ function AdminProductsContent() {
 										<Separator />
 
 										{/* Type-specific forms */}
-										{productType === 'product' ? (
-											<ProductForm form={form} />
-										) : (
-											<EventForm form={form} onGenerateSlug={generateSlug} />
+										{productType === 'product' && (
+											<>
+												<ProductForm form={form} />
+
+												{editingProduct && (
+													<ExistingPricesManager
+														productId={editingProduct.id}
+														productType="product"
+														form={form}
+													/>
+												)}
+
+												<ProductVariantsForm form={form} />
+											</>
+										)}
+
+										{productType === 'event' && (
+											<>
+												<EventForm form={form} onGenerateSlug={generateSlug} />
+
+												{editingProduct && (
+													<ExistingPricesManager
+														productId={editingProduct.id}
+														productType="event"
+														form={form}
+													/>
+												)}
+
+												<EventTiersForm form={form} />
+											</>
 										)}
 
 										<Separator />

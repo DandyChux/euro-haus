@@ -31,6 +31,21 @@ export interface Product {
 	maxQuantity?: number;
 }
 
+export interface ProductVariant {
+	id: string;
+	priceId: string;
+	size?: string;
+	color?: string;
+	variant: string;
+	price: number;
+	inStock: boolean;
+	images?: string[];
+}
+
+export interface ProductWithVariants extends Product {
+	variants: ProductVariant[];
+}
+
 export interface EventSponsor {
 	name: string;
 	logoUrl: string;
@@ -49,6 +64,24 @@ export interface EventProduct extends Product {
 	agenda?: { time: string; activity: string }[];
 	includes?: string[];
 	sponsors?: EventSponsor[];
+	hasTiers?: boolean;
+	lowestPrice?: number;
+}
+
+export interface TieredPrice {
+	id: string;
+	priceId: string;
+	name: string;
+	amount: number;
+	currency: string;
+	description?: string;
+	features?: string[];
+	maxQuantity?: number;
+	soldOut?: boolean;
+}
+
+export interface EventWithTiers extends EventProduct {
+	priceTiers: TieredPrice[];
 }
 
 export const stripeService = {
@@ -211,8 +244,72 @@ export const stripeService = {
 			status,
 			agenda: stripeProduct.metadata.agenda ? JSON.parse(stripeProduct.metadata.agenda) : [],
 			includes: stripeProduct.metadata.includes ? JSON.parse(stripeProduct.metadata.includes) : [],
-			maxQuantity: availableSpots || 10, // Limit ticket purchases to available spots,
+			maxQuantity: availableSpots || 10,
 			sponsors: stripeProduct.metadata.sponsors ? JSON.parse(stripeProduct.metadata.sponsors) : [],
+			hasTiers: stripeProduct.metadata.has_tiers === 'true', // Add this
+			lowestPrice: stripeProduct.metadata.lowest_price ? parseFloat(stripeProduct.metadata.lowest_price) : undefined, // Add this
 		};
+	},
+
+	async getEventWithPriceTiers(eventId: string): Promise<EventWithTiers | null> {
+		try {
+			// Fetch the event product
+			const eventProduct = await this.getEventBySlug(eventId);
+			if (!eventProduct) return null;
+
+			// Fetch all prices for this product
+			const response = await apiClient.get<{ prices: any[] }>(`/products/${eventProduct.id}/prices`);
+
+			const priceTiers: TieredPrice[] = response.data.prices.map(price => ({
+				id: price.id,
+				priceId: price.id,
+				name: price.nickname || price.metadata.tier_name || 'Standard',
+				amount: price.unit_amount / 100,
+				currency: price.currency,
+				description: price.metadata.description,
+				features: price.metadata.features ? JSON.parse(price.metadata.features) : [],
+				maxQuantity: price.metadata.max_quantity ? parseInt(price.metadata.max_quantity) : undefined,
+				soldOut: price.metadata.sold_out === 'true'
+			}));
+
+			return {
+				...eventProduct,
+				priceTiers: priceTiers.sort((a, b) => a.amount - b.amount)
+			};
+		} catch (error) {
+			console.error('Failed to fetch event with price tiers:', error);
+			return null;
+		}
+	},
+
+	async getProductWithVariants(productId: string): Promise<ProductWithVariants | null> {
+		try {
+			// Fetch the main product
+			const products = await this.getAllProducts();
+			const mainProduct = products.find(p => p.id === productId);
+			if (!mainProduct) return null;
+
+			// Fetch all prices for this product
+			const response = await apiClient.get<{ prices: any[] }>(`/products/${productId}/prices`);
+
+			const variants: ProductVariant[] = response.data.prices.map(price => ({
+				id: price.id,
+				priceId: price.id,
+				size: price.metadata.size,
+				color: price.metadata.color,
+				variant: price.metadata.variant || price.nickname || 'Standard',
+				price: price.unit_amount / 100,
+				inStock: price.metadata.in_stock !== 'false',
+				images: price.metadata.images ? JSON.parse(price.metadata.images) : []
+			}));
+
+			return {
+				...mainProduct,
+				variants: variants.sort((a, b) => a.price - b.price)
+			};
+		} catch (error) {
+			console.error('Failed to fetch product variants:', error);
+			return null;
+		}
 	},
 };
