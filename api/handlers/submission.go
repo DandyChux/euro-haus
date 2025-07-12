@@ -256,10 +256,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error retrieving checkout session: %v", err)
 		} else if sess.PaymentIntent != nil {
 			// Capture the payment intent
-			pi, err := paymentintent.Capture(
-				sess.PaymentIntent.ID,
-				&stripe.PaymentIntentCaptureParams{},
-			)
+			pi, err := paymentintent.Capture(sess.PaymentIntent.ID, nil)
 			if err != nil {
 				log.Printf("Error capturing payment: %v", err)
 				http.Error(w, "Failed to capture payment", http.StatusInternalServerError)
