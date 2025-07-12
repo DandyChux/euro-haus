@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
@@ -105,6 +107,8 @@ func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	baseUrl := os.Getenv("BASE_URL")
+
 	// Create checkout session with the specific price
 	params := &stripe.CheckoutSessionParams{
 		PaymentMethodTypes: []*string{
@@ -117,8 +121,8 @@ func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
-		SuccessURL: stripe.String("https://yourdomain.com/success?session_id={CHECKOUT_SESSION_ID}"),
-		CancelURL:  stripe.String("https://yourdomain.com/cancel"),
+		SuccessURL: stripe.String(fmt.Sprintf("%s/success?session_id={CHECKOUT_SESSION_ID}", baseUrl)),
+		CancelURL:  stripe.String(fmt.Sprintf("%s/cancel", baseUrl)),
 		Metadata:   req.Metadata,
 	}
 
@@ -129,7 +133,7 @@ func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]string{
-		"sessionId": session.ID,
+		"session_id": session.ID,
 	}
 
 	json.NewEncoder(w).Encode(response)

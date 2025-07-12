@@ -5,12 +5,77 @@ import { SocialSection } from '~/components/social-section';
 import EventCards from '~/components/event-cards';
 import FeaturedProducts from '~/components/featured-products';
 import { ManagedVideo } from '~/components/ui/managed-video';
+import { useQuery } from '@tanstack/react-query';
+
+interface YouTubeVideo {
+	id: string;
+	title: string;
+	description: string;
+	thumbnailUrl: string;
+}
+
+// Function to fetch latest YouTube video
+async function fetchLatestYouTubeVideo(channelId: string, apiKey: string): Promise<YouTubeVideo | null> {
+	try {
+		// First, get the uploads playlist ID
+		const channelResponse = await fetch(
+			`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${apiKey}`
+		);
+
+		if (!channelResponse.ok) {
+			throw new Error('Failed to fetch channel data');
+		}
+
+		const channelData = await channelResponse.json();
+		const uploadsPlaylistId = channelData.items[0]?.contentDetails?.relatedPlaylists?.uploads;
+
+		if (!uploadsPlaylistId) {
+			throw new Error('No uploads playlist found');
+		}
+
+		// Then, get the latest video from the uploads playlist
+		const videosResponse = await fetch(
+			`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=1&key=${apiKey}`
+		);
+
+		if (!videosResponse.ok) {
+			throw new Error('Failed to fetch videos');
+		}
+
+		const videosData = await videosResponse.json();
+		const latestVideo = videosData.items[0];
+
+		if (!latestVideo) {
+			return null;
+		}
+
+		return {
+			id: latestVideo.snippet.resourceId.videoId,
+			title: latestVideo.snippet.title,
+			description: latestVideo.snippet.description,
+			thumbnailUrl: latestVideo.snippet.thumbnails.high.url,
+		};
+	} catch (error) {
+		console.error('Error fetching YouTube video:', error);
+		return null;
+	}
+}
 
 export const Route = createFileRoute('/')({
-	component: Index,
+	component: HomePage,
 });
 
-function Index() {
+function HomePage() {
+	const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
+	const YOUTUBE_CHANNEL_ID = import.meta.env.VITE_YOUTUBE_CHANNEL_ID;
+
+	// Fetch latest YouTube video
+	const { data: latestVideo, isLoading: videoLoading } = useQuery({
+		queryKey: ['latestYouTubeVideo'],
+		queryFn: () => fetchLatestYouTubeVideo(YOUTUBE_CHANNEL_ID, YOUTUBE_API_KEY),
+		staleTime: 1000 * 60 * 60, // Cache for 1 hour
+		enabled: !!YOUTUBE_API_KEY && !!YOUTUBE_CHANNEL_ID,
+	});
 
 	return (
 		<>
@@ -75,19 +140,31 @@ function Index() {
 
 					<div className='rounded-3xl bg-muted text-muted-foreground shadow-neumorph p-6 overflow-hidden'>
 						<div className='relative aspect-video rounded-2xl overflow-hidden shadow-neumorph-inset'>
-							<ManagedVideo
-								src='https://euro-haus.nyc3.cdn.digitaloceanspaces.com/videos/tonysporsche%5B1%5D.webm'
-								name='Featured Video'
-								description='Featured video showcase'
-								controls
-							/>
+							{videoLoading ? (
+								<div className='w-full h-full flex items-center justify-center bg-muted'>
+									<p className='text-muted-foreground'>Loading latest video...</p>
+								</div>
+							) : latestVideo ? (
+								<iframe
+									src={`https://www.youtube.com/embed/${latestVideo.id}?rel=0&modestbranding=1`}
+									title={latestVideo.title}
+									frameBorder='0'
+									allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+									allowFullScreen
+									className='absolute inset-0 w-full h-full'
+								/>
+							) : (
+								<div className='w-full h-full flex items-center justify-center bg-muted'>
+									<p className='text-muted-foreground'>No videos available</p>
+								</div>
+							)}
 						</div>
 						<div className='mt-6 text-center'>
 							<h3 className='text-xl font-semibold mb-2'>
-								Behind the Wheel: 1997 Porsche 911
+								{latestVideo?.title || 'Latest from The Euro Haus'}
 							</h3>
-							<p className='text-neutral-600 max-w-2xl mx-auto'>
-								Experience the thrill of the Porsche 911 in action, showcasing the engineering marvel and pure driving experience that makes this vehicle a favorite among automotive enthusiasts.
+							<p className='text-neutral-600 max-w-2xl mx-auto line-clamp-3'>
+								{latestVideo?.description || 'Check out our latest content showcasing European automotive excellence.'}
 							</p>
 						</div>
 					</div>

@@ -42,7 +42,7 @@ export const ticketService = {
 
 	async validateTicket(ticketCode: string): Promise<Ticket | null> {
 		try {
-			const response = await apiClient.get<Ticket>(`/tickets/${ticketCode}`);
+			const response = await apiClient.post<Ticket>(`/events/ticket/validate`, { token: ticketCode });
 			return response.data;
 		} catch (error) {
 			return null;

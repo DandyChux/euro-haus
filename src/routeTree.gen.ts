@@ -19,12 +19,14 @@ import { Route as EventsIndexImport } from './routes/events/index'
 import { Route as CatalogIndexImport } from './routes/catalog/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as EventsSlugImport } from './routes/events/$slug'
+import { Route as CheckoutSuccessImport } from './routes/checkout/success'
+import { Route as CheckoutCancelImport } from './routes/checkout/cancel'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
 import { Route as AuthRegisterImport } from './routes/auth/register'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
-import { Route as EventsSlugCheckinImport } from './routes/events/$slug.checkin'
+import { Route as EventsSlugCheckinImport } from './routes/events/$slug_.checkin'
 
 // Create/Update Routes
 
@@ -76,6 +78,18 @@ const EventsSlugRoute = EventsSlugImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const CheckoutSuccessRoute = CheckoutSuccessImport.update({
+  id: '/checkout/success',
+  path: '/checkout/success',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const CheckoutCancelRoute = CheckoutCancelImport.update({
+  id: '/checkout/cancel',
+  path: '/checkout/cancel',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const CatalogIdRoute = CatalogIdImport.update({
   id: '/catalog/$id',
   path: '/catalog/$id',
@@ -107,9 +121,9 @@ const AdminLoginRoute = AdminLoginImport.update({
 } as any)
 
 const EventsSlugCheckinRoute = EventsSlugCheckinImport.update({
-  id: '/checkin',
-  path: '/checkin',
-  getParentRoute: () => EventsSlugRoute,
+  id: '/events/$slug_/checkin',
+  path: '/events/$slug/checkin',
+  getParentRoute: () => rootRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -179,6 +193,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CatalogIdImport
       parentRoute: typeof rootRoute
     }
+    '/checkout/cancel': {
+      id: '/checkout/cancel'
+      path: '/checkout/cancel'
+      fullPath: '/checkout/cancel'
+      preLoaderRoute: typeof CheckoutCancelImport
+      parentRoute: typeof rootRoute
+    }
+    '/checkout/success': {
+      id: '/checkout/success'
+      path: '/checkout/success'
+      fullPath: '/checkout/success'
+      preLoaderRoute: typeof CheckoutSuccessImport
+      parentRoute: typeof rootRoute
+    }
     '/events/$slug': {
       id: '/events/$slug'
       path: '/events/$slug'
@@ -207,29 +235,17 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsIndexImport
       parentRoute: typeof rootRoute
     }
-    '/events/$slug/checkin': {
-      id: '/events/$slug/checkin'
-      path: '/checkin'
+    '/events/$slug_/checkin': {
+      id: '/events/$slug_/checkin'
+      path: '/events/$slug/checkin'
       fullPath: '/events/$slug/checkin'
       preLoaderRoute: typeof EventsSlugCheckinImport
-      parentRoute: typeof EventsSlugImport
+      parentRoute: typeof rootRoute
     }
   }
 }
 
 // Create and export the route tree
-
-interface EventsSlugRouteChildren {
-  EventsSlugCheckinRoute: typeof EventsSlugCheckinRoute
-}
-
-const EventsSlugRouteChildren: EventsSlugRouteChildren = {
-  EventsSlugCheckinRoute: EventsSlugCheckinRoute,
-}
-
-const EventsSlugRouteWithChildren = EventsSlugRoute._addFileChildren(
-  EventsSlugRouteChildren,
-)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -241,7 +257,9 @@ export interface FileRoutesByFullPath {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRouteWithChildren
+  '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
@@ -258,7 +276,9 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRouteWithChildren
+  '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
@@ -276,11 +296,13 @@ export interface FileRoutesById {
   '/admin/products': typeof AdminProductsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
-  '/events/$slug': typeof EventsSlugRouteWithChildren
+  '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/success': typeof CheckoutSuccessRoute
+  '/events/$slug': typeof EventsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
-  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
+  '/events/$slug_/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRouteTypes {
@@ -295,6 +317,8 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
+    | '/checkout/cancel'
+    | '/checkout/success'
     | '/events/$slug'
     | '/admin'
     | '/catalog'
@@ -311,6 +335,8 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
+    | '/checkout/cancel'
+    | '/checkout/success'
     | '/events/$slug'
     | '/admin'
     | '/catalog'
@@ -327,11 +353,13 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/auth/register'
     | '/catalog/$id'
+    | '/checkout/cancel'
+    | '/checkout/success'
     | '/events/$slug'
     | '/admin/'
     | '/catalog/'
     | '/events/'
-    | '/events/$slug/checkin'
+    | '/events/$slug_/checkin'
   fileRoutesById: FileRoutesById
 }
 
@@ -345,10 +373,13 @@ export interface RootRouteChildren {
   AdminProductsRoute: typeof AdminProductsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
-  EventsSlugRoute: typeof EventsSlugRouteWithChildren
+  CheckoutCancelRoute: typeof CheckoutCancelRoute
+  CheckoutSuccessRoute: typeof CheckoutSuccessRoute
+  EventsSlugRoute: typeof EventsSlugRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
+  EventsSlugCheckinRoute: typeof EventsSlugCheckinRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -361,10 +392,13 @@ const rootRouteChildren: RootRouteChildren = {
   AdminProductsRoute: AdminProductsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
-  EventsSlugRoute: EventsSlugRouteWithChildren,
+  CheckoutCancelRoute: CheckoutCancelRoute,
+  CheckoutSuccessRoute: CheckoutSuccessRoute,
+  EventsSlugRoute: EventsSlugRoute,
   AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
+  EventsSlugCheckinRoute: EventsSlugCheckinRoute,
 }
 
 export const routeTree = rootRoute
@@ -386,10 +420,13 @@ export const routeTree = rootRoute
         "/admin/products",
         "/auth/register",
         "/catalog/$id",
+        "/checkout/cancel",
+        "/checkout/success",
         "/events/$slug",
         "/admin/",
         "/catalog/",
-        "/events/"
+        "/events/",
+        "/events/$slug_/checkin"
       ]
     },
     "/": {
@@ -419,11 +456,14 @@ export const routeTree = rootRoute
     "/catalog/$id": {
       "filePath": "catalog/$id.tsx"
     },
+    "/checkout/cancel": {
+      "filePath": "checkout/cancel.tsx"
+    },
+    "/checkout/success": {
+      "filePath": "checkout/success.tsx"
+    },
     "/events/$slug": {
-      "filePath": "events/$slug.tsx",
-      "children": [
-        "/events/$slug/checkin"
-      ]
+      "filePath": "events/$slug.tsx"
     },
     "/admin/": {
       "filePath": "admin/index.tsx"
@@ -434,9 +474,8 @@ export const routeTree = rootRoute
     "/events/": {
       "filePath": "events/index.tsx"
     },
-    "/events/$slug/checkin": {
-      "filePath": "events/$slug.checkin.tsx",
-      "parent": "/events/$slug"
+    "/events/$slug_/checkin": {
+      "filePath": "events/$slug_.checkin.tsx"
     }
   }
 }

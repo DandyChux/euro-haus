@@ -40,9 +40,10 @@ func init() {
 	// Initialize Redis
 	if err := services.InitRedis(); err != nil {
 		log.Printf("Redis not available, using in-memory storage: %v", err)
-	} else {
-		log.Println("Redis initialized successfully")
 	}
+
+	// Initialize event listeners
+	handlers.InitEventListeners()
 
 }
 
@@ -90,6 +91,18 @@ func main() {
 	api.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
 	api.HandleFunc("/products/{id}/prices", handlers.GetProductPrices).Methods("GET", "OPTIONS")
 
+	// Event endpoints - specific routes first, then parameterized routes
+	api.HandleFunc("/events/ticket/validate", handlers.ValidateTicket).Methods("POST", "OPTIONS")
+	api.HandleFunc("/events/ticket/check-in", handlers.CheckInTicket).Methods("POST", "OPTIONS")
+	api.HandleFunc("/events/attendees", handlers.GetEventAttendees).Methods("GET", "OPTIONS")
+	api.HandleFunc("/events/updates", handlers.HandleEventUpdates)
+	api.HandleFunc("/events/{eventId}/tickets", handlers.GetEventTickets).Methods("GET", "OPTIONS")
+	api.HandleFunc("/events/{slug}", handlers.GetEventBySlug).Methods("GET", "OPTIONS")
+
+	// Newsletter endpoints
+	api.HandleFunc("/newsletter/subscribe", handlers.SubscribeToNewsletter).Methods("POST", "OPTIONS")
+	api.HandleFunc("/newsletter/lists", handlers.GetMailingLists).Methods("GET")
+
 	// Auth endpoints
 	api.HandleFunc("/auth/login", handlers.Login).Methods("POST", "OPTIONS")
 	api.HandleFunc("/auth/logout", handlers.Logout).Methods("POST", "OPTIONS")
@@ -98,6 +111,7 @@ func main() {
 	// Payment endpoints
 	api.HandleFunc("/create-payment-intent", handlers.CreatePaymentIntent).Methods("POST")
 	api.HandleFunc("/create-checkout-session", handlers.CreateCheckoutSession).Methods("POST")
+	api.HandleFunc("/checkout-session", handlers.GetCheckoutSession).Methods("GET", "OPTIONS")
 
 	// Content placement endpoints
 	api.HandleFunc("/content-placements", handlers.GetAllContentPlacements).Methods("GET", "OPTIONS")

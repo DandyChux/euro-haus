@@ -186,9 +186,64 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"sessionId": s.ID,
-		"url":       s.URL,
+		"session_id": s.ID,
+		"url":        s.URL,
 	})
+}
+
+// GetCheckoutSession retrieves details of a specific checkout session by ID
+func GetCheckoutSession(w http.ResponseWriter, r *http.Request) {
+	// Get session ID from query parameters
+	session_id := r.URL.Query().Get("session_id")
+	if session_id == "" {
+		http.Error(w, "Session ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Expand related objects to include line items, customer details, etc.
+	params := &stripe.CheckoutSessionParams{}
+	params.AddExpand("line_items")
+	params.AddExpand("customer")
+	params.AddExpand("payment_intent")
+
+	session, err := session.Get(session_id, params)
+	if err != nil {
+		log.Printf("Failed to retrieve checkout session: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Format and return the session data
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":     session.ID,
+		"status": session.Status,
+		"amount": session.AmountTotal,
+		"customer": map[string]interface{}{
+			"email": session.CustomerEmail,
+			"name":  session.CustomerDetails.Name,
+		},
+		"items":   formatLineItems(session),
+		"created": session.Created,
+	})
+}
+
+// Helper function to format line items from the session
+func formatLineItems(session *stripe.CheckoutSession) []map[string]interface{} {
+	items := []map[string]interface{}{}
+
+	if session.LineItems != nil {
+		for _, item := range session.LineItems.Data {
+			items = append(items, map[string]interface{}{
+				"id":       item.ID,
+				"name":     item.Description,
+				"quantity": item.Quantity,
+				"amount":   item.AmountTotal,
+			})
+		}
+	}
+
+	return items
 }
 
 // Helper function to check if cart contains physical products

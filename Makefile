@@ -9,7 +9,7 @@ start-server:
 
 start-db:
 	@echo "Starting database..."
-	@cd api && docker compose -f docker-compose.dev.yml up -d postgres
+	@docker compose up -d redis
 
 # Build the application
 build:

@@ -174,9 +174,15 @@ function ProductDetailPage() {
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
 		try {
 			setSelectedTier(tier);
-			const response = await apiClient.post('/checkout/session', {
-				priceId: tier.priceId,
-				quantity: tierQuantity,
+			const response = await apiClient.post('/create-checkout-session', {
+				lineItems: [
+					{
+						priceId: tier.priceId,
+						quantity: tierQuantity,
+					}
+				],
+				successURL: `${window.location.origin}/checkout/success`,
+				cancelURL: `${window.location.origin}/checkout/cancel`,
 				metadata: {
 					eventId: product.id,
 					eventName: product.title,

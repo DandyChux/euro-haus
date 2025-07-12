@@ -43,13 +43,19 @@ function EventDetailPage() {
 
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
 		try {
-			const response = await apiClient.post('/checkout/session', {
-				priceId: tier.priceId,
-				quantity: tierQuantity,
+			const response = await apiClient.post('/create-checkout-session', {
+				line_items: [
+					{
+						price: tier.priceId,
+						quantity: tierQuantity,
+					}
+				],
+				success_url: `${window.location.origin}/checkout/success`,
+				cancel_url: `${window.location.origin}/checkout/cancel`,
 				metadata: {
-					eventId: event?.id,
-					eventName: event?.title,
-					tierName: tier.name,
+					event_id: event?.id,
+					event_name: event?.title,
+					tier_name: tier.name,
 				},
 			});
 
