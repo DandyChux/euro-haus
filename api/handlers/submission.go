@@ -476,7 +476,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/pending?submission_id=%s", baseUrl, req.SubmissionID)),
 		CancelURL:  stripe.String(fmt.Sprintf("%s/checkout/cancel", baseUrl)),
 		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
-			CaptureMethod: stripe.String("manual"), // This is the key - manual capture
+			CaptureMethod: stripe.String("manual"),
 			Metadata: map[string]string{
 				"submission_id": req.SubmissionID,
 				"event_id":      submission.EventID,

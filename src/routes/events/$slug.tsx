@@ -18,6 +18,7 @@ import { Dialog, DialogContent } from '~/components/ui/dialog';
 import { VehicleSubmissionForm } from '~/components/vehicle-submission-form';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Label } from '~/components/ui/label';
+import { loadStripe } from '@stripe/stripe-js';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
@@ -36,6 +37,8 @@ export const Route = createFileRoute('/events/$slug')({
 	},
 	component: EventDetailPage,
 });
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function EventDetailPage() {
 	const { event, hasTiers } = Route.useLoaderData();
@@ -72,7 +75,7 @@ function EventDetailPage() {
 				},
 			});
 
-			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
 			}
@@ -103,7 +106,7 @@ function EventDetailPage() {
 				quantity,
 			});
 
-			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
 			}
@@ -127,7 +130,7 @@ function EventDetailPage() {
 				quantity: quantity,
 			});
 
-			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
 				// Redirect to Stripe checkout
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
