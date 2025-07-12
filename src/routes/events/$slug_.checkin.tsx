@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from '~/components/ui/badge'
 import { toast } from 'sonner'
 import { apiClient } from '~/lib/api'
-import { Event } from '~/lib/interfaces/event'
+import { EventProduct as Event } from '~/lib/services/stripe-service'
 import { ticketService, Ticket } from '~/lib/services/ticket-service'
 
 interface WebSocketMessage {
@@ -21,23 +21,23 @@ export const Route = createFileRoute('/events/$slug_/checkin')({
 	loader: async ({ params }) => {
 		const { slug } = params
 
-		try {
-			const response = await apiClient.get(`/events/${slug}`)
-
-			const event: Event = response.data
-
-			if (!event) {
-				throw new Error(`Failed to fetch event: ${response.status}`)
-			}
-
-			return {
-				event
-			}
-		} catch (error) {
-			console.error('Error loading event details:', error)
-			toast.error('Error loading event details', {
-				description: error instanceof Error ? error.message : 'Could not load event details'
+		const response = await apiClient.get(`/events/${slug}`)
+			.catch(error => {
+				console.error('Error loading event details:', error)
+				toast.error('Error loading event details', {
+					description: error instanceof Error ? error.message : 'Could not load event details'
+				})
+				throw error
 			})
+
+		const event: Event = response.data
+
+		if (!event) {
+			throw new Error(`Failed to fetch event: ${response.status}`)
+		}
+
+		return {
+			event
 		}
 	}
 })
@@ -235,10 +235,10 @@ function CheckInComponent() {
 	return (
 		<div className="py-8 px-4 md:px-8 min-h-screen">
 			<div className="flex flex-col mb-16 md:mb-24">
-				<h1 className="text-3xl font-bold">Check-in: {eventDetails?.name || slug}</h1>
+				<h1 className="text-3xl font-bold">Check-in: {eventDetails?.title || slug}</h1>
 				{eventDetails && (
 					<p className="text-muted-foreground">
-						{formatDate(eventDetails.metadata.event_date)} at {eventDetails.metadata.location}
+						{formatDate(eventDetails.date)} at {eventDetails.location}
 					</p>
 				)}
 			</div>

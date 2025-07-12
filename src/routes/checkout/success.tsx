@@ -29,6 +29,9 @@ type OrderDetails = z.infer<typeof orderDetailSchema>;
 
 export const Route = createFileRoute('/checkout/success')({
 	component: CheckoutSuccessPage,
+	validateSearch: z.object({
+		session_id: z.string().startsWith("cs_"),
+	}),
 	loaderDeps: ({ search: { session_id } }) => ({
 		sessionId: session_id,
 	}),
