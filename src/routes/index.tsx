@@ -98,7 +98,7 @@ function HomePage() {
 						<div className='space-y-2'>
 							<h1 className='text-white'>Welcome to Euro Haus</h1>
 							<p className='mx-auto max-w-[700px] text-lg md:text-xl text-white/90'>
-								Building a community around car enthusiasm. Join us for events, shop exclusive merchandise, and connect with fellow enthusiasts.
+								Come for the cars, stay for the people.
 							</p>
 						</div>
 						<div className='inline-flex items-center space-x-4'>

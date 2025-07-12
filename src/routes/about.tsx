@@ -40,7 +40,7 @@ function RouteComponent() {
 							About Euro Haus
 						</h1>
 						<p className='mt-6 text-lg text-muted-foreground md:text-xl'>
-							Building a community around car enthusiasm since 2015. We're more than just a brand - we're a family of passionate automative enthusiasts dedicated to celebrating European car culture.
+							Building a community around car enthusiasm since 2023. We're more than just a brand - we're a family of passionate automative enthusiasts dedicated to celebrating European car culture.
 						</p>
 					</div>
 				</div>
@@ -62,14 +62,10 @@ function RouteComponent() {
 								<div>
 									<h3 className="text-2xl font-bold text-primary mb-4">The Beginning</h3>
 									<p className="text-muted-foreground leading-relaxed">
-										Euro Haus was born in 2015 from a simple idea: to create a space where European car enthusiasts
-										could come together, share their passion, and celebrate the engineering excellence that defines
-										brands like BMW, Audi, Mercedes-Benz, Porsche, and Volkswagen.
+										Founded in 2023, Euro Haus was built on years of grassroots experience and a deep love for European automotive culture. What began as local meetups has evolved into a refined, community-driven event series that brings together enthusiasts of all backgrounds to celebrate the design, performance, and legacy of Europe’s finest marques — from iconic marques like BMW, Audi, and Volkswagen to high-performance legends like Porsche, Ferrari, McLaren, and Lamborghini.
 									</p>
 									<p className="text-muted-foreground leading-relaxed mt-4">
-										What started as a small group of friends meeting in parking lots has evolved into one of the most
-										respected communities in the automotive world, hosting events across the country and bringing
-										together thousands of like-minded enthusiasts.
+										Backed by nearly a decade of organizing successful enthusiast events, Euro Haus is more than just a car show — it’s a curated experience rooted in passion, authenticity, and connection. We’re proud to create spaces where enthusiasts can showcase their builds, connect with vendors, and be part of a growing movement that values quality over hype.
 									</p>
 								</div>
 								<div className="relative">
@@ -160,7 +156,7 @@ function RouteComponent() {
 									</div>
 									<div className="ml-12 md:ml-0 md:w-1/2 md:pr-8">
 										<div className="rounded-lg bg-background p-6 shadow-sm border border-primary/20">
-											<h3 className="text-xl font-bold text-secondary">2015 - The Foundation</h3>
+											<h3 className="text-xl font-bold text-secondary">2023 - The Foundation</h3>
 											<p className="mt-2 text-muted-foreground">
 												Euro Haus was founded with the first official meet in Orlando, bringing together 50 European
 												car enthusiasts for a weekend of passion and community.
@@ -267,7 +263,7 @@ function RouteComponent() {
 										</div>
 										<div>
 											<h4 className="font-semibold">Headquarters</h4>
-											<p className="text-muted-foreground">Orlando, Florida</p>
+											<p className="text-muted-foreground">Tampa, Florida</p>
 											<p className="text-sm text-muted-foreground">Where it all began</p>
 										</div>
 									</div>

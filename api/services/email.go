@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"html/template"
@@ -41,12 +42,11 @@ type EmailMessage struct {
 // SendEmail sends an email message
 func SendEmail(msg *EmailMessage) error {
 	// Get email configuration from environment
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpPort := os.Getenv("SMTP_PORT")
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASSWORD")
-	fromEmail := os.Getenv("FROM_EMAIL")
-	fromName := os.Getenv("FROM_NAME")
+	smtpHost := os.Getenv("MAIL_HOST")
+	smtpPort := os.Getenv("MAIL_PORT")
+	smtpUser := os.Getenv("MAIL_USERNAME")
+	smtpPass := os.Getenv("MAIL_PASSWORD")
+	fromEmail := os.Getenv("MAIL_FROM_ADDRESS")
 
 	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" || fromEmail == "" {
 		return fmt.Errorf("missing email configuration")
@@ -85,9 +85,6 @@ func SendEmail(msg *EmailMessage) error {
 
 	// Set up email headers
 	from := fromEmail
-	if fromName != "" {
-		from = fmt.Sprintf("%s <%s>", fromName, fromEmail)
-	}
 
 	// Create the message headers
 	headers := make(map[string]string)
@@ -171,7 +168,7 @@ func SendEmail(msg *EmailMessage) error {
 	}
 
 	// Connect to SMTP server
-	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+	// auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
 
 	// Combine recipients for SMTP
@@ -179,18 +176,58 @@ func SendEmail(msg *EmailMessage) error {
 	recipients = append(recipients, msg.Cc...)
 	recipients = append(recipients, msg.Bcc...)
 
-	// Send the email
-	err := smtp.SendMail(
-		addr,
-		auth,
-		fromEmail,
-		recipients,
-		messageBuffer.Bytes(),
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+	// Create a new TLS configuration
+	tlsConfig := &tls.Config{
+		ServerName: smtpHost,
 	}
+
+	// Connect to the server
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+	}
+	defer client.Close()
+
+	// Start TLS connection
+	if err = client.StartTLS(tlsConfig); err != nil {
+		return fmt.Errorf("failed to start TLS: %w", err)
+	}
+
+	// Authenticate
+	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+	if err = client.Auth(auth); err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Set the sender and recipients
+	if err = client.Mail(fromEmail); err != nil {
+		return fmt.Errorf("failed to set sender: %w", err)
+	}
+
+	for _, recipient := range recipients {
+		if err = client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("failed to add recipient %s: %w", recipient, err)
+		}
+	}
+
+	// Send the email
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("failed to open data connection: %w", err)
+	}
+
+	_, err = w.Write(messageBuffer.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to write email data: %w", err)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close data connection: %w", err)
+	}
+
+	// Close the connection
+	client.Quit()
 
 	log.Printf("Email sent to %v with subject: %s", msg.To, msg.Subject)
 	return nil
