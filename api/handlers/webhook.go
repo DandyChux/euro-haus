@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -109,6 +110,12 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	log.Printf("PaymentIntent succeeded: %s, Amount: %d %s\n",
 		pi.ID, pi.Amount, pi.Currency)
 
+	// Check if this is a participant payment
+	if submissionID, ok := pi.Metadata["submission_id"]; ok && submissionID != "" {
+		handleParticipantPaymentSucceeded(pi, submissionID)
+		return
+	}
+
 	// Get customer details from metadata
 	customerEmail := pi.Customer.Email
 	customerName := pi.Customer.Name
@@ -160,9 +167,71 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	}
 }
 
+// New function to handle participant payment success
+func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID string) {
+	log.Printf("Handling participant payment for submission: %s\n", submissionID)
+
+	// Get Redis client
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Get submission details
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+	submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+	if err != nil {
+		log.Printf("Error retrieving submission data: %v", err)
+		return
+	}
+
+	// Create and store ticket
+	ticketToken := generateUniqueToken()
+	ticketKey := "ticket:" + ticketToken
+
+	eventName := pi.Metadata["event_name"]
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	ticketData := map[string]interface{}{
+		"customer_name":     submissionData["participant_name"],
+		"customer_email":    submissionData["participant_email"],
+		"event_name":        eventName,
+		"stripe_product_id": submissionData["event_id"],
+		"quantity":          "1",
+		"ticket_type":       "Participant",
+		"purchased_at":      time.Now().Format(time.RFC3339),
+		"checked_in":        "false",
+		"submission_id":     submissionID,
+		"vehicle_details":   fmt.Sprintf("%s %s %s", submissionData["vehicle_year"], submissionData["vehicle_make"], submissionData["vehicle_model"]),
+		"payment_intent_id": pi.ID,
+	}
+
+	// Store ticket in Redis
+	if err := rdb.HSet(ctx, ticketKey, ticketData).Err(); err != nil {
+		log.Printf("Error storing ticket: %v", err)
+		return
+	}
+
+	// Update submission with ticket ID
+	rdb.HSet(ctx, submissionKey, "ticket_id", ticketToken)
+
+	// Add to event attendees
+	eventAttendeesKey := fmt.Sprintf("event:%s:attendees", submissionData["event_id"])
+	rdb.SAdd(ctx, eventAttendeesKey, ticketToken)
+
+	// Send participant ticket email
+	sendParticipantTicketEmail(submissionData, ticketToken, eventName)
+}
+
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	// Handle completed checkout session
 	log.Printf("Checkout session completed: %s\n", checkoutSession.ID)
+
+	// Check if this is a participant submission checkout
+	if submissionID, ok := checkoutSession.Metadata["submission_id"]; ok && submissionID != "" {
+		handleParticipantCheckout(checkoutSession, submissionID)
+		return
+	}
 
 	// Expand the session to get line items
 	params := &stripe.CheckoutSessionParams{}
@@ -251,6 +320,72 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	}
 
 	log.Printf("Order fulfilled for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
+}
+
+// handleParticipantCheckout handles checkout completion for approved vehicle submissions
+func handleParticipantCheckout(checkoutSession stripe.CheckoutSession, submissionID string) {
+	log.Printf("Handling participant checkout for submission: %s\n", submissionID)
+
+	// Get Redis client
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Update submission with payment details
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+	updates := map[string]interface{}{
+		"checkout_session_id":  checkoutSession.ID,
+		"payment_intent_id":    checkoutSession.PaymentIntent.ID,
+		"payment_completed_at": time.Now().Format(time.RFC3339),
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		log.Printf("Error updating submission payment details: %v", err)
+	}
+
+	// Get full submission details
+	submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+	if err != nil {
+		log.Printf("Error retrieving submission data: %v", err)
+		return
+	}
+
+	// Create and store ticket
+	ticketToken := generateUniqueToken() // Fixed: was generateTicketToken()
+	ticketKey := "ticket:" + ticketToken
+
+	eventName := checkoutSession.Metadata["event_name"]
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	ticketData := map[string]interface{}{
+		"customer_name":     submissionData["participant_name"],
+		"customer_email":    submissionData["participant_email"],
+		"event_name":        eventName,
+		"stripe_product_id": submissionData["event_id"],
+		"quantity":          "1",
+		"ticket_type":       "Participant",
+		"purchased_at":      time.Now().Format(time.RFC3339),
+		"checked_in":        "false",
+		"submission_id":     submissionID,
+		"vehicle_details":   fmt.Sprintf("%s %s %s", submissionData["vehicle_year"], submissionData["vehicle_make"], submissionData["vehicle_model"]),
+	}
+
+	// Store ticket in Redis
+	if err := rdb.HSet(ctx, ticketKey, ticketData).Err(); err != nil {
+		log.Printf("Error storing ticket: %v", err)
+		return
+	}
+
+	// Update submission with ticket ID
+	rdb.HSet(ctx, submissionKey, "ticket_id", ticketToken)
+
+	// Add to event attendees
+	eventAttendeesKey := fmt.Sprintf("event:%s:attendees", submissionData["event_id"])
+	rdb.SAdd(ctx, eventAttendeesKey, ticketToken)
+
+	// Send participant ticket email
+	sendParticipantTicketEmail(submissionData, ticketToken, eventName)
 }
 
 func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
@@ -656,17 +791,13 @@ func updateEventInventory(productID string, quantitySold int64) {
 
 // generateUniqueToken creates a unique token for a ticket
 func generateUniqueToken() string {
-	// Using UUID v4 for unique tokens
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		log.Printf("Error generating random bytes: %v", err)
-		return fmt.Sprintf("tkn_%d", time.Now().UnixNano())
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 8)
+	for i := range b {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[n.Int64()]
 	}
-
-	// Format as UUID
-	uuid := fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
-	return uuid
+	return string(b)
 }
 
 // generateQRCode creates a QR code image for a ticket token
@@ -754,5 +885,79 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	err = services.SendTicketEmail(customerEmail, customerName, token, eventDetails, qrCode)
 	if err != nil {
 		log.Printf("Error sending ticket email: %v", err)
+	}
+}
+
+// sendParticipantTicketEmail sends a special ticket email for approved vehicle participants
+func sendParticipantTicketEmail(submissionData map[string]string, ticketToken string, eventName string) {
+	// Generate QR code
+	qrCodeURL, err := generateQRCode(ticketToken)
+	if err != nil {
+		log.Printf("Error generating QR code: %v", err)
+		return
+	}
+
+	vehicleDetails := fmt.Sprintf("%s %s %s",
+		submissionData["vehicle_year"],
+		submissionData["vehicle_make"],
+		submissionData["vehicle_model"])
+
+	emailData := map[string]interface{}{
+		"CustomerName":   submissionData["participant_name"],
+		"EventName":      eventName,
+		"TicketCode":     ticketToken,
+		"QRCodeURL":      qrCodeURL,
+		"VehicleDetails": vehicleDetails,
+		"TicketType":     "Event Participant",
+		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("WEBSITE_URL"), ticketToken),
+	}
+
+	// Generate ticket HTML
+	ticketHTML := fmt.Sprintf(`
+		<html>
+		<body style="font-family: Arial, sans-serif; color: #333;">
+			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+				<h1 style="color: #007bff;">Your Event Participant Ticket</h1>
+				<p>Dear %s,</p>
+				<p>Congratulations! Your registration as an event participant is complete. Your vehicle has been approved:</p>
+				<p style="font-size: 18px; font-weight: bold;">%s</p>
+
+				<div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+					<h2>Event Details</h2>
+					<p><strong>Event:</strong> %s</p>
+					<p><strong>Ticket Type:</strong> Event Participant</p>
+					<p><strong>Ticket Code:</strong> <span style="font-family: monospace; font-size: 18px;">%s</span></p>
+				</div>
+
+				<div style="text-align: center; margin: 30px 0;">
+					<img src="%s" alt="QR Code" style="width: 200px; height: 200px;">
+					<p style="font-size: 12px; color: #666;">Show this QR code at check-in</p>
+				</div>
+
+				<h3>Important Information for Participants:</h3>
+				<ul>
+					<li>Please arrive at least 30 minutes before the event start time</li>
+					<li>Have your vehicle clean and ready for display</li>
+					<li>Bring this ticket (printed or on your phone) for check-in</li>
+					<li>Follow all event guidelines and instructions from staff</li>
+				</ul>
+
+				<p>We're excited to have you showcase your vehicle at our event!</p>
+				<p>Best regards,<br>The Euro Haus Events Team</p>
+			</div>
+		</body>
+		</html>
+	`, emailData["CustomerName"], vehicleDetails, emailData["EventName"], emailData["TicketCode"], emailData["QRCodeURL"])
+
+	msg := &services.EmailMessage{
+		To:           []string{submissionData["participant_email"]},
+		Subject:      fmt.Sprintf("Event Participant Ticket - %s", eventName),
+		TemplateID:   "participant-ticket",
+		TemplateData: emailData,
+		BodyHTML:     ticketHTML,
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending participant ticket email: %v", err)
 	}
 }

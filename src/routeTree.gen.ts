@@ -20,9 +20,11 @@ import { Route as CatalogIndexImport } from './routes/catalog/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as EventsSlugImport } from './routes/events/$slug'
 import { Route as CheckoutSuccessImport } from './routes/checkout/success'
+import { Route as CheckoutPendingImport } from './routes/checkout/pending'
 import { Route as CheckoutCancelImport } from './routes/checkout/cancel'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
 import { Route as AuthRegisterImport } from './routes/auth/register'
+import { Route as AdminSubmissionsImport } from './routes/admin/submissions'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
@@ -84,6 +86,12 @@ const CheckoutSuccessRoute = CheckoutSuccessImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const CheckoutPendingRoute = CheckoutPendingImport.update({
+  id: '/checkout/pending',
+  path: '/checkout/pending',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const CheckoutCancelRoute = CheckoutCancelImport.update({
   id: '/checkout/cancel',
   path: '/checkout/cancel',
@@ -99,6 +107,12 @@ const CatalogIdRoute = CatalogIdImport.update({
 const AuthRegisterRoute = AuthRegisterImport.update({
   id: '/auth/register',
   path: '/auth/register',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminSubmissionsRoute = AdminSubmissionsImport.update({
+  id: '/admin/submissions',
+  path: '/admin/submissions',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -179,6 +193,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminProductsImport
       parentRoute: typeof rootRoute
     }
+    '/admin/submissions': {
+      id: '/admin/submissions'
+      path: '/admin/submissions'
+      fullPath: '/admin/submissions'
+      preLoaderRoute: typeof AdminSubmissionsImport
+      parentRoute: typeof rootRoute
+    }
     '/auth/register': {
       id: '/auth/register'
       path: '/auth/register'
@@ -198,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/checkout/cancel'
       fullPath: '/checkout/cancel'
       preLoaderRoute: typeof CheckoutCancelImport
+      parentRoute: typeof rootRoute
+    }
+    '/checkout/pending': {
+      id: '/checkout/pending'
+      path: '/checkout/pending'
+      fullPath: '/checkout/pending'
+      preLoaderRoute: typeof CheckoutPendingImport
       parentRoute: typeof rootRoute
     }
     '/checkout/success': {
@@ -255,9 +283,11 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/pending': typeof CheckoutPendingRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -274,9 +304,11 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/pending': typeof CheckoutPendingRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -294,9 +326,11 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
+  '/checkout/pending': typeof CheckoutPendingRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -315,9 +349,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
+    | '/checkout/pending'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
@@ -333,9 +369,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
+    | '/checkout/pending'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
@@ -351,9 +389,11 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
+    | '/checkout/pending'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin/'
@@ -371,9 +411,11 @@ export interface RootRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminSubmissionsRoute: typeof AdminSubmissionsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
   CheckoutCancelRoute: typeof CheckoutCancelRoute
+  CheckoutPendingRoute: typeof CheckoutPendingRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   EventsSlugRoute: typeof EventsSlugRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -390,9 +432,11 @@ const rootRouteChildren: RootRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminSubmissionsRoute: AdminSubmissionsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
   CheckoutCancelRoute: CheckoutCancelRoute,
+  CheckoutPendingRoute: CheckoutPendingRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   EventsSlugRoute: EventsSlugRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -418,9 +462,11 @@ export const routeTree = rootRoute
         "/admin/login",
         "/admin/media",
         "/admin/products",
+        "/admin/submissions",
         "/auth/register",
         "/catalog/$id",
         "/checkout/cancel",
+        "/checkout/pending",
         "/checkout/success",
         "/events/$slug",
         "/admin/",
@@ -450,6 +496,9 @@ export const routeTree = rootRoute
     "/admin/products": {
       "filePath": "admin/products.tsx"
     },
+    "/admin/submissions": {
+      "filePath": "admin/submissions.tsx"
+    },
     "/auth/register": {
       "filePath": "auth/register.tsx"
     },
@@ -458,6 +507,9 @@ export const routeTree = rootRoute
     },
     "/checkout/cancel": {
       "filePath": "checkout/cancel.tsx"
+    },
+    "/checkout/pending": {
+      "filePath": "checkout/pending.tsx"
     },
     "/checkout/success": {
       "filePath": "checkout/success.tsx"

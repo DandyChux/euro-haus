@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Button } from '~/components/ui/button';
 import { Image } from '~/components/ui/image';
 import { Link } from '@tanstack/react-router';
-import { Calendar, MapPin, Users, Clock, ChevronLeft, Share2, Heart, Plus, Minus } from 'lucide-react';
+import { Calendar, MapPin, Users, Clock, ChevronLeft, Share2, Heart, Plus, Minus, Car } from 'lucide-react';
 import { Badge } from '~/components/ui/badge';
 import { Separator } from '~/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
@@ -14,6 +14,10 @@ import { toast } from 'sonner';
 import { InfiniteMovingCards } from '~/components/ui/infinite-moving-cards';
 import { apiClient } from '~/lib/api';
 import { TieredPricing } from '~/components/tiered-pricing';
+import { Dialog, DialogContent } from '~/components/ui/dialog';
+import { VehicleSubmissionForm } from '~/components/vehicle-submission-form';
+import { Checkbox } from '~/components/ui/checkbox';
+import { Label } from '~/components/ui/label';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
@@ -38,10 +42,19 @@ function EventDetailPage() {
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
-
-	console.log(event)
+	const [isParticipant, setIsParticipant] = useState(false);
+	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+	const [submissionId, setSubmissionId] = useState<string | null>(null);
 
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
+		// If participant checkbox is selected, show submission form instead
+		if (isParticipant) {
+			setSelectedTier(tier);
+			setQuantity(tierQuantity);
+			setShowSubmissionForm(true);
+			return;
+		}
+
 		try {
 			const response = await apiClient.post('/create-checkout-session', {
 				line_items: [
@@ -70,6 +83,20 @@ function EventDetailPage() {
 	};
 
 	const handleSingleCheckout = async () => {
+		// If participant checkbox is selected, create a special checkout session
+		if (isParticipant) {
+			try {
+				// First, show the submission form
+				setShowSubmissionForm(true);
+				return;
+			} catch (error) {
+				console.error('Error:', error);
+				toast.error('Failed to start submission process');
+			}
+			return;
+		}
+
+		// Regular checkout flow continues...
 		try {
 			const response = await apiClient.post('/create-checkout-session', {
 				priceId: event?.priceId,
@@ -86,6 +113,32 @@ function EventDetailPage() {
 		}
 	};
 
+	const handleSubmissionSuccess = async (newSubmissionId: string) => {
+		setSubmissionId(newSubmissionId);
+		setShowSubmissionForm(false);
+
+		// Create checkout session with manual capture for the submission
+		try {
+			const priceId = selectedTier?.priceId || event?.priceId;
+			const response = await apiClient.post('/create-participant-checkout', {
+				submissionId: newSubmissionId,
+				priceId: priceId,
+				eventName: event?.title,
+				quantity: quantity,
+			});
+
+			const stripe = window.Stripe?.(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+			if (stripe && response.data.sessionId) {
+				// Redirect to Stripe checkout
+				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
+			}
+		} catch (error) {
+			console.error('Checkout error:', error);
+			toast.error('Failed to create checkout session');
+		}
+	};
+
+
 	const handleTierSelection = (tier: TieredPrice) => {
 		setSelectedTier(tier);
 		setQuantity(1); // Reset quantity when tier changes
@@ -94,6 +147,12 @@ function EventDetailPage() {
 	const handleAddToCart = () => {
 		if (event.status === 'soldout') {
 			toast.error('This event is sold out');
+			return;
+		}
+
+		// If participant checkbox is selected, show submission form instead
+		if (isParticipant) {
+			setShowSubmissionForm(true);
 			return;
 		}
 
@@ -289,6 +348,30 @@ function EventDetailPage() {
 
 					{/* Right Column - Booking */}
 					<div className="space-y-4">
+						{/* Participant Option Card */}
+						<Card className="border-primary/20 bg-primary/5">
+							<CardContent className="pt-6">
+								<div className="flex items-start space-x-3">
+									<Checkbox
+										id="participant"
+										checked={isParticipant}
+										onCheckedChange={(checked) => setIsParticipant(checked as boolean)}
+									/>
+									<div className="space-y-1">
+										<Label htmlFor="participant" className="cursor-pointer">
+											<div className="flex items-center gap-2">
+												<Car className="h-4 w-4" />
+												<span className="font-medium">I want to participate as a presenter</span>
+											</div>
+										</Label>
+										<p className="text-sm text-muted-foreground">
+											Submit your vehicle for review. Payment will be processed after approval.
+										</p>
+									</div>
+								</div>
+							</CardContent>
+						</Card>
+
 						{/* Tiered Pricing */}
 						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (
 							<div className="space-y-4">
@@ -357,7 +440,7 @@ function EventDetailPage() {
 												size="lg"
 												onClick={handleAddToCart}
 											>
-												Add to Cart - ${(selectedTier.amount * quantity).toFixed(2)}
+												{isParticipant ? 'Submit Vehicle for Review' : `Add to Cart - $${(selectedTier.amount * quantity).toFixed(2)}`}
 											</Button>
 										</CardContent>
 									</Card>
@@ -433,16 +516,21 @@ function EventDetailPage() {
 											onClick={handleSingleCheckout}
 											disabled={event.status === 'soldout' || event.availableSpots === 0}
 										>
-											{event.status === 'soldout' ? 'Sold Out' : 'Book Now'}
+											{isParticipant
+												? 'Submit Vehicle for Review'
+												: (event.status === 'soldout' ? 'Sold Out' : 'Book Now')
+											}
 										</Button>
-										<Button
-											className="w-full"
-											variant="outline"
-											onClick={handleAddToCart}
-											disabled={event.status === 'soldout' || event.availableSpots === 0}
-										>
-											Add to Cart
-										</Button>
+										{!isParticipant && (
+											<Button
+												className="w-full"
+												variant="outline"
+												onClick={handleAddToCart}
+												disabled={event.status === 'soldout' || event.availableSpots === 0}
+											>
+												Add to Cart
+											</Button>
+										)}
 										<div className="flex gap-2">
 											<Button variant="outline" size="icon" className="flex-1">
 												<Heart className="h-4 w-4" />
@@ -490,6 +578,19 @@ function EventDetailPage() {
 					</div>
 				)}
 			</div>
+
+			{/* Vehicle Submission Dialog */}
+			<Dialog open={showSubmissionForm} onOpenChange={setShowSubmissionForm}>
+				<DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+					<VehicleSubmissionForm
+						eventId={event.id}
+						eventSlug={event.slug}
+						eventName={event.title}
+						onSuccess={handleSubmissionSuccess}
+						onCancel={() => setShowSubmissionForm(false)}
+					/>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

@@ -99,6 +99,12 @@ func main() {
 	api.HandleFunc("/events/{eventId}/tickets", handlers.GetEventTickets).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/{slug}", handlers.GetEventBySlug).Methods("GET", "OPTIONS")
 
+	// Vehicle submission endpoints
+	api.HandleFunc("/submissions", handlers.CreateSubmission).Methods("POST", "OPTIONS")
+	api.HandleFunc("/submissions/{submissionId}", handlers.GetSubmission).Methods("GET", "OPTIONS")
+	api.HandleFunc("/create-participant-checkout", handlers.CreateParticipantCheckout).Methods("POST", "OPTIONS")
+	api.HandleFunc("/checkout/submission", handlers.CreateSubmissionCheckout).Methods("POST", "OPTIONS")
+
 	// Newsletter endpoints
 	api.HandleFunc("/newsletter/subscribe", handlers.SubscribeToNewsletter).Methods("POST", "OPTIONS")
 	api.HandleFunc("/newsletter/lists", handlers.GetMailingLists).Methods("GET")
@@ -131,10 +137,17 @@ func main() {
 	api.HandleFunc("/admin/media/upload", handlers.UploadMedia).Methods("POST", "OPTIONS")
 	api.HandleFunc("/admin/media/delete", handlers.DeleteMedia).Methods("DELETE", "OPTIONS")
 
+	// Price management endpoints (requires authentication)
 	api.HandleFunc("/admin/create-price", handlers.CreatePrice).Methods("POST", "OPTIONS")
 	api.HandleFunc("/admin/update-price/{id}", handlers.UpdatePrice).Methods("PUT", "OPTIONS")
 	api.HandleFunc("/admin/archive-price/{id}", handlers.ArchivePrice).Methods("PUT", "OPTIONS")
 	api.HandleFunc("/admin/set-default-price/{id}", handlers.SetDefaultPrice).Methods("PUT", "OPTIONS")
+
+	// Admin submission endpoints (requires authentication)
+	api.HandleFunc("/admin/submissions/pending-count", handlers.GetPendingSubmissionsCount).Methods("GET", "OPTIONS")
+	api.HandleFunc("/admin/submissions/{eventId}", handlers.GetEventSubmissions).Methods("GET", "OPTIONS")
+	api.HandleFunc("/admin/submissions/{submissionId}/approve", handlers.ApproveSubmission).Methods("PUT", "OPTIONS")
+	api.HandleFunc("/admin/submissions/{submissionId}/deny", handlers.DenySubmission).Methods("PUT", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	r.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

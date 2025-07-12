@@ -12,13 +12,13 @@ import {
 	Calendar,
 	LogOut,
 	TrendingUp,
-	Users,
 	DollarSign,
 	FileImage,
 	Settings,
 	ExternalLink,
 	BarChart,
-	ShoppingBag
+	ShoppingBag,
+	Car
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -29,6 +29,7 @@ interface DashboardStats {
 	activeProducts: number;
 	featuredItems: number;
 	mediaFiles?: number;
+	pendingSubmissions?: number;
 }
 
 export const Route = createFileRoute('/admin/')({
@@ -72,6 +73,14 @@ function AdminDashboardContent() {
 				// Media endpoint might not be available
 			}
 
+			// Try to fetch pending submissions count
+			try {
+				const submissionsResponse = await apiClient.get('/admin/submissions/pending-count');
+				stats.pendingSubmissions = submissionsResponse.data.count || 0;
+			} catch {
+				// Submissions endpoint might not be available
+			}
+
 			setStats(stats);
 		} catch (error) {
 			console.error('Error fetching stats:', error);
@@ -111,6 +120,15 @@ function AdminDashboardContent() {
 			stats: stats ? `${stats.totalEvents} events` : null,
 		},
 		{
+			title: 'Vehicle Submissions',
+			description: 'Review and approve participant vehicle submissions',
+			icon: Car,
+			href: '/admin/submissions',
+			color: 'text-orange-600',
+			bgColor: 'bg-orange-50',
+			stats: stats?.pendingSubmissions ? `${stats.pendingSubmissions} pending` : null,
+		},
+		{
 			title: 'Media Library',
 			description: 'Upload and manage images and videos for your site',
 			icon: Image,
@@ -134,14 +152,14 @@ function AdminDashboardContent() {
 			onClick: () => navigate({ to: '/admin/products', search: { tab: 'create', type: 'event' } }),
 		},
 		{
+			label: 'Review Submissions',
+			icon: Car,
+			onClick: () => navigate({ to: '/admin/submissions' }),
+		},
+		{
 			label: 'Upload Media',
 			icon: FileImage,
 			onClick: () => navigate({ to: '/admin/media', search: { tab: 'upload' } }),
-		},
-		{
-			label: 'View Site',
-			icon: ExternalLink,
-			onClick: () => window.open('/', '_blank'),
 		},
 	];
 
@@ -226,6 +244,19 @@ function AdminDashboardContent() {
 
 							<Card>
 								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+									<CardTitle className="text-sm font-medium">Pending Submissions</CardTitle>
+									<Car className="h-4 w-4 text-muted-foreground" />
+								</CardHeader>
+								<CardContent>
+									<div className="text-2xl font-bold">{stats.pendingSubmissions || 0}</div>
+									<p className="text-xs text-muted-foreground">
+										Vehicle reviews needed
+									</p>
+								</CardContent>
+							</Card>
+
+							<Card>
+								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
 									<CardTitle className="text-sm font-medium">Media Files</CardTitle>
 									<FileImage className="h-4 w-4 text-muted-foreground" />
 								</CardHeader>
@@ -234,28 +265,6 @@ function AdminDashboardContent() {
 									<p className="text-xs text-muted-foreground">
 										Images and videos
 									</p>
-								</CardContent>
-							</Card>
-
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-									<Settings className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="flex gap-1">
-										{quickActions.slice(0, 3).map((action, i) => (
-											<Button
-												key={i}
-												size="sm"
-												variant="ghost"
-												onClick={action.onClick}
-												title={action.label}
-											>
-												<action.icon className="h-4 w-4" />
-											</Button>
-										))}
-									</div>
 								</CardContent>
 							</Card>
 						</>
@@ -290,7 +299,7 @@ function AdminDashboardContent() {
 				</Card>
 
 				{/* Main Sections */}
-				<div className="grid md:grid-cols-3 gap-6 mb-8">
+				<div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 					{adminSections.map((section, index) => {
 						const Icon = section.icon;
 						return (
@@ -360,8 +369,8 @@ function AdminDashboardContent() {
 					<p>Euro Haus Admin Panel v1.0</p>
 					<p className="mt-1">
 						Need help? Contact{' '}
-						<a href="mailto:support@theeurohaus.com" className="underline">
-							support@theeurohaus.com
+						<a href="mailto:info@theeurohaus.com" className="underline">
+							info@theeurohaus.com
 						</a>
 					</p>
 				</div>
