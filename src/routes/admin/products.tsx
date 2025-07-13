@@ -110,7 +110,6 @@ function AdminProductsContent() {
 	const [activeTab, setActiveTab] = useState('manage');
 	const [products, setProducts] = useState<StripeProduct[]>([]);
 	const [filteredProducts, setFilteredProducts] = useState<StripeProduct[]>([]);
-	const [isLoading, setIsLoading] = useState(false);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [filterType, setFilterType] = useState<'all' | 'product' | 'event'>('all');
@@ -278,7 +277,6 @@ function AdminProductsContent() {
 
 	// Submit form (create or update)
 	const onSubmit = async (data: FormData) => {
-		setIsLoading(true);
 
 		try {
 			// Prepare base metadata
@@ -288,6 +286,7 @@ function AdminProductsContent() {
 			};
 
 			// Base request data
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any, prefer-const
 			let requestData: any = {
 				name: data.name,
 				description: data.description,
@@ -439,8 +438,6 @@ function AdminProductsContent() {
 				? String(error.response.data)
 				: 'Failed to save product';
 			toast.error(errorMessage);
-		} finally {
-			setIsLoading(false);
 		}
 	};
 
@@ -987,9 +984,9 @@ function AdminProductsContent() {
 											type="submit"
 											className="flex-1"
 											size="lg"
-											disabled={isLoading}
+											disabled={form.formState.isSubmitting || !form.formState.isValid}
 										>
-											{isLoading ? (
+											{form.formState.isSubmitting ? (
 												<>
 													<Loader2 className="mr-2 h-4 w-4 animate-spin" />
 													{editingProduct ? 'Updating...' : 'Creating...'}
