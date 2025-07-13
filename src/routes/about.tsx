@@ -252,7 +252,7 @@ function RouteComponent() {
 										</div>
 										<div>
 											<h4 className="font-semibold">Email</h4>
-											<p className="text-muted-foreground">info@eurohaus.com</p>
+											<p className="text-muted-foreground">info@theeurohaus.com</p>
 											<p className="text-sm text-muted-foreground">We'll get back to you within 24 hours</p>
 										</div>
 									</div>

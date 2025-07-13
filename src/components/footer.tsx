@@ -97,8 +97,8 @@ export function Footer() {
 						<ul className="mt-2 space-y-2 text-sm">
 							<li className="flex items-center">
 								<Mail className="mr-2 h-4 w-4 text-muted-foreground" />
-								<a href="mailto:info@eurohaus.com" className="text-muted-foreground hover:text-foreground">
-									info@eurohaus.com
+								<a href="mailto:info@theeurohaus.com" className="text-muted-foreground hover:text-foreground">
+									info@theeurohaus.com
 								</a>
 							</li>
 						</ul>

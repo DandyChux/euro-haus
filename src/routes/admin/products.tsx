@@ -982,7 +982,7 @@ function AdminProductsContent() {
 										)}
 										<Button
 											type="submit"
-											className="flex-1"
+											className="flex-1 disabled:bg-gray-500 disabled:text-white cursor-pointer disabled:cursor-not-allowed"
 											size="lg"
 											disabled={form.formState.isSubmitting || !form.formState.isValid}
 										>
