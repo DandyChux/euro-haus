@@ -1,6 +1,6 @@
 import React from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -31,7 +31,7 @@ export function EventTiersForm({ form }: EventTiersFormProps) {
 				price: '',
 				description: '',
 				features: [],
-				maxQuantity: '',
+				maxQuantity: undefined,
 				sortOrder: currentTiers.length,
 			},
 		]);
@@ -170,6 +170,7 @@ export function EventTiersForm({ form }: EventTiersFormProps) {
 											<FormControl>
 												<Input {...field} placeholder="50" />
 											</FormControl>
+											<FormMessage />
 										</FormItem>
 									)}
 								/>

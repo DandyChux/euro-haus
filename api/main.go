@@ -153,9 +153,10 @@ func main() {
 	r.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
 
 	// Setup CORS
+	baseURL := os.Getenv("BASE_URL")
 	allowedOrigins := []string{
 		"http://localhost:3000",
-		"https://theeurohaus.com",
+		baseURL,
 	}
 	corsMiddleware := middleware.SetupCORS(allowedOrigins)
 
