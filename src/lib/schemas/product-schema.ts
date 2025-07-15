@@ -8,6 +8,8 @@ export const priceTierSchema = z.object({
 	features: z.array(z.string()).optional(),
 	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
+	requiresVehicleSubmission: z.boolean().optional(),
+	isMostPopular: z.boolean().optional()
 });
 
 // Product variant schema for size/color variations

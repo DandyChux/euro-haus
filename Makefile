@@ -14,7 +14,7 @@ start-db:
 # Build the application
 build:
 	@echo "Building application..."
-	@go build -o bin/server ./main.go
+	@cd api && go build -o bin/server ./main.go
 
 # Clean build artifacts
 clean:

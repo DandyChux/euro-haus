@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 )
 
@@ -359,10 +360,18 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 
 	// Add price information if available
 	if eventProduct.DefaultPrice != nil {
+		dp := eventProduct.DefaultPrice
 		eventResponse["price"] = map[string]interface{}{
-			"id":          eventProduct.DefaultPrice.ID,
-			"unit_amount": eventProduct.DefaultPrice.UnitAmount,
-			"currency":    eventProduct.DefaultPrice.Currency,
+			"id":          dp.ID,
+			"unit_amount": dp.UnitAmount,
+			"currency":    dp.Currency,
+		}
+
+		// Check if default price requires vehicle submission
+		if dp.Metadata != nil && dp.Metadata["requires_vehicle_submission"] == "true" {
+			eventResponse["requiresVehicleSubmission"] = true
+		} else {
+			eventResponse["requiresVehicleSubmission"] = false
 		}
 	}
 
@@ -382,6 +391,77 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 			eventResponse["sold_out"] = true
 		} else {
 			eventResponse["sold_out"] = false
+		}
+	}
+
+	// Fetch event tiers if needed
+	if eventProduct.Metadata["has_tiers"] == "true" {
+		// Fetch tier prices for this product
+		priceParams := &stripe.PriceListParams{
+			Product: stripe.String(eventProduct.ID),
+			Active:  stripe.Bool(true),
+		}
+
+		var tiers []map[string]interface{}
+		priceIter := price.List(priceParams)
+
+		for priceIter.Next() {
+			p := priceIter.Price()
+
+			// Skip prices without nicknames (non-tier prices)
+			if p.Nickname == "" {
+				continue
+			}
+
+			// Extract features from metadata
+			var features []string
+			if featuresJSON, ok := p.Metadata["features"]; ok && featuresJSON != "" {
+				if err := json.Unmarshal([]byte(featuresJSON), &features); err != nil {
+					log.Printf("Error parsing features: %v", err)
+				}
+			}
+
+			// Check for vehicle submission requirement
+			requiresVehicleSubmission := false
+			if p.Metadata["requires_vehicle_submission"] == "true" {
+				requiresVehicleSubmission = true
+			}
+
+			// Check for most popular flag
+			isMostPopular := false
+			if p.Metadata["is_most_popular"] == "true" {
+				isMostPopular = true
+			}
+
+			tier := map[string]interface{}{
+				"id":                        p.ID,
+				"priceId":                   p.ID,
+				"name":                      p.Nickname,
+				"amount":                    float64(p.UnitAmount) / 100,
+				"currency":                  string(p.Currency),
+				"description":               p.Metadata["description"],
+				"features":                  features,
+				"requiresVehicleSubmission": requiresVehicleSubmission,
+				"isMostPopular":             isMostPopular,
+			}
+
+			// Add max quantity if available
+			if maxQty, ok := p.Metadata["max_quantity"]; ok && maxQty != "" {
+				if maxQtyInt, err := strconv.Atoi(maxQty); err == nil {
+					tier["maxQuantity"] = maxQtyInt
+				}
+			}
+
+			tiers = append(tiers, tier)
+		}
+
+		if err := priceIter.Err(); err != nil {
+			log.Printf("Error fetching prices: %v", err)
+		}
+
+		if len(tiers) > 0 {
+			eventResponse["priceTiers"] = tiers
+			eventResponse["hasTiers"] = true
 		}
 	}
 

@@ -1,8 +1,7 @@
-// euro-haus/src/components/tiered-pricing.tsx
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Check, Users, Star, Sparkles } from 'lucide-react';
+import { Check, Users, Star, Sparkles, Car } from 'lucide-react';
 import { TieredPrice } from '../lib/services/stripe-service';
 import { cn } from '../lib/utils';
 import { Badge } from './ui/badge';
@@ -15,6 +14,7 @@ import {
 } from "./ui/select";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Label } from "./ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface TieredPricingProps {
 	tiers: TieredPrice[];
@@ -30,109 +30,166 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 		setSelectedQuantities(prev => ({ ...prev, [tierId]: quantity }));
 	};
 
-	// Find the most popular tier (usually middle-priced)
-	const popularTierIndex = Math.floor(tiers.length / 2);
+	// Find the most popular tier based on metadata
+	const popularTier = tiers.find(t => t.isMostPopular);
+	const popularTierIndex = popularTier ? tiers.indexOf(popularTier) : -1;
 
-	// Get icon based on tier position
-	const getTierIcon = (index: number) => {
+	// Get icon based on tier position or popularity
+	const getTierIcon = (index: number, tier: TieredPrice) => {
+		if (tier.isMostPopular) return <Star className="h-5 w-5" />;
 		if (index === 0) return <Users className="h-5 w-5" />;
-		if (index === popularTierIndex) return <Star className="h-5 w-5" />;
 		if (index === tiers.length - 1) return <Sparkles className="h-5 w-5" />;
 		return <Check className="h-5 w-5" />;
 	};
 
 	const selectedTier = tiers.find(t => t.id === selectedTierId);
 
-	// For 1-2 tiers, use side-by-side layout
-	// For 3+ tiers, use responsive grid or list view
+	const renderTierCard = (tier: TieredPrice, index: number, layout: 'grid' | 'mobile-stack') => {
+		const isPopular = tier.isMostPopular;
+		const cardClasses = cn(
+			"relative transition-all hover:shadow-lg",
+			tier.soldOut && "opacity-60",
+			isPopular && "ring-2 ring-primary",
+			layout === 'grid' && "h-full flex flex-col"
+		);
+		const badgeClasses = cn(
+			"absolute z-10",
+			layout === 'grid' ? "-top-3 left-1/2 -translate-x-1/2 whitespace-nowrap" : "-top-3 left-4"
+		);
+
+		return (
+			<Card key={tier.id} className={cardClasses}>
+				{isPopular && (
+					<Badge className={badgeClasses}>
+						Most Popular
+					</Badge>
+				)}
+				<CardHeader className="pb-3">
+					{layout === 'mobile-stack' ? (
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								{getTierIcon(index, tier)}
+								<CardTitle className="text-lg">{tier.name}</CardTitle>
+							</div>
+							<div className="text-right">
+								<span className="text-2xl font-bold">${tier.amount}</span>
+								<span className="text-xs ml-1 block text-muted-foreground">per ticket</span>
+							</div>
+						</div>
+					) : (
+						<>
+							<div className="flex items-start gap-2 min-h-[3rem]">
+								<span className="flex-shrink-0 pt-1">{getTierIcon(index, tier)}</span>
+								<CardTitle className="text-base">{tier.name}</CardTitle>
+								{tier.requiresVehicleSubmission && (
+									<TooltipProvider>
+										<Tooltip>
+											<TooltipTrigger>
+												<Car className="h-5 w-5 text-muted-foreground" />
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>Vehicle submission required</p>
+											</TooltipContent>
+										</Tooltip>
+									</TooltipProvider>
+								)}
+							</div>
+							<CardDescription className="mt-2">
+								<span className="text-2xl font-bold">${tier.amount}</span>
+								<span className="text-sm ml-1">{tier.currency.toUpperCase()}</span>
+							</CardDescription>
+						</>
+					)}
+				</CardHeader>
+
+				<CardContent className={cn("pb-3", layout === 'grid' && "flex-1")}>
+					{tier.description ? (
+						<p className={cn(
+							"text-sm text-muted-foreground mb-3",
+							layout === 'grid' && "line-clamp-2 min-h-[2.5rem]"
+						)}>
+							{tier.description}
+						</p>
+					) : (
+						layout === 'grid' && <div className="mb-3 min-h-[2.5rem]" />
+					)}
+
+					<div className={cn(layout === 'grid' && "min-h-[60px]")}>
+						{tier.features && tier.features.length > 0 && (
+							<ul className="space-y-1.5">
+								{tier.features.slice(0, layout === 'grid' ? 3 : undefined).map((feature, idx) => (
+									<li key={idx} className="flex items-start">
+										<Check className="h-3 w-3 text-primary mr-1.5 mt-0.5 flex-shrink-0" />
+										<span className="text-xs line-clamp-1">{feature}</span>
+									</li>
+								))}
+								{layout === 'grid' && tier.features.length > 3 && (
+									<li className="text-xs text-muted-foreground">
+										+{tier.features.length - 3} more
+									</li>
+								)}
+							</ul>
+						)}
+					</div>
+				</CardContent>
+
+				<CardFooter className={cn(
+					"flex gap-2 pt-3",
+					layout === 'grid' ? "flex-col" : "flex-row"
+				)}>
+					<div className={cn(layout === 'grid' ? "h-9 w-full" : "w-24")}>
+						{!tier.soldOut && tier.maxQuantity && (
+							<Select
+								value={String(selectedQuantities[tier.id] || 1)}
+								onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
+							>
+								<SelectTrigger className="w-full h-9 text-sm">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
+										<SelectItem key={num} value={String(num)}>
+											{num} {layout !== 'mobile-stack' && (num === 1 ? 'ticket' : 'tickets')}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						)}
+					</div>
+
+					<Button
+						className={cn(layout === 'grid' ? "w-full h-9 text-sm" : "flex-1")}
+						disabled={tier.soldOut}
+						variant={isPopular ? "default" : "outline"}
+						onClick={() => onSelectTier(tier, selectedQuantities[tier.id] || 1)}
+					>
+						{tier.soldOut ? 'Sold Out' : (
+							layout === 'mobile-stack' ? `Select - $${(tier.amount * (selectedQuantities[tier.id] || 1)).toFixed(2)}` : 'Select'
+						)}
+					</Button>
+
+					<div className={cn(layout === 'grid' && "h-4")}>
+						{tier.maxQuantity && !tier.soldOut && tier.maxQuantity < 20 && (
+							<p className="text-xs text-center text-orange-600">
+								Only {tier.maxQuantity} left!
+							</p>
+						)}
+					</div>
+				</CardFooter>
+			</Card>
+		);
+	};
+
+	// For 1-2 tiers, use a simple grid layout for all screen sizes
 	if (tiers.length <= 2) {
 		return (
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-				{tiers.map((tier, index) => (
-					<Card
-						key={tier.id}
-						className={cn(
-							"relative transition-all hover:shadow-lg",
-							tier.soldOut && "opacity-60",
-							index === popularTierIndex && "ring-2 ring-primary"
-						)}
-					>
-						{index === popularTierIndex && (
-							<Badge className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-								Most Popular
-							</Badge>
-						)}
-						<CardHeader>
-							<div className="flex items-center gap-2">
-								{getTierIcon(index)}
-								<CardTitle className="text-lg">{tier.name}</CardTitle>
-							</div>
-							<CardDescription>
-								<span className="text-2xl font-bold">
-									${tier.amount}
-								</span>
-								<span className="text-sm ml-1">{tier.currency.toUpperCase()}</span>
-							</CardDescription>
-						</CardHeader>
-
-						<CardContent className="space-y-4">
-							{tier.description && (
-								<p className="text-sm text-muted-foreground">{tier.description}</p>
-							)}
-
-							{tier.features && tier.features.length > 0 && (
-								<ul className="space-y-2">
-									{tier.features.map((feature, idx) => (
-										<li key={idx} className="flex items-start">
-											<Check className="h-4 w-4 text-primary mr-2 mt-0.5 flex-shrink-0" />
-											<span className="text-sm">{feature}</span>
-										</li>
-									))}
-								</ul>
-							)}
-						</CardContent>
-
-						<CardFooter className="flex flex-col gap-3">
-							{!tier.soldOut && tier.maxQuantity && (
-								<Select
-									value={String(selectedQuantities[tier.id] || 1)}
-									onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
-								>
-									<SelectTrigger className="w-full">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
-											<SelectItem key={num} value={String(num)}>
-												{num} {num === 1 ? 'ticket' : 'tickets'}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							)}
-
-							<Button
-								className="w-full"
-								disabled={tier.soldOut}
-								variant={index === popularTierIndex ? "default" : "outline"}
-								onClick={() => onSelectTier(tier, selectedQuantities[tier.id] || 1)}
-							>
-								{tier.soldOut ? 'Sold Out' : 'Select'}
-							</Button>
-
-							{tier.maxQuantity && !tier.soldOut && tier.maxQuantity < 20 && (
-								<p className="text-xs text-center text-orange-600">
-									Only {tier.maxQuantity} left!
-								</p>
-							)}
-						</CardFooter>
-					</Card>
-				))}
+				{tiers.map((tier, index) => renderTierCard(tier, index, 'grid'))}
 			</div>
 		);
 	}
 
-	// For 3+ tiers, provide a toggle between card and list view
+	// For 3+ tiers, provide a toggle between card and list view on mobile
 	return (
 		<div className="w-full space-y-4">
 			{/* View Mode Toggle - Only show on smaller screens */}
@@ -159,101 +216,7 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 
 			{/* Desktop: Always show cards in grid */}
 			<div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-				{tiers.map((tier, index) => (
-					<Card
-						key={tier.id}
-						className={cn(
-							"relative transition-all hover:shadow-lg h-full flex flex-col",
-							tier.soldOut && "opacity-60",
-							index === popularTierIndex && "ring-2 ring-primary"
-						)}
-					>
-						{index === popularTierIndex && (
-							<Badge className="absolute -top-3 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap">
-								Most Popular
-							</Badge>
-						)}
-						<CardHeader className="pb-3">
-							<div className="flex items-start gap-2 min-h-[3rem]">
-								<span className="flex-shrink-0 pt-1">{getTierIcon(index)}</span>
-								<CardTitle className="text-base">{tier.name}</CardTitle>
-							</div>
-							<CardDescription className="mt-2">
-								<span className="text-2xl font-bold">
-									${tier.amount}
-								</span>
-								<span className="text-sm ml-1">{tier.currency.toUpperCase()}</span>
-							</CardDescription>
-						</CardHeader>
-
-						<CardContent className="flex-1 pb-3">
-							{tier.description ? (
-								<p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
-									{tier.description}
-								</p>
-							) : (
-								<div className="mb-3 min-h-[2.5rem]" />
-							)}
-
-							<div className="min-h-[60px]">
-								{tier.features && tier.features.length > 0 && (
-									<ul className="space-y-1.5">
-										{tier.features.slice(0, 3).map((feature, idx) => (
-											<li key={idx} className="flex items-start">
-												<Check className="h-3 w-3 text-primary mr-1.5 mt-0.5 flex-shrink-0" />
-												<span className="text-xs line-clamp-1">{feature}</span>
-											</li>
-										))}
-										{tier.features.length > 3 && (
-											<li className="text-xs text-muted-foreground">
-												+{tier.features.length - 3} more
-											</li>
-										)}
-									</ul>
-								)}
-							</div>
-						</CardContent>
-
-						<CardFooter className="flex flex-col gap-2 pt-3">
-							<div className="h-9">
-								{!tier.soldOut && tier.maxQuantity && (
-									<Select
-										value={String(selectedQuantities[tier.id] || 1)}
-										onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
-									>
-										<SelectTrigger className="w-full h-9 text-sm">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
-												<SelectItem key={num} value={String(num)}>
-													{num} {num === 1 ? 'ticket' : 'tickets'}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								)}
-							</div>
-
-							<Button
-								className="w-full h-9 text-sm"
-								disabled={tier.soldOut}
-								variant={index === popularTierIndex ? "default" : "outline"}
-								onClick={() => onSelectTier(tier, selectedQuantities[tier.id] || 1)}
-							>
-								{tier.soldOut ? 'Sold Out' : 'Select'}
-							</Button>
-
-							<div className="h-4">
-								{tier.maxQuantity && !tier.soldOut && tier.maxQuantity < 20 && (
-									<p className="text-xs text-center text-orange-600">
-										Only {tier.maxQuantity} left!
-									</p>
-								)}
-							</div>
-						</CardFooter>
-					</Card>
-				))}
+				{tiers.map((tier, index) => renderTierCard(tier, index, 'grid'))}
 			</div>
 
 			{/* Mobile: Show cards or list based on selection */}
@@ -261,80 +224,7 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 				{viewMode === 'cards' ? (
 					// Mobile card view - stack vertically
 					<div className="space-y-4">
-						{tiers.map((tier, index) => (
-							<Card
-								key={tier.id}
-								className={cn(
-									"relative transition-all",
-									tier.soldOut && "opacity-60",
-									index === popularTierIndex && "ring-2 ring-primary"
-								)}
-							>
-								{index === popularTierIndex && (
-									<Badge className="absolute -top-3 left-4 z-10">
-										Most Popular
-									</Badge>
-								)}
-								<CardHeader className="pb-3">
-									<div className="flex items-center justify-between">
-										<div className="flex items-center gap-2">
-											{getTierIcon(index)}
-											<CardTitle className="text-lg">{tier.name}</CardTitle>
-										</div>
-										<div className="text-right">
-											<span className="text-2xl font-bold">${tier.amount}</span>
-											<span className="text-xs ml-1 block text-muted-foreground">per ticket</span>
-										</div>
-									</div>
-								</CardHeader>
-
-								<CardContent className="pb-3">
-									{tier.description && (
-										<p className="text-sm text-muted-foreground mb-3">{tier.description}</p>
-									)}
-
-									{tier.features && tier.features.length > 0 && (
-										<ul className="space-y-1">
-											{tier.features.map((feature, idx) => (
-												<li key={idx} className="flex items-start">
-													<Check className="h-4 w-4 text-primary mr-2 mt-0.5 flex-shrink-0" />
-													<span className="text-sm">{feature}</span>
-												</li>
-											))}
-										</ul>
-									)}
-								</CardContent>
-
-								<CardFooter className="flex gap-2">
-									{!tier.soldOut && tier.maxQuantity && (
-										<Select
-											value={String(selectedQuantities[tier.id] || 1)}
-											onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
-										>
-											<SelectTrigger className="w-24">
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
-													<SelectItem key={num} value={String(num)}>
-														{num}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									)}
-
-									<Button
-										className="flex-1"
-										disabled={tier.soldOut}
-										variant={index === popularTierIndex ? "default" : "outline"}
-										onClick={() => onSelectTier(tier, selectedQuantities[tier.id] || 1)}
-									>
-										{tier.soldOut ? 'Sold Out' : `Select - $${(tier.amount * (selectedQuantities[tier.id] || 1)).toFixed(2)}`}
-									</Button>
-								</CardFooter>
-							</Card>
-						))}
+						{tiers.map((tier, index) => renderTierCard(tier, index, 'mobile-stack'))}
 					</div>
 				) : (
 					// Mobile list view - compact radio selection
@@ -356,8 +246,20 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 												<div>
 													<div className="font-medium flex items-center gap-2">
 														{tier.name}
-														{index === popularTierIndex && (
+														{tier.isMostPopular && (
 															<Badge variant="secondary" className="text-xs">Popular</Badge>
+														)}
+														{tier.requiresVehicleSubmission && (
+															<TooltipProvider>
+																<Tooltip>
+																	<TooltipTrigger>
+																		<Car className="h-4 w-4 text-muted-foreground" />
+																	</TooltipTrigger>
+																	<TooltipContent>
+																		<p>Vehicle submission required</p>
+																	</TooltipContent>
+																</Tooltip>
+															</TooltipProvider>
 														)}
 													</div>
 													{tier.description && (

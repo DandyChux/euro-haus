@@ -1,19 +1,19 @@
-import { useEffect, useState } from 'react';
-import { Card, CardContent } from '~/components/ui/card';
+import { useEffect } from 'react';
+import { Card } from '~/components/ui/card';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from '~/components/ui/form';
 import { Input } from '~/components/ui/input';
-import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Separator } from '~/components/ui/separator';
 import { Button } from '~/components/ui/button';
-import { useFieldArray, UseFormReturn } from 'react-hook-form';
-import { AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { UseFormReturn, useFieldArray } from 'react-hook-form';
+import { Plus, Trash2, GripVertical, AlertCircle } from 'lucide-react';
 import { FormData } from '~/lib/schemas/product-schema';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
 import { ExistingPricesManager } from './existing-prices-manager';
 import { Alert, AlertDescription } from '../ui/alert';
+import { Textarea } from '../ui/textarea';
 
 interface EventFormSectionProps {
 	form: UseFormReturn<FormData>;
@@ -105,11 +105,6 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 
 				} catch (error) {
 					console.error('Error checking event tiers:', error);
-					// toast({
-					// 	title: "Error",
-					// 	description: "Failed to check event pricing",
-					// 	variant: "destructive"
-					// });
 					toast.error('Failed to check event pricing');
 				}
 			};
@@ -706,6 +701,8 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 								features: [],
 								maxQuantity: '',
 								sortOrder: tierFields.length,
+								requiresVehicleSubmission: false,
+								isMostPopular: false
 							})}
 						>
 							<Plus className="h-4 w-4 mr-1" /> Add New Tier
@@ -846,6 +843,44 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 													))}
 												</div>
 											)}
+										</div>
+
+										<div className="flex items-center space-x-4">
+											<FormField
+												control={form.control}
+												name={`priceTiers.${index}.requiresVehicleSubmission`}
+												render={({ field }) => (
+													<FormItem className="flex items-center space-x-2 mt-2">
+														<FormControl>
+															<Checkbox
+																checked={field.value}
+																onCheckedChange={field.onChange}
+															/>
+														</FormControl>
+														<FormLabel className="font-normal cursor-pointer">
+															Requires Vehicle Submission?
+														</FormLabel>
+													</FormItem>
+												)}
+											/>
+
+											<FormField
+												control={form.control}
+												name={`priceTiers.${index}.isMostPopular`}
+												render={({ field }) => (
+													<FormItem className="flex items-center space-x-2 mt-2">
+														<FormControl>
+															<Checkbox
+																checked={field.value}
+																onCheckedChange={field.onChange}
+															/>
+														</FormControl>
+														<FormLabel className="font-normal cursor-pointer">
+															Most Popular Tier?
+														</FormLabel>
+													</FormItem>
+												)}
+											/>
 										</div>
 
 										{/* Hidden sort order field */}

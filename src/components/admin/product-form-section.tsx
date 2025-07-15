@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Card, CardContent } from '~/components/ui/card';
+import { Card } from '~/components/ui/card';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from '~/components/ui/form';
 import { Input } from '~/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
@@ -7,10 +7,12 @@ import { Checkbox } from '~/components/ui/checkbox';
 import { Separator } from '~/components/ui/separator';
 import { Button } from '~/components/ui/button';
 import { UseFormReturn, useFieldArray } from 'react-hook-form';
-import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Trash2, GripVertical, AlertCircle } from 'lucide-react';
 import { FormData } from '~/lib/schemas/product-schema';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
+import { ExistingPricesManager } from './existing-prices-manager';
+import { Alert, AlertDescription } from '../ui/alert';
 
 interface ProductFormSectionProps {
 	form: UseFormReturn<FormData>;
@@ -33,31 +35,18 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 	// Load variants or existing prices when editing
 	useEffect(() => {
 		if (isEditing && productId) {
-			// Fetch product variants/prices if editing
 			const fetchProductPrices = async () => {
 				try {
 					const response = await apiClient.get(`/products/${productId}/prices`);
 					const prices = response.data.prices || [];
 
-					// Convert prices to variant format
-					const variants = prices.map((price: any, index: number) => ({
-						variantName: price.nickname || '',
-						size: price.metadata?.size || '',
-						color: price.metadata?.color || '',
-						price: (price.unit_amount / 100).toFixed(2),
-						sku: price.metadata?.sku || '',
-						inStock: price.metadata?.in_stock !== 'false',
-						sortOrder: parseInt(price.metadata?.sort_order || index.toString()),
-					}));
+					const hasExistingVariants = prices.some((price: any) =>
+						price.nickname && price.nickname.trim() !== ''
+					);
 
-					// Sort by sortOrder
-					variants.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+					form.setValue('hasVariants', hasExistingVariants);
+					form.setValue('variants', []);
 
-					// Update form with loaded variants
-					if (variants.length > 0) {
-						form.setValue('hasVariants', true);
-						form.setValue('variants', variants);
-					}
 				} catch (error) {
 					console.error('Error fetching product prices:', error);
 					toast.error('Failed to load product variants')
@@ -66,7 +55,7 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 
 			fetchProductPrices();
 		}
-	}, [isEditing, productId, form, toast]);
+	}, [isEditing, productId, form]);
 
 	const watchCategory = form.watch('category');
 	const isApparel = watchCategory === 'apparel';
@@ -200,6 +189,7 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 										form.setValue('variants', []);
 									}
 								}}
+								disabled={form.watch('hasVariants')}
 							/>
 						</FormControl>
 						<FormLabel className="font-normal cursor-pointer">
@@ -209,10 +199,25 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 				)}
 			/>
 
+			{isEditing && productId && (
+				<div className="mt-4">
+					<ExistingPricesManager
+						productId={productId}
+						productType="product"
+						form={form}
+					/>
+				</div>
+			)}
+
 			{form.watch('hasVariants') ? (
-				<div className="bg-muted/50 p-4 rounded-md space-y-4">
+				<div className="bg-muted/50 p-4 rounded-md space-y-4 mt-4">
 					<div className="flex justify-between items-center">
-						<h3 className="text-lg font-semibold">Product Variants</h3>
+						<div>
+							<h3 className="text-lg font-semibold">Add New Product Variants</h3>
+							<p className="text-sm text-muted-foreground">
+								Create additional variants for this product.
+							</p>
+						</div>
 						<Button type="button" onClick={addVariant} size="sm">
 							<Plus className="w-4 h-4 mr-1" /> Add Variant
 						</Button>
@@ -220,16 +225,26 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 
 					{variantFields.length === 0 ? (
 						<div className="text-center py-8 text-muted-foreground">
-							No variants added yet. Click "Add Variant" to create your first variant.
+							{isEditing ? (
+								<p>Use the form below to add new variants. Existing variants are shown above.</p>
+							) : (
+								<p>No variants added yet. Click "Add Variant" to create your first variant.</p>
+							)}
 						</div>
 					) : (
 						<div className="space-y-4">
+							<Alert>
+								<AlertCircle className="h-4 w-4" />
+								<AlertDescription>
+									These are new variants that will be created when you save. To modify existing variants, use the section above.
+								</AlertDescription>
+							</Alert>
 							{variantFields.map((field, index) => (
 								<Card key={field.id} className="p-4">
 									<div className="flex items-start justify-between mb-4">
 										<div className="flex items-center gap-2">
 											<GripVertical className="w-4 h-4 text-gray-400 cursor-move" />
-											<h4 className="font-medium">Variant {index + 1}</h4>
+											<h4 className="font-medium">New Variant {index + 1}</h4>
 										</div>
 										<div className="flex gap-1">
 											<Button

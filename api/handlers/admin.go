@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
@@ -427,6 +428,30 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Process metadata for boolean fields
+	finalMetadata := req.Metadata
+	if finalMetadata == nil {
+		finalMetadata = make(map[string]string)
+	}
+
+	// Ensure boolean values are stored as strings
+	for k, v := range req.Metadata {
+		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+			// Convert any value to proper "true" or "false" string
+			boolValue, err := strconv.ParseBool(v)
+			if err == nil {
+				if boolValue {
+					finalMetadata[k] = "true"
+				} else {
+					finalMetadata[k] = "false"
+				}
+			} else {
+				// If we can't parse it as a boolean, default to "false"
+				finalMetadata[k] = "false"
+			}
+		}
+	}
+
 	params := &stripe.PriceParams{
 		Product:    stripe.String(req.Product),
 		UnitAmount: stripe.Int64(req.UnitAmount),
@@ -447,6 +472,7 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 		"product":     newPrice.Product.ID,
 		"unit_amount": newPrice.UnitAmount,
 		"nickname":    newPrice.Nickname,
+		"metadata":    newPrice.Metadata,
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -505,8 +531,25 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 	if finalMetadata == nil {
 		finalMetadata = make(map[string]string)
 	}
+
 	for k, v := range req.Metadata {
-		finalMetadata[k] = v
+		// Ensure boolean values are stored as strings
+		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+			// Convert any value to proper "true" or "false" string
+			boolValue, err := strconv.ParseBool(v)
+			if err == nil {
+				if boolValue {
+					finalMetadata[k] = "true"
+				} else {
+					finalMetadata[k] = "false"
+				}
+			} else {
+				// If we can't parse it as a boolean, default to "false"
+				finalMetadata[k] = "false"
+			}
+		} else {
+			finalMetadata[k] = v
+		}
 	}
 
 	params := &stripe.PriceParams{
@@ -531,6 +574,7 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
 		"nickname": updatedPrice.Nickname,
+		"metadata": updatedPrice.Metadata,
 	})
 }
 
