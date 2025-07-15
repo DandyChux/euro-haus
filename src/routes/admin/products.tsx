@@ -133,7 +133,7 @@ function AdminProductsContent() {
 			maxQuantity: '10',
 			variants: [],
 			// Event specific fields will be set when switching to event type
-		} as FormData,
+		},
 	});
 
 	// Fetch products
@@ -238,6 +238,7 @@ function AdminProductsContent() {
 				agenda: [],
 				includes: [],
 				sponsors: [],
+				sponsorTiers: [],
 			};
 
 			// Parse arrays from JSON strings
@@ -258,9 +259,29 @@ function AdminProductsContent() {
 					? includesStrings.map((item: string) => ({ value: item }))
 					: [];
 
-				// Sponsors - should already be in correct format
-				const sponsorsData = JSON.parse(product.metadata.sponsors || '[]');
-				eventFormData.sponsors = Array.isArray(sponsorsData) ? sponsorsData : [];
+				// Sponsors - check for new tiered format first
+				const sponsorTiersData = product.metadata.sponsor_tiers ? JSON.parse(product.metadata.sponsor_tiers) : null;
+
+				if (sponsorTiersData && Array.isArray(sponsorTiersData)) {
+					// New tiered format - ensure displayOrder is a number
+					eventFormData.sponsorTiers = sponsorTiersData.map((tier: { tierName: string; displayOrder?: number; sponsors: Array<{ name: string; logoUrl: string; link?: string }> }) => ({
+						tierName: tier.tierName,
+						displayOrder: tier.displayOrder ?? 0,
+						sponsors: tier.sponsors
+					}));
+					eventFormData.sponsors = [];
+				} else {
+					// Legacy format - convert to single tier
+					const sponsorsData = JSON.parse(product.metadata.sponsors || '[]');
+					if (Array.isArray(sponsorsData) && sponsorsData.length > 0) {
+						eventFormData.sponsorTiers = [{
+							tierName: 'Sponsors',
+							displayOrder: 0,
+							sponsors: sponsorsData
+						}];
+					}
+					eventFormData.sponsors = [];
+				}
 			} catch (error) {
 				console.error('Error parsing event metadata:', error);
 				// Keep the default empty arrays if parsing fails
@@ -318,8 +339,8 @@ function AdminProductsContent() {
 			};
 
 			// Base request data
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any, prefer-const
-			let requestData: any = {
+			// eslint-disable-next-line prefer-const
+			let requestData: Record<string, unknown> = {
 				name: data.name,
 				description: data.description,
 				images: data.imageUrl ? [data.imageUrl] : [],
@@ -397,7 +418,16 @@ function AdminProductsContent() {
 				metadata.tags = JSON.stringify(data.tags.map(t => t.value).filter(Boolean));
 				metadata.agenda = JSON.stringify(data.agenda);
 				metadata.includes = JSON.stringify(data.includes.map(i => i.value).filter(Boolean));
-				metadata.sponsors = JSON.stringify(data.sponsors || []);
+
+				// Save sponsor tiers
+				if (data.sponsorTiers && data.sponsorTiers.length > 0) {
+					metadata.sponsor_tiers = JSON.stringify(data.sponsorTiers);
+					// Clear legacy sponsors field
+					metadata.sponsors = JSON.stringify([]);
+				} else {
+					// Fallback to legacy format if no tiers
+					metadata.sponsors = JSON.stringify(data.sponsors || []);
+				}
 
 				// Handle tiered pricing
 				if (data.hasTiers && data.priceTiers && data.priceTiers.length > 0) {
@@ -534,6 +564,9 @@ function AdminProductsContent() {
 				{ name: 'Porsche USA', logoUrl: 'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/porsche-logo.png', link: 'https://www.porsche.com' },
 				{ name: 'Michelin', logoUrl: 'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/michelin-logo.png', link: 'https://www.michelin.com' },
 			],
+			sponsorTiers: [],
+			hasTiers: false,
+			priceTiers: []
 		});
 		toast.success('Event template loaded');
 		setActiveTab('create');

@@ -7,6 +7,7 @@ import { Calendar, MapPin, Users, ChevronRight } from 'lucide-react';
 import { Badge } from '~/components/ui/badge';
 import { stripeService } from '~/lib/services/stripe-service';
 import { Skeleton } from '~/components/ui/skeleton';
+import { EventCard } from '~/components/event-cards';
 
 export const Route = createFileRoute('/events/')({
 	loader: async () => {
@@ -78,63 +79,7 @@ function EventsPage() {
 					) : (
 						<div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
 							{events.map((event) => (
-								<Card key={event.slug} className="overflow-hidden hover:shadow-lg transition-shadow">
-									<div className="aspect-video relative overflow-hidden">
-										<Image
-											src={event.imageUrl}
-											alt={event.title}
-											className="object-cover w-full h-full hover:scale-105 transition-transform duration-300"
-										/>
-										{event.status && (
-											<Badge
-												className="absolute top-4 right-4"
-												variant={event.status === 'upcoming' ? 'default' : event.status === 'soldout' ? 'destructive' : 'secondary'}
-											>
-												{event.status === 'soldout' ? 'Sold Out' : event.status}
-											</Badge>
-										)}
-									</div>
-									<CardHeader>
-										<CardTitle className="text-xl">{event.title}</CardTitle>
-										<CardDescription className="space-y-2">
-											<div className="flex items-center gap-2 text-sm">
-												<Calendar className="h-4 w-4" />
-												<span>{new Date(event.date).toLocaleDateString('en-US', {
-													weekday: 'long',
-													year: 'numeric',
-													month: 'long',
-													day: 'numeric'
-												})}</span>
-											</div>
-											<div className="flex items-center gap-2 text-sm">
-												<MapPin className="h-4 w-4" />
-												<span>{event.location}</span>
-											</div>
-											{event.availableSpots && event.capacity && (
-												<div className="flex items-center gap-2 text-sm">
-													<Users className="h-4 w-4" />
-													<span>{event.availableSpots} of {event.capacity} spots available</span>
-												</div>
-											)}
-										</CardDescription>
-									</CardHeader>
-									<CardContent>
-										<p className="text-sm text-muted-foreground line-clamp-2">{event.description}</p>
-										<p className="mt-4 text-lg font-semibold">From ${event.price} USD</p>
-									</CardContent>
-									<CardFooter>
-										<Button
-											asChild
-											className="w-full group"
-											disabled={event.status === 'soldout' || event.status === 'cancelled'}
-										>
-											<Link to="/events/$slug" params={{ slug: event.slug }}>
-												{event.status === 'soldout' ? 'Sold Out' : 'View Details'}
-												<ChevronRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-											</Link>
-										</Button>
-									</CardFooter>
-								</Card>
+								<EventCard event={event} />
 							))}
 						</div>
 					)}

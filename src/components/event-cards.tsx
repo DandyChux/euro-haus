@@ -12,13 +12,14 @@ import { Button } from './ui/button';
 import { Skeleton } from './ui/skeleton';
 import { cn } from '~/lib/utils';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight } from 'lucide-react';
+import { Calendar, ChevronRight, MapPin, Users } from 'lucide-react';
 import { stripeService } from '~/lib/services/stripe-service';
 import type { EventProduct as Event } from '~/lib/services/stripe-service';
+import { Badge } from './ui/badge';
+import { useQuery } from '@tanstack/react-query';
 
 type EventCardProps = {
 	event: Event;
-	index: number;
 	className?: string;
 }
 
@@ -37,7 +38,7 @@ function EventCardSkeleton({ index }: { index: number }) {
 					<Skeleton className="h-4 w-1/3" />
 				</div>
 			</CardHeader>
-			<CardContent className="p-0 flex-1 relative w-full aspect-[16/9] overflow-hidden">
+			<CardContent className="p-0 flex-1 relative w-full min-h-[200px] max-h-[400px] overflow-hidden">
 				<Skeleton className="absolute w-full h-full" />
 			</CardContent>
 			<CardFooter className="mt-4">
@@ -48,33 +49,22 @@ function EventCardSkeleton({ index }: { index: number }) {
 }
 
 export default function EventCards() {
-	const [events, setEvents] = useState<Event[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		async function fetchEvents() {
+	const { data: events, isLoading, error } = useQuery({
+		queryKey: ['events'],
+		queryFn: async () => {
 			try {
-				setLoading(true);
-				setError(null);
-
 				// Fetch featured events from Stripe
 				const featuredEvents = await stripeService.getFeaturedEvents();
-				setEvents(featuredEvents);
+				return featuredEvents;
 			} catch (err) {
 				console.error('Failed to fetch events:', err);
-				setError('Failed to load events');
-				setEvents([]);
-			} finally {
-				setLoading(false);
+				throw new Error('Failed to load events');
 			}
-		}
-
-		fetchEvents();
-	}, []);
+		},
+	});
 
 	// Loading state
-	if (loading) {
+	if (isLoading) {
 		return (
 			<div className='grid md:grid-cols-2 lg:grid-cols-3 mx-auto gap-4 p-2 md:p-8'>
 				{[0, 1, 2].map((index) => (
@@ -89,7 +79,7 @@ export default function EventCards() {
 		return (
 			<div className='flex items-center justify-center p-8'>
 				<div className='text-center'>
-					<p className='text-muted-foreground mb-4'>{error}</p>
+					<p className='text-muted-foreground mb-4'>{error.message}</p>
 					<Button
 						variant="outline"
 						onClick={() => window.location.reload()}
@@ -102,7 +92,7 @@ export default function EventCards() {
 	}
 
 	// No events state
-	if (events.length === 0) {
+	if (events?.length === 0) {
 		return (
 			<div className='flex items-center justify-center p-8'>
 				<div className='text-center'>
@@ -119,16 +109,15 @@ export default function EventCards() {
 
 	return (
 		<div className='grid md:grid-cols-2 lg:grid-cols-3 mx-auto gap-4 p-2 md:p-8'>
-			{events.map((event, index) => (
-				<EventCard key={event.slug} event={event} index={index} />
+			{events?.map((event, index) => (
+				<EventCard key={index} event={event} />
 			))}
 		</div>
 	);
 }
 
-const EventCard: React.FC<EventCardProps> = ({
+export const EventCard: React.FC<EventCardProps> = ({
 	event,
-	index,
 	className
 }) => {
 	// Calculate the price display
@@ -142,59 +131,59 @@ const EventCard: React.FC<EventCardProps> = ({
 	};
 
 	return (
-		<Card className={cn('relative group rounded-none p-4 border-none flex flex-col', {
-			'bg-secondary/10 text-foreground': index % 2 === 0,
-		}, className)}>
-			<CardHeader
-				className={cn('px-2 gap-0', {
-					'order-2': index % 2 !== 0,
-					'order-1': index % 2 === 0,
-				})}
-			>
-				<CardTitle
-					className={cn('font-normal text-xl lg:text-3xl tracking-wide my-2', {
-						'order-1': index % 2 === 0,
-						'order-2': index % 2 !== 0,
-					})}
-				>
-					{event.title}
-				</CardTitle>
-				<CardDescription
-					className={cn('font-normal text-sm lg:text-base tracking-wide my-2 flex flex-col', {
-						'order-1': index % 2 !== 0,
-						'order-2': index % 2 === 0,
-					})}
-				>
-					<span>{new Date(event.date).toLocaleDateString('en-US', {
-						year: 'numeric',
-						month: 'long',
-						day: 'numeric'
-					})}</span>
-					<span className="line-clamp-3">{event.description}</span>
-					<span className="font-medium text-primary">{getPriceDisplay()}</span>
-				</CardDescription>
-			</CardHeader>
-			<CardContent
-				className={cn('p-0 flex-1 relative w-full aspect-[16/9] overflow-hidden', {
-					'order-1': index % 2 !== 0,
-					'order-2': index % 2 === 0,
-				})}
-			>
+		<Card className={cn("overflow-hidden hover:shadow-lg transition-shadow", className)}>
+			<div className="aspect-video relative overflow-hidden">
 				<Image
 					src={event.imageUrl}
 					alt={event.title}
-					className='absolute object-cover w-full h-full group-hover:scale-105 transition-transform duration-300'
+					className="object-cover w-full h-full hover:scale-105 transition-transform duration-300"
 				/>
+				{event.status && (
+					<Badge
+						className="absolute top-4 right-4"
+						variant={event.status === 'upcoming' ? 'default' : event.status === 'soldout' ? 'destructive' : 'secondary'}
+					>
+						{event.status === 'soldout' ? 'Sold Out' : event.status}
+					</Badge>
+				)}
+			</div>
+			<CardHeader>
+				<CardTitle className="text-xl">{event.title}</CardTitle>
+				<CardDescription className="space-y-2">
+					<div className="flex items-center gap-2 text-sm">
+						<Calendar className="h-4 w-4" />
+						<span>{new Date(event.date).toLocaleDateString('en-US', {
+							weekday: 'long',
+							year: 'numeric',
+							month: 'long',
+							day: 'numeric'
+						})}</span>
+					</div>
+					<div className="flex items-center gap-2 text-sm">
+						<MapPin className="h-4 w-4" />
+						<span>{event.location}</span>
+					</div>
+					{event.availableSpots && event.capacity && (
+						<div className="flex items-center gap-2 text-sm">
+							<Users className="h-4 w-4" />
+							<span>{event.availableSpots} of {event.capacity} spots available</span>
+						</div>
+					)}
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<p className="text-sm text-muted-foreground line-clamp-2">{event.description}</p>
+				<p className="mt-4 text-lg font-semibold">{getPriceDisplay()}</p>
 			</CardContent>
-			<CardFooter className='order-3'>
+			<CardFooter>
 				<Button
 					asChild
-					className='mt-4 group w-full flex items-center gap-1'
+					className="w-full group"
 					disabled={event.status === 'soldout' || event.status === 'cancelled'}
 				>
 					<Link to="/events/$slug" params={{ slug: event.slug }}>
 						{event.status === 'soldout' ? 'Sold Out' : 'View Details'}
-						<ChevronRight className='h-4 w-4 group-hover:translate-x-1 transition-transform' />
+						<ChevronRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
 					</Link>
 				</Button>
 			</CardFooter>

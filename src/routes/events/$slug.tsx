@@ -9,9 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { stripeService, TieredPrice, EventWithTiers } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { InfiniteMovingCards } from '~/components/ui/infinite-moving-cards';
 import { apiClient } from '~/lib/api';
 import { TieredPricing } from '~/components/tiered-pricing';
 import { Dialog, DialogContent } from '~/components/ui/dialog';
@@ -19,6 +18,8 @@ import { VehicleSubmissionForm } from '~/components/vehicle-submission-form';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Label } from '~/components/ui/label';
 import { loadStripe } from '@stripe/stripe-js';
+import { EventSponsorTiers } from '~/components/event-sponsor-tiers';
+import { MapLocation } from '~/components/ui/map-location';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
@@ -48,6 +49,32 @@ function EventDetailPage() {
 	const [isParticipant, setIsParticipant] = useState(false);
 	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
 	const [submissionId, setSubmissionId] = useState<string | null>(null);
+
+	// Parse sponsor data
+	const sponsorTiers = useMemo(() => {
+		try {
+			// Check for new tiered format first
+			if (event.sponsorTiers) {
+				return event.sponsorTiers;
+			}
+
+			// Fallback to legacy format
+			if (event.sponsors) {
+				if (event.sponsors.length > 0) {
+					return [{
+						tierName: 'Event Sponsors',
+						displayOrder: 0,
+						sponsors: event.sponsors
+					}];
+				}
+			}
+
+			return [];
+		} catch (error) {
+			console.error('Error parsing sponsors:', error);
+			return [];
+		}
+	}, [event]);
 
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
 		// If participant checkbox is selected, show submission form instead
@@ -209,6 +236,12 @@ function EventDetailPage() {
 		}
 	};
 
+	// Generate Google Maps embed URL
+	const getMapUrl = () => {
+		const encodedAddress = encodeURIComponent(event.location);
+		return `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_YOUTUBE_API_KEY || ''}&q=${encodedAddress}`;
+	};
+
 	if (!event) {
 		return (
 			<div className="min-h-screen flex items-center justify-center">
@@ -226,43 +259,47 @@ function EventDetailPage() {
 	}
 
 	return (
-		<div className="min-h-screen">
+		<div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
 			{/* Hero Image */}
-			<div className="relative h-[400px] overflow-hidden">
-				<Image
-					src={event.imageUrl}
-					alt={event.title}
-					className="w-full h-full object-cover"
-				/>
-				<div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-				<div className="absolute bottom-0 left-0 right-0 p-6 text-white">
+			<div className="relative overflow-hidden">
+				<div className="w-full h-[600px] flex items-center justify-center bg-gradient-to-b from-primary/10 to-background">
+					<Image
+						src={event.imageUrl}
+						alt={event.title}
+						className="w-full h-full object-contain"
+					/>
+				</div>
+				{/* <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" /> */}
+				<div className="absolute bottom-0 left-0 right-0 p-6 text-white bg-black/10">
 					<div className="max-w-7xl mx-auto">
 						<div className="flex items-center gap-4 mb-4">
 							{event.tags?.map((tag) => (
-								<Badge key={tag} variant="secondary" className="bg-white/20 text-white border-white/30">
+								<Badge key={tag} variant="secondary" className="bg-primary/80 text-white border-primary">
 									{tag}
 								</Badge>
 							))}
 						</div>
-						<h1 className="text-4xl font-bold mb-2">{event.title}</h1>
-						<p className="text-lg opacity-90">{event.description}</p>
+						<h1 className="text-4xl font-bold mb-2 text-foreground drop-shadow-lg">{event.title}</h1>
+						<p className="text-lg text-foreground/90 drop-shadow">{event.description}</p>
 					</div>
 				</div>
 			</div>
 
 			{/* Main Content */}
-			<div className="max-w-7xl mx-auto px-6 py-8">
-				<div className="grid lg:grid-cols-3 gap-8">
+			<div className="max-w-[1750px] mx-auto px-6 py-8">
+				<div className="grid lg:grid-cols-3 gap-8 mb-8">
 					{/* Left Column - Main Info */}
 					<div className="lg:col-span-2 space-y-8">
 						{/* Event Details */}
-						<Card>
+						<Card className="border-primary/20 shadow-lg">
 							<CardHeader>
-								<CardTitle>Event Details</CardTitle>
+								<CardTitle className="text-primary">Event Details</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-4">
+							<CardContent className="space-y-4 pt-6">
 								<div className="flex items-center gap-3">
-									<Calendar className="h-5 w-5 text-muted-foreground" />
+									<div className="p-2 bg-primary/10 rounded-lg">
+										<Calendar className="h-5 w-5 text-primary" />
+									</div>
 									<div>
 										<p className="font-medium">Date</p>
 										<p className="text-sm text-muted-foreground">
@@ -277,22 +314,26 @@ function EventDetailPage() {
 								</div>
 								<Separator />
 								<div className="flex items-center gap-3">
-									<MapPin className="h-5 w-5 text-muted-foreground" />
+									<div className="p-2 bg-primary/10 rounded-lg">
+										<MapPin className="h-5 w-5 text-primary" />
+									</div>
 									<div>
 										<p className="font-medium">Location</p>
 										<p className="text-sm text-muted-foreground">{event.location}</p>
 									</div>
 								</div>
-								<Separator />
+								{/* <Separator />
 								<div className="flex items-center gap-3">
-									<Users className="h-5 w-5 text-muted-foreground" />
+									<div className="p-2 bg-primary/10 rounded-lg">
+										<Users className="h-5 w-5 text-primary" />
+									</div>
 									<div>
 										<p className="font-medium">Capacity</p>
 										<p className="text-sm text-muted-foreground">
 											{event.availableSpots} of {event.capacity} spots available
 										</p>
 									</div>
-								</div>
+								</div> */}
 								{event.organizer && (
 									<>
 										<Separator />
@@ -305,18 +346,31 @@ function EventDetailPage() {
 							</CardContent>
 						</Card>
 
+						{/* Map Location */}
+						{event.location && (
+							<div>
+								<h3 className="text-xl font-semibold mb-4 text-primary">Event Location</h3>
+								<MapLocation
+									address={event.location}
+									mapUrl={getMapUrl()}
+									title={`${event.title} Location`}
+									description={`Join us at ${event.location} for ${event.title}`}
+								/>
+							</div>
+						)}
+
 						{/* Agenda */}
 						{event.agenda && event.agenda.length > 0 && (
-							<Card>
+							<Card className="border-primary/20 shadow-lg">
 								<CardHeader>
-									<CardTitle>Event Schedule</CardTitle>
+									<CardTitle className="text-primary">Event Schedule</CardTitle>
 								</CardHeader>
-								<CardContent>
+								<CardContent className="pt-6">
 									<div className="space-y-4">
 										{event.agenda.map((item, index) => (
-											<div key={index} className="flex gap-4">
+											<div key={index} className="flex gap-4 p-3 rounded-lg hover:bg-primary/5 transition-colors">
 												<div className="flex items-center gap-2 min-w-[100px]">
-													<Clock className="h-4 w-4 text-muted-foreground" />
+													<Clock className="h-4 w-4 text-primary" />
 													<span className="text-sm font-medium">{item.time}</span>
 												</div>
 												<div className="flex-1">
@@ -331,14 +385,14 @@ function EventDetailPage() {
 
 						{/* What's Included */}
 						{event.includes && event.includes.length > 0 && (
-							<Card>
+							<Card className="border-primary/20 shadow-lg">
 								<CardHeader>
-									<CardTitle>What's Included</CardTitle>
+									<CardTitle className="text-primary">What's Included</CardTitle>
 								</CardHeader>
-								<CardContent>
+								<CardContent className="pt-6">
 									<ul className="space-y-2">
 										{event.includes.map((item, index) => (
-											<li key={index} className="flex items-center gap-2">
+											<li key={index} className="flex items-center gap-2 p-2 rounded-lg hover:bg-primary/5 transition-colors">
 												<span className="text-primary mt-1">•</span>
 												<span className="text-sm">{item}</span>
 											</li>
@@ -352,18 +406,19 @@ function EventDetailPage() {
 					{/* Right Column - Booking */}
 					<div className="space-y-4">
 						{/* Participant Option Card */}
-						<Card className="border-primary/20 bg-primary/5">
+						<Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-primary/5 shadow-lg">
 							<CardContent className="pt-6">
 								<div className="flex items-start space-x-3">
 									<Checkbox
 										id="participant"
 										checked={isParticipant}
 										onCheckedChange={(checked) => setIsParticipant(checked as boolean)}
+										className="mt-1"
 									/>
 									<div className="space-y-1">
 										<Label htmlFor="participant" className="cursor-pointer">
 											<div className="flex items-center gap-2">
-												<Car className="h-4 w-4" />
+												<Car className="h-4 w-4 text-primary" />
 												<span className="font-medium">I want to participate as a presenter</span>
 											</div>
 										</Label>
@@ -378,11 +433,11 @@ function EventDetailPage() {
 						{/* Tiered Pricing */}
 						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (
 							<div className="space-y-4">
-								<Card>
+								<Card className="shadow-lg border-primary/20">
 									<CardHeader>
 										<CardTitle>Select Tickets</CardTitle>
 									</CardHeader>
-									<CardContent>
+									<CardContent className="pt-6">
 										<TieredPricing
 											tiers={(event as EventWithTiers).priceTiers}
 											onSelectTier={(tier, qty) => {
@@ -395,11 +450,11 @@ function EventDetailPage() {
 
 								{/* Add to Cart for Tiered Events */}
 								{selectedTier && (
-									<Card>
-										<CardHeader>
+									<Card className="shadow-lg border-primary/20">
+										<CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
 											<CardTitle>Add to Cart</CardTitle>
 										</CardHeader>
-										<CardContent className="space-y-4">
+										<CardContent className="space-y-4 pt-6">
 											<div className="text-lg">
 												<span className="font-semibold">{selectedTier.name}</span>
 												<span className="text-muted-foreground"> - ${selectedTier.amount}</span>
@@ -439,7 +494,7 @@ function EventDetailPage() {
 											</div>
 
 											<Button
-												className="w-full"
+												className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
 												size="lg"
 												onClick={handleAddToCart}
 											>
@@ -451,12 +506,12 @@ function EventDetailPage() {
 							</div>
 						) : (
 							/* Single Price Booking */
-							<Card className="sticky top-24">
-								<CardHeader>
+							<Card className="sticky top-24 shadow-lg border-primary/20">
+								<CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
 									<CardTitle>Book Your Spot</CardTitle>
 								</CardHeader>
-								<CardContent className="space-y-4">
-									<div className="text-3xl font-bold">
+								<CardContent className="space-y-4 pt-6">
+									<div className="text-3xl font-bold text-primary">
 										${event.price.toFixed(2)}
 										<span className="text-sm font-normal text-muted-foreground"> per ticket</span>
 									</div>
@@ -508,13 +563,13 @@ function EventDetailPage() {
 										<Separator />
 										<p className="flex justify-between text-base font-bold">
 											<span>Total</span>
-											<span>${(event.price * quantity).toFixed(2)}</span>
+											<span className="text-primary">${(event.price * quantity).toFixed(2)}</span>
 										</p>
 									</div>
 
 									<div className="space-y-2">
 										<Button
-											className="w-full"
+											className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
 											size="lg"
 											onClick={handleSingleCheckout}
 											disabled={event.status === 'soldout' || event.availableSpots === 0}
@@ -560,25 +615,13 @@ function EventDetailPage() {
 				</div>
 
 				{/* Sponsors Section */}
-				{event.sponsors && event.sponsors.length > 0 && (
-					<div className="mt-16">
-						<div className="text-center mb-8">
-							<h2 className="text-3xl font-bold mb-2">Event Sponsors</h2>
-							<p className="text-muted-foreground">Thank you to our partners who make this event possible</p>
+				{sponsorTiers.length > 0 && (
+					<section className="py-12 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg mt-12">
+						<div className="max-w-7xl mx-auto px-4">
+							<h2 className="text-3xl font-bold text-center mb-8 text-primary">Event Partners</h2>
+							<EventSponsorTiers sponsorTiers={sponsorTiers} />
 						</div>
-						<InfiniteMovingCards
-							items={event.sponsors.map(sponsor => ({
-								name: sponsor.name,
-								logoUrl: sponsor.logoUrl,
-								link: sponsor.link
-							}))}
-							variant="logo"
-							direction="left"
-							speed="normal"
-							pauseOnHover={true}
-							className="mb-8"
-						/>
-					</div>
+					</section>
 				)}
 			</div>
 

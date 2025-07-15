@@ -1,4 +1,5 @@
 import { apiClient } from '../api';
+import { Sponsor, SponsorTier } from '../schemas/product-schema';
 
 export interface StripeProduct {
 	id: string;
@@ -46,12 +47,6 @@ export interface ProductWithVariants extends Product {
 	variants: ProductVariant[];
 }
 
-export interface EventSponsor {
-	name: string;
-	logoUrl: string;
-	link?: string;
-}
-
 export interface EventProduct extends Product {
 	slug: string;
 	date: string;
@@ -63,7 +58,8 @@ export interface EventProduct extends Product {
 	status?: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' | 'soldout';
 	agenda?: { time: string; activity: string }[];
 	includes?: string[];
-	sponsors?: EventSponsor[];
+	sponsors?: Sponsor[];
+	sponsorTiers?: SponsorTier[];
 	hasTiers?: boolean;
 	lowestPrice?: number;
 }
@@ -246,6 +242,7 @@ export const stripeService = {
 			includes: stripeProduct.metadata.includes ? JSON.parse(stripeProduct.metadata.includes) : [],
 			maxQuantity: availableSpots || 10,
 			sponsors: stripeProduct.metadata.sponsors ? JSON.parse(stripeProduct.metadata.sponsors) : [],
+			sponsorTiers: stripeProduct.metadata.sponsor_tiers ? JSON.parse(stripeProduct.metadata.sponsor_tiers) : [],
 			hasTiers: stripeProduct.metadata.has_tiers === 'true', // Add this
 			lowestPrice: stripeProduct.metadata.lowest_price ? parseFloat(stripeProduct.metadata.lowest_price) : undefined, // Add this
 		};
