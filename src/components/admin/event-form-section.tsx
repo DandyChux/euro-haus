@@ -67,6 +67,17 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 		name: "sponsors",
 	});
 
+	const {
+		fields: sponsorTierFields,
+		append: appendSponsorTier,
+		remove: removeSponsorTier,
+		update: updateSponsorTier,
+		move: moveSponsorTier
+	} = useFieldArray({
+		control: form.control,
+		name: "sponsorTiers",
+	});
+
 	// Load price tiers when editing
 	useEffect(() => {
 		if (isEditing && eventId) {
@@ -124,6 +135,19 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 		const currentTier = form.getValues(`priceTiers.${tierIndex}`);
 		const updatedFeatures = (currentTier.features || []).filter((_: any, i: number) => i !== featureIndex);
 		updateTier(tierIndex, { ...currentTier, features: updatedFeatures });
+	};
+
+	// Helper functions for nested sponsor management
+	const addSponsorToTier = (tierIndex: number) => {
+		const currentTier = form.getValues(`sponsorTiers.${tierIndex}`);
+		const updatedSponsors = [...(currentTier.sponsors || []), { name: '', logoUrl: '', link: '' }];
+		updateSponsorTier(tierIndex, { ...currentTier, sponsors: updatedSponsors });
+	};
+
+	const removeSponsorFromTier = (tierIndex: number, sponsorIndex: number) => {
+		const currentTier = form.getValues(`sponsorTiers.${tierIndex}`);
+		const updatedSponsors = currentTier.sponsors.filter((_: any, i: number) => i !== sponsorIndex);
+		updateSponsorTier(tierIndex, { ...currentTier, sponsors: updatedSponsors });
 	};
 
 	// Don't render if not an event
@@ -449,78 +473,166 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 				)}
 			</div>
 
-			{/* Sponsors */}
+			{/* Sponsor Tiers */}
 			<div className="bg-muted/50 p-4 rounded-md">
 				<div className="flex justify-between items-center mb-3">
-					<h3 className="text-lg font-medium">Event Sponsors</h3>
+					<div>
+						<h3 className="text-lg font-medium">Event Sponsors</h3>
+						<p className="text-sm text-muted-foreground">Organize sponsors by tier (e.g., Platinum, Gold, Silver)</p>
+					</div>
 					<Button
 						type="button"
 						size="sm"
-						onClick={() => appendSponsor({ name: '', logoUrl: '', link: '' })}
+						onClick={() => appendSponsorTier({
+							tierName: '',
+							displayOrder: sponsorTierFields.length,
+							sponsors: []
+						})}
 					>
-						<Plus className="h-4 w-4 mr-1" /> Add Sponsor
+						<Plus className="h-4 w-4 mr-1" /> Add Tier
 					</Button>
 				</div>
 
-				{sponsorFields.length === 0 ? (
+				{sponsorTierFields.length === 0 ? (
 					<div className="text-center py-4 text-muted-foreground">
-						No sponsors added yet. Add companies sponsoring your event.
+						No sponsor tiers added yet. Add tiers to organize sponsors by level.
 					</div>
 				) : (
-					<div className="space-y-4">
-						{sponsorFields.map((field, index) => (
-							<Card key={field.id} className="p-4">
-								<div className="flex justify-between items-start mb-3">
-									<h4 className="text-sm font-medium">Sponsor {index + 1}</h4>
-									<Button
-										type="button"
-										size="icon"
-										variant="ghost"
-										onClick={() => removeSponsor(index)}
-									>
-										<Trash2 className="h-4 w-4" />
-									</Button>
-								</div>
-								<div className="space-y-3">
-									<FormField
-										control={form.control}
-										name={`sponsors.${index}.name`}
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel className="text-xs">Company Name</FormLabel>
-												<FormControl>
-													<Input {...field} placeholder="e.g., Porsche USA" />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
+					<div className="space-y-6">
+						{sponsorTierFields.map((tierField, tierIndex) => (
+							<Card key={tierField.id} className="p-4">
+								<div className="space-y-4">
+									<div className="flex items-start justify-between">
+										<div className="flex-1 space-y-3">
+											<FormField
+												control={form.control}
+												name={`sponsorTiers.${tierIndex}.tierName`}
+												render={({ field }) => (
+													<FormItem>
+														<FormLabel>Tier Name</FormLabel>
+														<FormControl>
+															<Input
+																{...field}
+																placeholder="e.g., Platinum Sponsors, Gold Sponsors"
+															/>
+														</FormControl>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+										</div>
+										<div className="flex items-center gap-2 ml-4">
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												onClick={() => moveSponsorTier(tierIndex, Math.max(0, tierIndex - 1))}
+												disabled={tierIndex === 0}
+											>
+												↑
+											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												onClick={() => moveSponsorTier(tierIndex, Math.min(sponsorTierFields.length - 1, tierIndex + 1))}
+												disabled={tierIndex === sponsorTierFields.length - 1}
+											>
+												↓
+											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												onClick={() => removeSponsorTier(tierIndex)}
+											>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+
+									{/* Sponsors within this tier */}
+									<div className="space-y-3">
+										<div className="flex justify-between items-center">
+											<h4 className="text-sm font-medium text-muted-foreground">Sponsors in this tier</h4>
+											<Button
+												type="button"
+												size="sm"
+												variant="outline"
+												onClick={() => addSponsorToTier(tierIndex)}
+											>
+												<Plus className="h-4 w-4 mr-1" /> Add Sponsor
+											</Button>
+										</div>
+
+										{form.watch(`sponsorTiers.${tierIndex}.sponsors`)?.length === 0 ? (
+											<div className="text-center py-3 text-sm text-muted-foreground border-2 border-dashed rounded-md">
+												No sponsors in this tier yet
+											</div>
+										) : (
+											<div className="grid gap-3">
+												{form.watch(`sponsorTiers.${tierIndex}.sponsors`)?.map((_, sponsorIndex) => (
+													<Card key={sponsorIndex} className="p-3 bg-background">
+														<div className="space-y-3">
+															<div className="flex justify-between items-start">
+																<h5 className="text-sm font-medium">Sponsor {sponsorIndex + 1}</h5>
+																<Button
+																	type="button"
+																	size="icon"
+																	variant="ghost"
+																	className="h-6 w-6"
+																	onClick={() => removeSponsorFromTier(tierIndex, sponsorIndex)}
+																>
+																	<Trash2 className="h-3 w-3" />
+																</Button>
+															</div>
+															<div className="grid gap-3">
+																<FormField
+																	control={form.control}
+																	name={`sponsorTiers.${tierIndex}.sponsors.${sponsorIndex}.name`}
+																	render={({ field }) => (
+																		<FormItem>
+																			<FormLabel className="text-xs">Company Name</FormLabel>
+																			<FormControl>
+																				<Input {...field} placeholder="e.g., Porsche USA" />
+																			</FormControl>
+																			<FormMessage />
+																		</FormItem>
+																	)}
+																/>
+																<FormField
+																	control={form.control}
+																	name={`sponsorTiers.${tierIndex}.sponsors.${sponsorIndex}.logoUrl`}
+																	render={({ field }) => (
+																		<FormItem>
+																			<FormLabel className="text-xs">Logo URL</FormLabel>
+																			<FormControl>
+																				<Input {...field} placeholder="https://example.com/logo.png" />
+																			</FormControl>
+																			<FormMessage />
+																		</FormItem>
+																	)}
+																/>
+																<FormField
+																	control={form.control}
+																	name={`sponsorTiers.${tierIndex}.sponsors.${sponsorIndex}.link`}
+																	render={({ field }) => (
+																		<FormItem>
+																			<FormLabel className="text-xs">Website (optional)</FormLabel>
+																			<FormControl>
+																				<Input {...field} placeholder="https://www.porsche.com" />
+																			</FormControl>
+																			<FormMessage />
+																		</FormItem>
+																	)}
+																/>
+															</div>
+														</div>
+													</Card>
+												))}
+											</div>
 										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`sponsors.${index}.logoUrl`}
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel className="text-xs">Logo URL</FormLabel>
-												<FormControl>
-													<Input {...field} placeholder="https://example.com/logo.png" />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
-									<FormField
-										control={form.control}
-										name={`sponsors.${index}.link`}
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel className="text-xs">Website (optional)</FormLabel>
-												<FormControl>
-													<Input {...field} placeholder="https://www.porsche.com" />
-												</FormControl>
-												<FormMessage />
-											</FormItem>
-										)}
-									/>
+									</div>
 								</div>
 							</Card>
 						))}

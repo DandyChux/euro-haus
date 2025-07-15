@@ -51,6 +51,13 @@ export const sponsorSchema = z.object({
 	link: z.string().url('Invalid sponsor URL').optional().or(z.literal('')),
 });
 
+// Sponsor tier schema
+export const sponsorTierSchema = z.object({
+	tierName: z.string().min(1, 'Tier name is required'),
+	displayOrder: z.number().optional(),
+	sponsors: z.array(sponsorSchema),
+});
+
 // Event schema with price tiers
 export const eventSchema = baseSchema.extend({
 	type: z.literal('event'),
@@ -69,6 +76,7 @@ export const eventSchema = baseSchema.extend({
 	})).min(1),
 	includes: z.array(z.object({ value: z.string() })).min(1),
 	sponsors: z.array(sponsorSchema).optional(),
+	sponsorTiers: z.array(sponsorTierSchema).optional(),
 	// Price tiers for events
 	hasTiers: z.boolean(),
 	// Single price for events without tiers
@@ -88,3 +96,5 @@ export type EventFormData = z.infer<typeof eventSchema>;
 export type FormData = z.infer<typeof formSchema>;
 export type PriceTier = z.infer<typeof priceTierSchema>;
 export type ProductVariant = z.infer<typeof productVariantSchema>;
+export type Sponsor = z.infer<typeof sponsorSchema>;
+export type SponsorTier = z.infer<typeof sponsorTierSchema>;

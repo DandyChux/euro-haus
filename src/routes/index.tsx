@@ -2,11 +2,10 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { NewsletterSubscription } from '~/components/newsletter-subscription';
 import { Button } from '~/components/ui/button';
 import { SocialSection } from '~/components/social-section';
-import EventCards from '~/components/event-cards';
-import FeaturedProducts from '~/components/featured-products';
 import { ManagedVideo } from '~/components/ui/managed-video';
 import { useQuery } from '@tanstack/react-query';
 import { useManagedText } from '~/lib/hooks/use-managed-text';
+import FeaturedItems from '~/components/featured-items';
 
 interface YouTubeVideo {
 	id: string;
@@ -126,23 +125,27 @@ function HomePage() {
 				</div>
 			</section>
 
-			{/* Upcoming Events */}
+			{/* Featured Items - Mixed Events and Products */}
 			<section className='w-full py-12 px-6 bg-muted'>
 				<div className='max-w-7xl mx-auto'>
 					<div className="flex items-center justify-between mb-8">
 						<h2 className='text-3xl font-bold text-center'>
-							Upcoming Events
+							Featured Experiences & Products
 						</h2>
-						<Button asChild variant="outline">
-							<Link to="/events">View All Events</Link>
-						</Button>
+						<div className="flex gap-2">
+							<Button asChild variant="outline">
+								<Link to="/events">All Events</Link>
+							</Button>
+							<Button asChild variant="outline">
+								<Link to="/catalog">All Products</Link>
+							</Button>
+						</div>
 					</div>
 
-					<EventCards />
+					<FeaturedItems />
 				</div>
 			</section>
 
-			<FeaturedProducts />
 
 			{/* Featured Video */}
 			<section className='w-full py-12 px-6'>
