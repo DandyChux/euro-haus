@@ -62,8 +62,13 @@ func SendEmail(msg *EmailMessage) error {
 
 		// Get template
 		tmpl, ok := emailTemplates[msg.TemplateID]
-		if !ok {
-			return fmt.Errorf("email template '%s' not found", msg.TemplateID)
+		if ok {
+			// Execute template
+			var renderedHTML bytes.Buffer
+			if err := tmpl.Execute(&renderedHTML, msg.TemplateData); err != nil {
+				return fmt.Errorf("failed to render email template: %w", err)
+			}
+			msg.BodyHTML = renderedHTML.String()
 		}
 
 		// Execute template

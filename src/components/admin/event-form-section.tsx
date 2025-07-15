@@ -818,18 +818,25 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 												</Button>
 											</div>
 
-											{form.watch(`priceTiers.${index}.features`)?.length === 0 || !form.watch(`priceTiers.${index}.features`) ? (
+											{!tierFields[index].features || tierFields[index].features.length === 0 ? (
 												<div className="text-center py-3 text-sm text-muted-foreground border-2 border-dashed rounded-md">
 													No features added. Click + to add features for this tier.
 												</div>
 											) : (
 												<div className="space-y-2">
-													{form.watch(`priceTiers.${index}.features`)?.map((feature, featureIndex) => (
-														<div key={featureIndex} className="flex gap-2">
-															<Input
-																value={feature}
-																onChange={(e) => updateFeatureInTier(index, featureIndex, e.target.value)}
-																placeholder="e.g., Meet & Greet, Premium Parking"
+													{tierFields[index].features.map((feature, featureIndex) => (
+														<div key={`tier-${index}-feature-${featureIndex}`} className="flex gap-2">
+															<FormField
+																control={form.control}
+																name={`priceTiers.${index}.features.${featureIndex}`}
+																render={({ field }) => (
+																	<FormControl>
+																		<Input
+																			{...field}
+																			placeholder="e.g., Meet & Greet, Premium Parking"
+																		/>
+																	</FormControl>
+																)}
 															/>
 															<Button
 																type="button"
