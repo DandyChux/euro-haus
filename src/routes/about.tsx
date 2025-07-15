@@ -6,12 +6,49 @@ import { SocialSection } from '~/components/social-section'
 import { NewsletterSubscription } from '~/components/newsletter-subscription'
 import { ContactForm } from '~/components/contact-form'
 import { ManagedImage } from '~/components/ui/managed-image'
+import { useManagedText } from '~/lib/hooks/use-managed-text'
 
 export const Route = createFileRoute('/about')({
 	component: RouteComponent,
 })
 
 function RouteComponent() {
+	const pageDescription = useManagedText({
+		name: 'About Page Description',
+		defaultText: 'Building a community around car enthusiasm since 2023. We\'re more than just a brand - we\'re a family of passionate automative enthusiasts dedicated to celebrating European car culture.',
+		description: 'Main description text for the About page'
+	})
+
+	const beginningText1 = useManagedText({
+		name: 'The Beginning Paragraph 1',
+		defaultText: 'Founded in 2023, Euro Haus was built on years of grassroots experience and a deep love for European automotive culture. What began as local meetups has evolved into a refined, community-driven event series that brings together enthusiasts of all backgrounds to celebrate the design, performance, and legacy of Europe\'s finest marques — from iconic marques like BMW, Audi, and Volkswagen to high-performance legends like Porsche, Ferrari, McLaren, and Lamborghini.',
+		description: 'First paragraph about the beginning of Euro Haus'
+	});
+
+	const beginningText2 = useManagedText({
+		name: 'The Beginning Paragraph 2',
+		defaultText: 'Backed by nearly a decade of organizing successful enthusiast events, Euro Haus is more than just a car show — it\'s a curated experience rooted in passion, authenticity, and connection. We\'re proud to create spaces where enthusiasts can showcase their builds, connect with vendors, and be part of a growing movement that values quality over hype.',
+		description: 'Second paragraph about the beginning of Euro Haus'
+	});
+
+	const communityText = useManagedText({
+		name: 'Community Value Text',
+		defaultText: 'We believe that the best experiences come from genuine connections. Our community is built on mutual respect, shared passion, and the joy of automotive culture.',
+		description: 'Description of the Community value'
+	});
+
+	const passionText = useManagedText({
+		name: 'Passion Value Text',
+		defaultText: 'Every event, product, and interaction is fueled by our genuine love for European automotive excellence and the culture that surrounds it.',
+		description: 'Description of the Passion value'
+	});
+
+	const excellenceText = useManagedText({
+		name: 'Excellence Value Text',
+		defaultText: 'We strive for excellence in everything we do, from the quality of our events to the products we offer and the experiences we create.',
+		description: 'Description of the Excellence value'
+	});
+
 	return (
 		<>
 			{/* Breadcrumb */}
@@ -40,7 +77,7 @@ function RouteComponent() {
 							About Euro Haus
 						</h1>
 						<p className='mt-6 text-lg text-muted-foreground md:text-xl'>
-							Building a community around car enthusiasm since 2023. We're more than just a brand - we're a family of passionate automative enthusiasts dedicated to celebrating European car culture.
+							{pageDescription}
 						</p>
 					</div>
 				</div>
@@ -62,10 +99,10 @@ function RouteComponent() {
 								<div>
 									<h3 className="text-2xl font-bold text-primary mb-4">The Beginning</h3>
 									<p className="text-muted-foreground leading-relaxed">
-										Founded in 2023, Euro Haus was built on years of grassroots experience and a deep love for European automotive culture. What began as local meetups has evolved into a refined, community-driven event series that brings together enthusiasts of all backgrounds to celebrate the design, performance, and legacy of Europe’s finest marques — from iconic marques like BMW, Audi, and Volkswagen to high-performance legends like Porsche, Ferrari, McLaren, and Lamborghini.
+										{beginningText1}
 									</p>
 									<p className="text-muted-foreground leading-relaxed mt-4">
-										Backed by nearly a decade of organizing successful enthusiast events, Euro Haus is more than just a car show — it’s a curated experience rooted in passion, authenticity, and connection. We’re proud to create spaces where enthusiasts can showcase their builds, connect with vendors, and be part of a growing movement that values quality over hype.
+										{beginningText2}
 									</p>
 								</div>
 								<div className="relative">
@@ -101,8 +138,7 @@ function RouteComponent() {
 									</div>
 									<h3 className="text-xl font-bold text-secondary mb-2">Community First</h3>
 									<p className="text-muted-foreground">
-										We believe that the best experiences come from genuine connections. Our community is built on
-										mutual respect, shared passion, and the joy of automotive culture.
+										{communityText}
 									</p>
 								</CardContent>
 							</Card>
@@ -114,8 +150,7 @@ function RouteComponent() {
 									</div>
 									<h3 className="text-xl font-bold text-secondary mb-2">Passion Driven</h3>
 									<p className="text-muted-foreground">
-										Every event, product, and interaction is fueled by our genuine love for European automotive
-										excellence and the culture that surrounds it.
+										{passionText}
 									</p>
 								</CardContent>
 							</Card>
@@ -127,8 +162,7 @@ function RouteComponent() {
 									</div>
 									<h3 className="text-xl font-bold text-secondary mb-2">Excellence</h3>
 									<p className="text-muted-foreground">
-										We strive for excellence in everything we do, from the quality of our events to the products we
-										offer and the experiences we create.
+										{excellenceText}
 									</p>
 								</CardContent>
 							</Card>

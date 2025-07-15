@@ -6,6 +6,7 @@ import EventCards from '~/components/event-cards';
 import FeaturedProducts from '~/components/featured-products';
 import { ManagedVideo } from '~/components/ui/managed-video';
 import { useQuery } from '@tanstack/react-query';
+import { useManagedText } from '~/lib/hooks/use-managed-text';
 
 interface YouTubeVideo {
 	id: string;
@@ -69,6 +70,18 @@ function HomePage() {
 	const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 	const YOUTUBE_CHANNEL_ID = import.meta.env.VITE_YOUTUBE_CHANNEL_ID;
 
+	const heroTitle = useManagedText({
+		name: 'Hero Title',
+		defaultText: 'Welcome to Euro Haus',
+		description: 'Main heading in the hero section'
+	})
+
+	const heroTagline = useManagedText({
+		name: 'Hero Tagline',
+		defaultText: 'Come for the cars, stay for the people.',
+		description: 'Tagline displayed below the main heading'
+	})
+
 	// Fetch latest YouTube video
 	const { data: latestVideo, isLoading: videoLoading } = useQuery({
 		queryKey: ['latestYouTubeVideo'],
@@ -96,9 +109,9 @@ function HomePage() {
 				<div className='relative z-10 px-4 py-24 md:py-32 lg:py-40 md:px-6'>
 					<div className='flex flex-col items-center space-y-4 text-center'>
 						<div className='space-y-2'>
-							<h1 className='text-white'>Welcome to Euro Haus</h1>
+							<h1 className='text-white'>{heroTitle}</h1>
 							<p className='mx-auto max-w-[700px] text-lg md:text-xl text-white/90'>
-								Come for the cars, stay for the people.
+								{heroTagline}
 							</p>
 						</div>
 						<div className='inline-flex items-center space-x-4'>

@@ -19,17 +19,20 @@ type ContentPlacement struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Page        string    `json:"page"`
-	Type        string    `json:"type"`
+	Type        string    `json:"type"` // "image", "video", or "text"
 	MediaURL    string    `json:"mediaUrl"`
 	MediaKey    string    `json:"mediaKey,omitempty"`
+	TextContent string    `json:"textContent,omitempty"` // New field for text content
+	HTML        bool      `json:"html,omitempty"`        // Whether text should be rendered as HTML
 	UpdatedAt   time.Time `json:"updatedAt"`
 	UpdatedBy   string    `json:"updatedBy,omitempty"`
 }
 
 // UpdateContentPlacementRequest represents the update request
 type UpdateContentPlacementRequest struct {
-	MediaURL string `json:"mediaUrl"`
-	MediaKey string `json:"mediaKey,omitempty"`
+	MediaURL    string `json:"mediaUrl"`
+	MediaKey    string `json:"mediaKey,omitempty"`
+	TextContent string `json:"textContent,omitempty"`
 }
 
 const (
@@ -233,9 +236,22 @@ func UpdateContentPlacement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update placement
-	placement.MediaURL = req.MediaURL
-	placement.MediaKey = req.MediaKey
+	// Update placement based on type
+	if placement.Type == "text" {
+		// Update text content
+		if req.TextContent != "" {
+			placement.TextContent = req.TextContent
+		}
+	} else {
+		// Update media URL and key for media types
+		if req.MediaURL != "" {
+			placement.MediaURL = req.MediaURL
+		}
+		if req.MediaKey != "" {
+			placement.MediaKey = req.MediaKey
+		}
+	}
+
 	placement.UpdatedAt = time.Now()
 	placement.UpdatedBy = "admin"
 
