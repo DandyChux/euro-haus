@@ -416,9 +416,9 @@ function AdminProductsContent() {
 				metadata.capacity = data.capacity;
 				metadata.organizer = data.organizer;
 				metadata.status = data.status;
-				metadata.tags = JSON.stringify(data.tags.map(t => t.value).filter(Boolean));
+				metadata.tags = JSON.stringify(data.tags?.map(t => t.value).filter(Boolean));
 				metadata.agenda = JSON.stringify(data.agenda);
-				metadata.includes = JSON.stringify(data.includes.map(i => i.value).filter(Boolean));
+				metadata.includes = JSON.stringify(data.includes?.map(i => i.value).filter(Boolean));
 
 				// Save sponsor tiers
 				if (data.sponsorTiers && data.sponsorTiers.length > 0) {

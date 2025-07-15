@@ -69,12 +69,12 @@ export const eventSchema = baseSchema.extend({
 	availableSpots: z.string().regex(/^\d+$/, 'Must be a number'),
 	organizer: z.string(),
 	status: z.enum(['upcoming', 'ongoing', 'completed', 'cancelled', 'soldout']),
-	tags: z.array(z.object({ value: z.string() })).min(1),
+	tags: z.array(z.object({ value: z.string() })).optional(),
 	agenda: z.array(z.object({
 		time: z.string().min(1, 'Time is required'),
 		activity: z.string().min(1, 'Activity is required'),
 	})).min(1),
-	includes: z.array(z.object({ value: z.string() })).min(1),
+	includes: z.array(z.object({ value: z.string() })).optional(),
 	sponsors: z.array(sponsorSchema).optional(),
 	sponsorTiers: z.array(sponsorTierSchema).optional(),
 	// Price tiers for events
