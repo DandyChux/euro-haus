@@ -128,7 +128,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 
 	const handleRemoveFeature = (priceId: string, index: number) => {
 		const currentFeatures = editValues[priceId]?.features || [];
-		const newFeatures = currentFeatures.filter((_, i) => i !== index);
+		const newFeatures = currentFeatures.filter((_: any, i: any) => i !== index);
 		setEditValues({
 			...editValues,
 			[priceId]: {
