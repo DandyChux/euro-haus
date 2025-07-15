@@ -150,7 +150,7 @@ func main() {
 	api.HandleFunc("/admin/submissions/{submissionId}/deny", handlers.DenySubmission).Methods("PUT", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
-	r.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
+	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
 
 	// Setup CORS
 	baseURL := os.Getenv("BASE_URL")
