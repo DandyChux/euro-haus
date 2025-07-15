@@ -15,26 +15,53 @@ import { apiClient } from '~/lib/api';
 import { TieredPricing } from '~/components/tiered-pricing';
 import { Dialog, DialogContent } from '~/components/ui/dialog';
 import { VehicleSubmissionForm } from '~/components/vehicle-submission-form';
-import { Checkbox } from '~/components/ui/checkbox';
-import { Label } from '~/components/ui/label';
 import { loadStripe } from '@stripe/stripe-js';
 import { EventSponsorTiers } from '~/components/event-sponsor-tiers';
 import { MapLocation } from '~/components/ui/map-location';
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
-		// Try to fetch event with tiers first
+		// First try to get the event with price tiers
 		const eventWithTiers = await stripeService.getEventWithPriceTiers(params.slug);
-		if (eventWithTiers) {
-			return { event: eventWithTiers, hasTiers: true };
+
+		if (eventWithTiers && eventWithTiers.priceTiers.length > 0) {
+			// Event has tiers
+			return {
+				event: eventWithTiers,
+				hasTiers: true,
+				singlePriceInfo: null
+			};
 		}
 
-		// Fallback to regular event
+		// If no tiers, get the basic event and fetch single price info
 		const event = await stripeService.getEventBySlug(params.slug);
 		if (!event) {
 			throw new Error('Event not found');
 		}
-		return { event, hasTiers: false };
+
+		// For single-price events, fetch the default price metadata
+		let singlePriceInfo = null;
+		if (event.priceId) {
+			try {
+				const response = await apiClient.get<{ prices: any[] }>(`/products/${event.id}/prices`);
+				// Find the default price
+				const defaultPrice = response.data.prices.find(p => p.id === event.priceId);
+				if (defaultPrice) {
+					singlePriceInfo = {
+						requiresVehicleSubmission: defaultPrice.metadata?.requires_vehicle_submission === 'true',
+						isMostPopular: defaultPrice.metadata?.is_most_popular === 'true'
+					};
+				}
+			} catch (error) {
+				console.error('Failed to fetch price metadata:', error);
+			}
+		}
+
+		return {
+			event,
+			hasTiers: false,
+			singlePriceInfo
+		};
 	},
 	component: EventDetailPage,
 });
@@ -42,33 +69,29 @@ export const Route = createFileRoute('/events/$slug')({
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function EventDetailPage() {
-	const { event, hasTiers } = Route.useLoaderData();
+	const { event, hasTiers, singlePriceInfo } = Route.useLoaderData();
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
-	const [isParticipant, setIsParticipant] = useState(false);
 	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
 	const [submissionId, setSubmissionId] = useState<string | null>(null);
+
+	// Determine if single price requires vehicle submission
+	const singlePriceRequiresVehicle = singlePriceInfo?.requiresVehicleSubmission;
 
 	// Parse sponsor data
 	const sponsorTiers = useMemo(() => {
 		try {
-			// Check for new tiered format first
 			if (event.sponsorTiers) {
 				return event.sponsorTiers;
 			}
-
-			// Fallback to legacy format
-			if (event.sponsors) {
-				if (event.sponsors.length > 0) {
-					return [{
-						tierName: 'Event Sponsors',
-						displayOrder: 0,
-						sponsors: event.sponsors
-					}];
-				}
+			if (event.sponsors && event.sponsors.length > 0) {
+				return [{
+					tierName: 'Event Sponsors',
+					displayOrder: 0,
+					sponsors: event.sponsors
+				}];
 			}
-
 			return [];
 		} catch (error) {
 			console.error('Error parsing sponsors:', error);
@@ -77,8 +100,8 @@ function EventDetailPage() {
 	}, [event]);
 
 	const handleSelectTier = async (tier: TieredPrice, tierQuantity: number) => {
-		// If participant checkbox is selected, show submission form instead
-		if (isParticipant) {
+		// If tier requires vehicle submission, show submission form
+		if (tier.requiresVehicleSubmission) {
 			setSelectedTier(tier);
 			setQuantity(tierQuantity);
 			setShowSubmissionForm(true);
@@ -113,20 +136,13 @@ function EventDetailPage() {
 	};
 
 	const handleSingleCheckout = async () => {
-		// If participant checkbox is selected, create a special checkout session
-		if (isParticipant) {
-			try {
-				// First, show the submission form
-				setShowSubmissionForm(true);
-				return;
-			} catch (error) {
-				console.error('Error:', error);
-				toast.error('Failed to start submission process');
-			}
+		// For single price events, check if vehicle submission is required
+		if (!hasTiers && singlePriceRequiresVehicle) {
+			setShowSubmissionForm(true);
 			return;
 		}
 
-		// Regular checkout flow continues...
+		// Regular checkout flow
 		try {
 			const response = await apiClient.post('/create-checkout-session', {
 				priceId: event?.priceId,
@@ -147,7 +163,6 @@ function EventDetailPage() {
 		setSubmissionId(newSubmissionId);
 		setShowSubmissionForm(false);
 
-		// Create checkout session with manual capture for the submission
 		try {
 			const priceId = selectedTier?.priceId || event?.priceId;
 			const response = await apiClient.post('/create-participant-checkout', {
@@ -159,7 +174,6 @@ function EventDetailPage() {
 
 			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
-				// Redirect to Stripe checkout
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
 			}
 		} catch (error) {
@@ -168,10 +182,9 @@ function EventDetailPage() {
 		}
 	};
 
-
 	const handleTierSelection = (tier: TieredPrice) => {
 		setSelectedTier(tier);
-		setQuantity(1); // Reset quantity when tier changes
+		setQuantity(1);
 	};
 
 	const handleAddToCart = () => {
@@ -180,15 +193,19 @@ function EventDetailPage() {
 			return;
 		}
 
-		// If participant checkbox is selected, show submission form instead
-		if (isParticipant) {
-			setShowSubmissionForm(true);
-			return;
-		}
-
 		// If has tiers and no tier selected
 		if (hasTiers && (event as EventWithTiers).priceTiers && !selectedTier) {
 			toast.error('Please select a ticket type');
+			return;
+		}
+
+		// Check if we need vehicle submission based on current selection
+		const requiresVehicle = hasTiers
+			? selectedTier?.requiresVehicleSubmission
+			: singlePriceRequiresVehicle;
+
+		if (requiresVehicle) {
+			setShowSubmissionForm(true);
 			return;
 		}
 
@@ -236,7 +253,6 @@ function EventDetailPage() {
 		}
 	};
 
-	// Generate Google Maps embed URL
 	const getMapUrl = () => {
 		const encodedAddress = encodeURIComponent(event.location);
 		return `https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_YOUTUBE_API_KEY || ''}&q=${encodedAddress}`;
@@ -270,7 +286,7 @@ function EventDetailPage() {
 					/>
 				</div>
 				{/* <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" /> */}
-				<div className="absolute bottom-0 left-0 right-0 p-6 text-white bg-black/10">
+				<div className="p-6 text-white bg-black/30">
 					<div className="max-w-7xl mx-auto">
 						<div className="flex items-center gap-4 mb-4">
 							{event.tags?.map((tag) => (
@@ -279,8 +295,8 @@ function EventDetailPage() {
 								</Badge>
 							))}
 						</div>
-						<h1 className="text-4xl font-bold mb-2 text-foreground drop-shadow-lg">{event.title}</h1>
-						<p className="text-lg text-foreground/90 drop-shadow">{event.description}</p>
+						<h1 className="text-4xl font-bold mb-2 drop-shadow-lg">{event.title}</h1>
+						<p className="text-lg drop-shadow">{event.description}</p>
 					</div>
 				</div>
 			</div>
@@ -405,31 +421,6 @@ function EventDetailPage() {
 
 					{/* Right Column - Booking */}
 					<div className="space-y-4">
-						{/* Participant Option Card */}
-						<Card className="border-primary/40 bg-gradient-to-br from-primary/10 to-primary/5 shadow-lg">
-							<CardContent className="pt-6">
-								<div className="flex items-start space-x-3">
-									<Checkbox
-										id="participant"
-										checked={isParticipant}
-										onCheckedChange={(checked) => setIsParticipant(checked as boolean)}
-										className="mt-1"
-									/>
-									<div className="space-y-1">
-										<Label htmlFor="participant" className="cursor-pointer">
-											<div className="flex items-center gap-2">
-												<Car className="h-4 w-4 text-primary" />
-												<span className="font-medium">I want to participate as a presenter</span>
-											</div>
-										</Label>
-										<p className="text-sm text-muted-foreground">
-											Submit your vehicle for review. Payment will be processed after approval.
-										</p>
-									</div>
-								</div>
-							</CardContent>
-						</Card>
-
 						{/* Tiered Pricing */}
 						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (
 							<div className="space-y-4">
@@ -451,7 +442,7 @@ function EventDetailPage() {
 								{/* Add to Cart for Tiered Events */}
 								{selectedTier && (
 									<Card className="shadow-lg border-primary/20">
-										<CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
+										<CardHeader>
 											<CardTitle>Add to Cart</CardTitle>
 										</CardHeader>
 										<CardContent className="space-y-4 pt-6">
@@ -498,7 +489,7 @@ function EventDetailPage() {
 												size="lg"
 												onClick={handleAddToCart}
 											>
-												{isParticipant ? 'Submit Vehicle for Review' : `Add to Cart - $${(selectedTier.amount * quantity).toFixed(2)}`}
+												{selectedTier.requiresVehicleSubmission ? 'Submit Vehicle for Review' : `Add to Cart - $${(selectedTier.amount * quantity).toFixed(2)}`}
 											</Button>
 										</CardContent>
 									</Card>
@@ -574,12 +565,12 @@ function EventDetailPage() {
 											onClick={handleSingleCheckout}
 											disabled={event.status === 'soldout' || event.availableSpots === 0}
 										>
-											{isParticipant
+											{singlePriceRequiresVehicle
 												? 'Submit Vehicle for Review'
 												: (event.status === 'soldout' ? 'Sold Out' : 'Book Now')
 											}
 										</Button>
-										{!isParticipant && (
+										{!singlePriceRequiresVehicle && (
 											<Button
 												className="w-full"
 												variant="outline"

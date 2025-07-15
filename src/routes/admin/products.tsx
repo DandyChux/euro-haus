@@ -67,6 +67,7 @@ import {
 } from '~/lib/schemas/product-schema';
 import { ProductFormSection } from '~/components/admin/product-form-section';
 import { EventFormSection } from '~/components/admin/event-form-section';
+import { Image } from '~/components/ui/image';
 
 // Stripe Product interface
 interface StripeProduct {
@@ -415,9 +416,9 @@ function AdminProductsContent() {
 				metadata.capacity = data.capacity;
 				metadata.organizer = data.organizer;
 				metadata.status = data.status;
-				metadata.tags = JSON.stringify(data.tags.map(t => t.value).filter(Boolean));
+				metadata.tags = JSON.stringify(data.tags?.map(t => t.value).filter(Boolean));
 				metadata.agenda = JSON.stringify(data.agenda);
-				metadata.includes = JSON.stringify(data.includes.map(i => i.value).filter(Boolean));
+				metadata.includes = JSON.stringify(data.includes?.map(i => i.value).filter(Boolean));
 
 				// Save sponsor tiers
 				if (data.sponsorTiers && data.sponsorTiers.length > 0) {
@@ -429,15 +430,10 @@ function AdminProductsContent() {
 					metadata.sponsors = JSON.stringify(data.sponsors || []);
 				}
 
-				// Handle tiered pricing
+				// In the onSubmit function, update tier handling for events
 				if (data.hasTiers && data.priceTiers && data.priceTiers.length > 0) {
 					metadata.has_tiers = 'true';
 					metadata.available_spots = data.capacity;
-
-					// ADD THIS: Calculate and store the lowest price
-					const prices = data.priceTiers.map(tier => parseFloat(tier.price));
-					const lowestPrice = Math.min(...prices);
-					metadata.lowest_price = lowestPrice.toString();
 
 					// Don't include a default price for events with tiers
 					requestData.default_price = null;
@@ -452,8 +448,11 @@ function AdminProductsContent() {
 						productId = productResponse.data.productID || productResponse.data.product_id;
 					}
 
-					// Then create prices for each tier
+					// Then create NEW price tiers only
 					for (const tier of data.priceTiers) {
+						// Skip if this tier already exists (shouldn't happen with new UI)
+						if ((tier as any).id) continue;
+
 						const tierPriceData = {
 							product: productId,
 							unit_amount: Math.round(parseFloat(tier.price) * 100),
@@ -720,7 +719,7 @@ function AdminProductsContent() {
 											>
 												<div className="flex items-start gap-4">
 													{product.images[0] && (
-														<img
+														<Image
 															src={product.images[0]}
 															alt={product.name}
 															className="w-20 h-20 object-cover rounded"

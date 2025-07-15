@@ -60,7 +60,7 @@ function CheckInComponent() {
 
 			// Set up WebSocket for real-time updates
 			const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const wsUrl = `${wsProtocol}//${window.location.host}/api/events/updates?event_id=${eventDetails.id}`
+			const wsUrl = `${wsProtocol}//${import.meta.env.VITE_API_URL}/events/updates?event_id=${eventDetails.id}`
 
 			try {
 				const ws = new WebSocket(wsUrl)

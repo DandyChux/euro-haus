@@ -27,7 +27,7 @@ export function EventSponsorTiers({ sponsorTiers }: EventSponsorTiersProps) {
 							}))}
 							variant='logo'
 							direction="left"
-							speed="normal"
+							speed="fast"
 							pauseOnHover={true}
 							className="py-4"
 						/>

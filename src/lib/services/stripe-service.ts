@@ -74,6 +74,8 @@ export interface TieredPrice {
 	features?: string[];
 	maxQuantity?: number;
 	soldOut?: boolean;
+	isMostPopular?: boolean;
+	requiresVehicleSubmission?: boolean;
 }
 
 export interface EventWithTiers extends EventProduct {
@@ -257,17 +259,21 @@ export const stripeService = {
 			// Fetch all prices for this product
 			const response = await apiClient.get<{ prices: any[] }>(`/products/${eventProduct.id}/prices`);
 
-			const priceTiers: TieredPrice[] = response.data.prices.map(price => ({
-				id: price.id,
-				priceId: price.id,
-				name: price.nickname || price.metadata.tier_name || 'Standard',
-				amount: price.unit_amount / 100,
-				currency: price.currency,
-				description: price.metadata.description,
-				features: price.metadata.features ? JSON.parse(price.metadata.features) : [],
-				maxQuantity: price.metadata.max_quantity ? parseInt(price.metadata.max_quantity) : undefined,
-				soldOut: price.metadata.sold_out === 'true'
-			}));
+			const priceTiers: TieredPrice[] = response.data.prices
+				.filter(price => price.nickname || price.metadata.tier_name) // Only include actual tiers
+				.map(price => ({
+					id: price.id,
+					priceId: price.id,
+					name: price.nickname || price.metadata.tier_name || 'Standard',
+					amount: price.unit_amount / 100,
+					currency: price.currency,
+					description: price.metadata.description,
+					features: price.metadata.features ? JSON.parse(price.metadata.features) : [],
+					maxQuantity: price.metadata.max_quantity ? parseInt(price.metadata.max_quantity) : undefined,
+					soldOut: price.metadata.sold_out === 'true',
+					requiresVehicleSubmission: price.metadata.requires_vehicle_submission === 'true',
+					isMostPopular: price.metadata.is_most_popular === 'true'
+				}));
 
 			return {
 				...eventProduct,

@@ -128,7 +128,7 @@ function HomePage() {
 			{/* Featured Items - Mixed Events and Products */}
 			<section className='w-full py-12 px-6 bg-muted'>
 				<div className='max-w-7xl mx-auto'>
-					<div className="flex items-center justify-between mb-8">
+					<div className="flex flex-col md:flex-row items-center justify-between mb-8">
 						<h2 className='text-3xl font-bold text-center'>
 							Featured Experiences & Products
 						</h2>

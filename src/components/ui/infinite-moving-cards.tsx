@@ -92,11 +92,11 @@ export const InfiniteMovingCards = ({
 	const renderItem = (item: InfiniteMovingItem, idx: number) => {
 		if (variant === "logo" && isLogoItem(item)) {
 			const content = (
-				<div className="flex items-center justify-center h-20 w-40 p-4">
+				<div className="flex items-center justify-center h-40 w-60 p-4">
 					<img
 						src={item.logoUrl}
 						alt={item.name}
-						className="max-h-full max-w-full object-contain filter grayscale hover:grayscale-0 transition-all duration-300"
+						className="max-h-full max-w-full object-contain filter hover:grayscale transition-all duration-300"
 					/>
 				</div>
 			);

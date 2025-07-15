@@ -1,7 +1,6 @@
-// euro-haus/src/components/admin/existing-prices-manager.tsx
 import React, { useState, useEffect } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { Trash2, Edit2, Check, X, Star, StarOff, AlertTriangle } from 'lucide-react';
+import { Trash2, Edit2, Check, X, Star, StarOff, AlertTriangle, Car, Medal } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Card } from '~/components/ui/card';
@@ -16,6 +15,9 @@ import {
 	TooltipTrigger,
 } from '~/components/ui/tooltip';
 import { Alert, AlertDescription } from '../ui/alert';
+import { Switch } from '~/components/ui/switch';
+import { Label } from '~/components/ui/label';
+import { Textarea } from '../ui/textarea';
 
 interface ExistingPrice {
 	id: string;
@@ -23,7 +25,7 @@ interface ExistingPrice {
 	unit_amount: number;
 	currency: string;
 	active: boolean;
-	metadata: Record<string, string>;
+	metadata: Record<string, any>;
 	isDefault?: boolean;
 }
 
@@ -47,7 +49,6 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 	const fetchPrices = async () => {
 		try {
 			setLoading(true);
-			// Fetch both prices and product info to get default price
 			const [pricesResponse, productResponse] = await Promise.all([
 				apiClient.get(`/products/${productId}/prices`),
 				apiClient.get(`/products/${productId}`)
@@ -56,7 +57,6 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			const fetchedPrices = pricesResponse.data.prices || [];
 			const defaultPrice = productResponse.data.default_price?.id;
 
-			// Mark the default price
 			const pricesWithDefault = fetchedPrices.map((price: any) => ({
 				...price,
 				isDefault: price.id === defaultPrice
@@ -77,21 +77,9 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 		event?.stopPropagation();
 
 		try {
-			console.log('Setting default price:', priceId);
-
-			const response = await apiClient.put(`/admin/set-default-price/${productId}`, {
-				priceId
-			});
-
-			console.log('Set default response:', response.data);
-
+			await apiClient.put(`/admin/set-default-price/${productId}`, { priceId });
 			toast.success('Default price updated successfully');
-
-			// Add a small delay before refetching
-			setTimeout(() => {
-				fetchPrices();
-			}, 500);
-
+			setTimeout(fetchPrices, 500);
 		} catch (error) {
 			console.error('Failed to set default price:', error);
 			toast.error('Failed to set default price');
@@ -105,7 +93,9 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			setEditValues({
 				[priceId]: {
 					nickname: price.nickname || '',
-					amount: (price.unit_amount / 100).toFixed(2),
+					description: price.metadata?.description || '',
+					requiresVehicleSubmission: price.metadata?.requires_vehicle_submission === 'true',
+					isMostPopular: price.metadata?.is_most_popular === 'true'
 				}
 			});
 		}
@@ -121,29 +111,24 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			const values = editValues[priceId];
 			if (!values) return;
 
-			console.log('Updating price with:', {
-				priceId,
-				nickname: values.nickname,
-			});
+			const currentPrice = prices.find(p => p.id === priceId);
+			const metadata = {
+				...currentPrice?.metadata,
+				description: values.description || '',
+				requires_vehicle_submission: String(values.requiresVehicleSubmission),
+				is_most_popular: String(values.isMostPopular),
+				updated_at: new Date().toISOString(),
+			};
 
-			// Update price via API
-			const response = await apiClient.put(`/admin/update-price/${priceId}`, {
+			await apiClient.put(`/admin/update-price/${priceId}`, {
 				nickname: values.nickname,
-				metadata: {
-					...prices.find(p => p.id === priceId)?.metadata,
-					updated_at: new Date().toISOString(),
-				}
+				metadata,
 			});
-
-			console.log('Update response:', response.data);
 
 			toast.success('Price updated successfully');
 			setEditingPrice(null);
-
-			// Add a small delay before refetching to ensure Stripe has processed the update
-			setTimeout(() => {
-				fetchPrices();
-			}, 2500);
+			setEditValues({});
+			setTimeout(fetchPrices, 2500);
 
 		} catch (error) {
 			console.error('Failed to update price:', error);
@@ -164,11 +149,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 		}
 
 		try {
-			// Archive the price (Stripe doesn't allow deletion)
-			await apiClient.put(`/admin/archive-price/${priceId}`, {
-				active: false
-			});
-
+			await apiClient.put(`/admin/archive-price/${priceId}`, { active: false });
 			toast.success('Price archived successfully');
 			fetchPrices();
 		} catch (error) {
@@ -187,13 +168,13 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 
 	return (
 		<div className="space-y-4">
-			<h3 className="text-lg font-semibold">Existing Prices</h3>
+			<h3 className="text-lg font-semibold">Existing Prices/Tiers</h3>
 			<div className="space-y-2">
 				{prices.map((price) => (
 					<Card key={price.id} className="p-4">
 						{editingPrice === price.id ? (
-							<div className="space-y-3">
-								<div className="grid grid-cols-2 gap-3">
+							<div className="space-y-4">
+								<div className="grid grid-cols-2 gap-4">
 									<Input
 										value={editValues[price.id]?.nickname || ''}
 										onChange={(e) => setEditValues({
@@ -208,6 +189,55 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 										<span className="text-sm text-muted-foreground">(price cannot be changed)</span>
 									</div>
 								</div>
+
+								{productType === 'event' && (
+									<>
+										<div>
+											<Label htmlFor={`description-${price.id}`} className="mb-2">
+												Description (Optional)
+											</Label>
+											<Textarea
+												id={`description-${price.id}`}
+												value={editValues[price.id]?.description || ''}
+												onChange={(e) => setEditValues(prev => ({
+													...prev,
+													[price.id]: { ...prev[price.id], description: e.target.value }
+												}))}
+												placeholder="Describe what's included in this tier..."
+												rows={3}
+											/>
+										</div>
+										<div className="flex flex-col space-y-3">
+											<div className="flex items-center space-x-2">
+												<Switch
+													id={`requires-vehicle-${price.id}`}
+													checked={editValues[price.id]?.requiresVehicleSubmission}
+													onCheckedChange={(checked) => setEditValues({
+														...editValues,
+														[price.id]: { ...editValues[price.id], requiresVehicleSubmission: checked }
+													})}
+												/>
+												<Label htmlFor={`requires-vehicle-${price.id}`}>
+													Requires Vehicle Submission?
+												</Label>
+											</div>
+											<div className="flex items-center space-x-2">
+												<Switch
+													id={`is-popular-${price.id}`}
+													checked={editValues[price.id]?.isMostPopular}
+													onCheckedChange={(checked) => setEditValues({
+														...editValues,
+														[price.id]: { ...editValues[price.id], isMostPopular: checked }
+													})}
+												/>
+												<Label htmlFor={`is-popular-${price.id}`}>
+													Most Popular Tier?
+												</Label>
+											</div>
+										</div>
+									</>
+								)}
+
 								<div className="flex gap-2">
 									<Button type='button' size="sm" onClick={() => handleSaveEdit(price.id)}>
 										<Check className="w-4 h-4 mr-1" /> Save
@@ -225,18 +255,28 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 											{price.nickname || `${productType === 'event' ? 'Ticket' : 'Variant'} - $${(price.unit_amount / 100).toFixed(2)}`}
 											{price.isDefault && (
 												<Badge variant="default" className="text-xs">
-													<Star className="w-3 h-3 mr-1" />
-													Default
+													<Star className="w-3 h-3 mr-1" /> Default
+												</Badge>
+											)}
+											{price.metadata?.is_most_popular === 'true' && (
+												<Badge variant="secondary" className="text-xs">
+													<Medal className="w-3 h-3 mr-1" /> Most Popular
 												</Badge>
 											)}
 										</div>
 										<div className="text-sm text-muted-foreground">
 											${(price.unit_amount / 100).toFixed(2)} {price.currency.toUpperCase()}
-											{productType === 'event' && price.metadata.tier_name && (
-												<span className="ml-2">• {price.metadata.tier_name}</span>
-											)}
-											{productType === 'product' && price.metadata.variant && (
-												<span className="ml-2">• {price.metadata.variant}</span>
+											{productType === 'event' && price.metadata?.requires_vehicle_submission === 'true' && (
+												<TooltipProvider>
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<Car className="w-4 h-4 ml-2 inline-block text-blue-500" />
+														</TooltipTrigger>
+														<TooltipContent>
+															<p>Requires vehicle submission</p>
+														</TooltipContent>
+													</Tooltip>
+												</TooltipProvider>
 											)}
 										</div>
 									</div>
@@ -244,7 +284,6 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 								<div className="flex items-center gap-2">
 									{!price.active && <Badge variant="secondary">Archived</Badge>}
 
-									{/* Set as Default button */}
 									{price.active && !price.isDefault && (
 										<TooltipProvider>
 											<Tooltip>

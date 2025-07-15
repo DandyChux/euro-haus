@@ -1,17 +1,19 @@
 import { useEffect } from 'react';
-import { Card, CardContent } from '~/components/ui/card';
+import { Card } from '~/components/ui/card';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage, FormDescription } from '~/components/ui/form';
 import { Input } from '~/components/ui/input';
-import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Separator } from '~/components/ui/separator';
 import { Button } from '~/components/ui/button';
-import { useFieldArray, UseFormReturn } from 'react-hook-form';
-import { Plus, Trash2 } from 'lucide-react';
+import { UseFormReturn, useFieldArray } from 'react-hook-form';
+import { Plus, Trash2, GripVertical, AlertCircle } from 'lucide-react';
 import { FormData } from '~/lib/schemas/product-schema';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
+import { ExistingPricesManager } from './existing-prices-manager';
+import { Alert, AlertDescription } from '../ui/alert';
+import { Textarea } from '../ui/textarea';
 
 interface EventFormSectionProps {
 	form: UseFormReturn<FormData>;
@@ -81,61 +83,35 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 	// Load price tiers when editing
 	useEffect(() => {
 		if (isEditing && eventId) {
-			// Fetch event price tiers if editing
-			const fetchEventPrices = async () => {
+			// Don't load existing prices into the form fields
+			// The ExistingPricesManager will handle displaying and managing them
+
+			// Just check if there are tiers
+			const checkForTiers = async () => {
 				try {
 					const response = await apiClient.get(`/products/${eventId}/prices`);
 					const prices = response.data.prices || [];
 
-					// Convert prices to tier format
-					const tiers = prices.map((price: any, index: number) => ({
-						name: price.nickname || '',
-						price: (price.unit_amount / 100).toFixed(2),
-						description: price.metadata?.description || '',
-						features: JSON.parse(price.metadata?.features || '[]'),
-						maxQuantity: price.metadata?.max_quantity || '',
-						sortOrder: parseInt(price.metadata?.sort_order || index.toString()),
-					}));
+					// Check if there are any tier prices (prices with nicknames)
+					const hasTierPrices = prices.some((price: any) =>
+						price.nickname && price.nickname.trim() !== ''
+					);
 
-					// Sort by sortOrder
-					tiers.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+					// Set hasTiers based on actual tier prices, not just any price
+					form.setValue('hasTiers', hasTierPrices);
 
-					// Update form with loaded tiers
-					if (tiers.length > 0) {
-						form.setValue('hasTiers', true);
-						form.setValue('priceTiers', tiers);
-					}
+					// Clear priceTiers array - we'll only use it for NEW tiers
+					form.setValue('priceTiers', []);
+
 				} catch (error) {
-					console.error('Error fetching event price tiers:', error);
-					toast.error('Failed to load event tiers');
+					console.error('Error checking event tiers:', error);
+					toast.error('Failed to check event pricing');
 				}
 			};
 
-			fetchEventPrices();
+			checkForTiers();
 		}
 	}, [isEditing, eventId, form]);
-
-	// Helper function to add features to a tier
-	const addFeatureToTier = (tierIndex: number) => {
-		const currentTier = form.getValues(`priceTiers.${tierIndex}`);
-		const updatedFeatures = [...(currentTier.features || []), ''];
-		updateTier(tierIndex, { ...currentTier, features: updatedFeatures });
-	};
-
-	// Helper function to update a feature in a tier
-	const updateFeatureInTier = (tierIndex: number, featureIndex: number, value: string) => {
-		const currentTier = form.getValues(`priceTiers.${tierIndex}`);
-		const updatedFeatures = [...(currentTier.features || [])];
-		updatedFeatures[featureIndex] = value;
-		updateTier(tierIndex, { ...currentTier, features: updatedFeatures });
-	};
-
-	// Helper function to remove a feature from a tier
-	const removeFeatureFromTier = (tierIndex: number, featureIndex: number) => {
-		const currentTier = form.getValues(`priceTiers.${tierIndex}`);
-		const updatedFeatures = (currentTier.features || []).filter((_: any, i: number) => i !== featureIndex);
-		updateTier(tierIndex, { ...currentTier, features: updatedFeatures });
-	};
 
 	// Helper functions for nested sponsor management
 	const addSponsorToTier = (tierIndex: number) => {
@@ -148,6 +124,33 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 		const currentTier = form.getValues(`sponsorTiers.${tierIndex}`);
 		const updatedSponsors = currentTier.sponsors.filter((_: any, i: number) => i !== sponsorIndex);
 		updateSponsorTier(tierIndex, { ...currentTier, sponsors: updatedSponsors });
+	};
+
+	const addFeatureToTier = (tierIndex: number) => {
+		const currentTier = tierFields[tierIndex];
+		updateTier(tierIndex, {
+			...currentTier,
+			features: [...(currentTier.features || []), '']
+		});
+	};
+
+	const updateFeatureInTier = (tierIndex: number, featureIndex: number, value: string) => {
+		const currentTier = tierFields[tierIndex];
+		const updatedFeatures = [...(currentTier.features || [])];
+		updatedFeatures[featureIndex] = value;
+
+		updateTier(tierIndex, {
+			...currentTier,
+			features: updatedFeatures
+		});
+	};
+
+	const removeFeatureFromTier = (tierIndex: number, featureIndex: number) => {
+		const currentTier = tierFields[tierIndex];
+		updateTier(tierIndex, {
+			...currentTier,
+			features: (currentTier.features || []).filter((_: string, i: number) => i !== featureIndex)
+		});
 	};
 
 	// Don't render if not an event
@@ -658,6 +661,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 										form.setValue('priceTiers', []);
 									}
 								}}
+								disabled={form.watch('hasTiers')}
 							/>
 						</FormControl>
 						<FormLabel className="font-normal cursor-pointer">
@@ -667,10 +671,26 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 				)}
 			/>
 
+			{/* Show existing prices manager for editing events */}
+			{isEditing && eventId && (
+				<div className="mt-4">
+					<ExistingPricesManager
+						productId={eventId}
+						productType="event"
+						form={form}
+					/>
+				</div>
+			)}
+
 			{form.watch('hasTiers') ? (
-				<div className="bg-muted/50 p-4 rounded-md">
+				<div className="bg-muted/50 p-4 rounded-md mt-4">
 					<div className="flex justify-between items-center mb-4">
-						<h3 className="text-lg font-medium">Ticket Tiers</h3>
+						<div>
+							<h3 className="text-lg font-medium">Add New Ticket Tiers</h3>
+							<p className="text-sm text-muted-foreground">
+								Create additional pricing tiers for this event
+							</p>
+						</div>
 						<Button
 							type="button"
 							size="sm"
@@ -681,22 +701,35 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 								features: [],
 								maxQuantity: '',
 								sortOrder: tierFields.length,
+								requiresVehicleSubmission: false,
+								isMostPopular: false
 							})}
 						>
-							<Plus className="h-4 w-4 mr-1" /> Add Tier
+							<Plus className="h-4 w-4 mr-1" /> Add New Tier
 						</Button>
 					</div>
 
 					{tierFields.length === 0 ? (
 						<div className="text-center py-8 text-muted-foreground">
-							No ticket tiers added yet. Click "Add Tier" to create your first tier.
+							{isEditing ? (
+								<p>Use the form below to add new ticket tiers. Existing tiers are shown above.</p>
+							) : (
+								<p>No ticket tiers added yet. Click "Add New Tier" to create your first tier.</p>
+							)}
 						</div>
 					) : (
 						<div className="space-y-4">
+							<Alert>
+								<AlertCircle className="h-4 w-4" />
+								<AlertDescription>
+									These are new tiers that will be created when you save. To modify existing tiers, use the section above.
+								</AlertDescription>
+							</Alert>
+
 							{tierFields.map((field, index) => (
 								<Card key={field.id} className="p-4">
 									<div className="flex items-start justify-between mb-4">
-										<h4 className="font-medium">Tier {index + 1}</h4>
+										<h4 className="font-medium">New Tier {index + 1}</h4>
 										<Button
 											type="button"
 											size="sm"
@@ -762,8 +795,11 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 												<FormItem>
 													<FormLabel>Max Tickets Available (Optional)</FormLabel>
 													<FormControl>
-														<Input {...field} placeholder="50" />
+														<Input {...field} placeholder="50" type="number" />
 													</FormControl>
+													<FormDescription>
+														Leave empty for unlimited availability
+													</FormDescription>
 													<FormMessage />
 												</FormItem>
 											)}
@@ -781,29 +817,74 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 													<Plus className="w-4 h-4" />
 												</Button>
 											</div>
-											{form.watch(`priceTiers.${index}.features`)?.map((feature, featureIndex) => (
-												<div key={featureIndex} className="flex gap-2">
-													<Input
-														value={feature}
-														onChange={(e) => updateFeatureInTier(index, featureIndex, e.target.value)}
-														placeholder="e.g., Meet & Greet, Premium Parking"
-													/>
-													<Button
-														type="button"
-														size="sm"
-														variant="ghost"
-														onClick={() => removeFeatureFromTier(index, featureIndex)}
-													>
-														<Trash2 className="w-4 h-4" />
-													</Button>
-												</div>
-											))}
-											{(!form.watch(`priceTiers.${index}.features`) || form.watch(`priceTiers.${index}.features`)?.length === 0) && (
-												<div className="text-center py-2 text-sm text-muted-foreground">
+
+											{form.watch(`priceTiers.${index}.features`)?.length === 0 || !form.watch(`priceTiers.${index}.features`) ? (
+												<div className="text-center py-3 text-sm text-muted-foreground border-2 border-dashed rounded-md">
 													No features added. Click + to add features for this tier.
+												</div>
+											) : (
+												<div className="space-y-2">
+													{form.watch(`priceTiers.${index}.features`)?.map((feature, featureIndex) => (
+														<div key={featureIndex} className="flex gap-2">
+															<Input
+																value={feature}
+																onChange={(e) => updateFeatureInTier(index, featureIndex, e.target.value)}
+																placeholder="e.g., Meet & Greet, Premium Parking"
+															/>
+															<Button
+																type="button"
+																size="icon"
+																variant="ghost"
+																onClick={() => removeFeatureFromTier(index, featureIndex)}
+															>
+																<Trash2 className="w-4 h-4" />
+															</Button>
+														</div>
+													))}
 												</div>
 											)}
 										</div>
+
+										<div className="flex items-center space-x-4">
+											<FormField
+												control={form.control}
+												name={`priceTiers.${index}.requiresVehicleSubmission`}
+												render={({ field }) => (
+													<FormItem className="flex items-center space-x-2 mt-2">
+														<FormControl>
+															<Checkbox
+																checked={field.value}
+																onCheckedChange={field.onChange}
+															/>
+														</FormControl>
+														<FormLabel className="font-normal cursor-pointer">
+															Requires Vehicle Submission?
+														</FormLabel>
+													</FormItem>
+												)}
+											/>
+
+											<FormField
+												control={form.control}
+												name={`priceTiers.${index}.isMostPopular`}
+												render={({ field }) => (
+													<FormItem className="flex items-center space-x-2 mt-2">
+														<FormControl>
+															<Checkbox
+																checked={field.value}
+																onCheckedChange={field.onChange}
+															/>
+														</FormControl>
+														<FormLabel className="font-normal cursor-pointer">
+															Most Popular Tier?
+														</FormLabel>
+													</FormItem>
+												)}
+											/>
+										</div>
+
+										{/* Hidden sort order field */}
+										<input type="hidden" {...form.register(`priceTiers.${index}.sortOrder`)} />
 									</div>
 								</Card>
 							))}
@@ -812,7 +893,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 				</div>
 			) : (
 				// Single price for events without tiers
-				<div className="grid md:grid-cols-2 gap-4">
+				<div className="grid md:grid-cols-2 gap-4 mt-4">
 					<FormField
 						control={form.control}
 						name="price"

@@ -691,13 +691,13 @@ function AdminMediaContent() {
 										{uploadFiles.some(f => f.status === 'pending') && (
 											<div className="pt-4">
 												<Select defaultValue="images">
+													<Label>
+														Select Upload Folder
+													</Label>
 													<SelectTrigger className="w-full mb-4">
 														<SelectValue placeholder="Select upload folder" />
 													</SelectTrigger>
 													<SelectContent>
-														<Label>
-															Select Upload Folder
-														</Label>
 														{folders.map(folder => (
 															<SelectItem key={folder} value={folder}>{folder}</SelectItem>
 														))}

@@ -6,8 +6,10 @@ export const priceTierSchema = z.object({
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
 	description: z.string().optional(),
 	features: z.array(z.string()).optional(),
-	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
+	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
+	requiresVehicleSubmission: z.boolean().optional(),
+	isMostPopular: z.boolean().optional()
 });
 
 // Product variant schema for size/color variations
@@ -39,7 +41,7 @@ export const productSchema = baseSchema.extend({
 	compareAtPrice: z.string().regex(/^\d*\.?\d{0,2}$/, 'Invalid price format').optional().or(z.literal('')),
 	inStock: z.boolean().optional(),
 	isNew: z.boolean(),
-	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
+	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	// Variants for products with size/color options
 	variants: z.array(productVariantSchema).optional(),
 });
@@ -69,12 +71,12 @@ export const eventSchema = baseSchema.extend({
 	availableSpots: z.string().regex(/^\d+$/, 'Must be a number'),
 	organizer: z.string(),
 	status: z.enum(['upcoming', 'ongoing', 'completed', 'cancelled', 'soldout']),
-	tags: z.array(z.object({ value: z.string() })).min(1),
+	tags: z.array(z.object({ value: z.string() })).optional(),
 	agenda: z.array(z.object({
 		time: z.string().min(1, 'Time is required'),
 		activity: z.string().min(1, 'Activity is required'),
 	})).min(1),
-	includes: z.array(z.object({ value: z.string() })).min(1),
+	includes: z.array(z.object({ value: z.string() })).optional(),
 	sponsors: z.array(sponsorSchema).optional(),
 	sponsorTiers: z.array(sponsorTierSchema).optional(),
 	// Price tiers for events
