@@ -70,7 +70,6 @@ const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function EventDetailPage() {
 	const { event, hasTiers, singlePriceInfo } = Route.useLoaderData();
-	console.log(event)
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
@@ -443,7 +442,7 @@ function EventDetailPage() {
 								{/* Add to Cart for Tiered Events */}
 								{selectedTier && (
 									<Card className="shadow-lg border-primary/20">
-										<CardHeader className="bg-gradient-to-r from-primary/10 to-primary/5">
+										<CardHeader>
 											<CardTitle>Add to Cart</CardTitle>
 										</CardHeader>
 										<CardContent className="space-y-4 pt-6">
