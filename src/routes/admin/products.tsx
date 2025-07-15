@@ -9,8 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Checkbox } from '~/components/ui/checkbox';
 import { Separator } from '~/components/ui/separator';
 import { Badge } from '~/components/ui/badge';
-import { ProductVariantsForm } from '~/components/admin/product-variants-form';
-import { EventTiersForm } from '~/components/admin/event-tiers-form';
 import { Skeleton } from '~/components/ui/skeleton';
 import { toast } from 'sonner';
 import { apiClient } from '~/lib/api';
@@ -27,8 +25,6 @@ import {
 	RefreshCw,
 	LayoutDashboard
 } from 'lucide-react';
-import { ProductForm } from '~/components/product-form';
-import { EventForm } from '~/components/event-form';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
 import {
@@ -69,7 +65,8 @@ import {
 	ProductFormData,
 	EventFormData
 } from '~/lib/schemas/product-schema';
-import { ExistingPricesManager } from '~/components/admin/existing-prices-manager';
+import { ProductFormSection } from '~/components/admin/product-form-section';
+import { EventFormSection } from '~/components/admin/event-form-section';
 
 // Stripe Product interface
 interface StripeProduct {
@@ -77,7 +74,7 @@ interface StripeProduct {
 	name: string;
 	description: string | null;
 	images: string[];
-	metadata: Record<string, string>;
+	metadata: Record<string, any>;
 	default_price: {
 		id: string;
 		unit_amount: number;
@@ -207,6 +204,7 @@ function AdminProductsContent() {
 		setEditingProduct(product);
 		const isEvent = product.metadata.type === 'event';
 		setProductType(isEvent ? 'event' : 'product');
+		console.log('Editing product:', product);
 
 		form.clearErrors();
 
@@ -236,23 +234,49 @@ function AdminProductsContent() {
 				price: price,
 				maxQuantity: product.metadata.max_quantity || '10',
 				priceTiers: [],
-				tags: [{ value: '' }],
-				agenda: [{ time: '9:00 AM', activity: '' }],
-				includes: [{ value: '' }],
+				tags: [],
+				agenda: [],
+				includes: [],
 				sponsors: [],
 			};
 
-			// Parse arrays
+			// Parse arrays from JSON strings
 			try {
-				eventFormData.tags = JSON.parse(product.metadata.tags || '[]').map((t: string) => ({ value: t }));
-				eventFormData.agenda = JSON.parse(product.metadata.agenda || '[]');
-				eventFormData.includes = JSON.parse(product.metadata.includes || '[]').map((i: string) => ({ value: i }));
-				eventFormData.sponsors = JSON.parse(product.metadata.sponsors || '[]');
-			} catch {
-				// Keep defaults if parsing fails
+				// Tags - convert from string array to object array
+				const tagStrings = JSON.parse(product.metadata.tags || '[]');
+				eventFormData.tags = Array.isArray(tagStrings)
+					? tagStrings.map((tag: string) => ({ value: tag }))
+					: [];
+
+				// Agenda - should already be in correct format
+				const agendaData = JSON.parse(product.metadata.agenda || '[]');
+				eventFormData.agenda = Array.isArray(agendaData) ? agendaData : [];
+
+				// Includes - convert from string array to object array
+				const includesStrings = JSON.parse(product.metadata.includes || '[]');
+				eventFormData.includes = Array.isArray(includesStrings)
+					? includesStrings.map((item: string) => ({ value: item }))
+					: [];
+
+				// Sponsors - should already be in correct format
+				const sponsorsData = JSON.parse(product.metadata.sponsors || '[]');
+				eventFormData.sponsors = Array.isArray(sponsorsData) ? sponsorsData : [];
+			} catch (error) {
+				console.error('Error parsing event metadata:', error);
+				// Keep the default empty arrays if parsing fails
 			}
 
-			form.reset(eventFormData);
+			// Explicitly set type first
+			form.setValue('type', 'event', { shouldValidate: true });
+
+			// Use setValue for each field to ensure proper form state
+			Object.entries(eventFormData).forEach(([key, value]) => {
+				form.setValue(key as any, value, {
+					shouldValidate: true,
+					shouldDirty: false,
+					shouldTouch: false
+				});
+			});
 		} else {
 			// Product-specific data
 			const productFormData: ProductFormData = {
@@ -271,7 +295,13 @@ function AdminProductsContent() {
 				variants: [],
 			};
 
-			form.reset(productFormData);
+			// Explicitly set type first
+			form.setValue('type', 'product', { shouldValidate: true });
+
+			// Then set all other fields
+			Object.entries(productFormData).forEach(([key, value]) => {
+				form.setValue(key as any, value, { shouldValidate: true });
+			});
 		}
 
 		setActiveTab('create');
@@ -906,37 +936,22 @@ function AdminProductsContent() {
 										<Separator />
 
 										{/* Type-specific forms */}
-										{productType === 'product' && (
-											<>
-												<ProductForm form={form} />
-
-												{editingProduct && (
-													<ExistingPricesManager
-														productId={editingProduct.id}
-														productType="product"
-														form={form}
-													/>
-												)}
-
-												<ProductVariantsForm form={form} />
-											</>
-										)}
-
-										{productType === 'event' && (
-											<>
-												<EventForm form={form} onGenerateSlug={generateSlug} />
-
-												{editingProduct && (
-													<ExistingPricesManager
-														productId={editingProduct.id}
-														productType="event"
-														form={form}
-													/>
-												)}
-
-												<EventTiersForm form={form} />
-											</>
-										)}
+										<div className="space-y-6">
+											{productType === 'product' ? (
+												<ProductFormSection
+													form={form}
+													isEditing={!!editingProduct}
+													productId={editingProduct?.id}
+												/>
+											) : (
+												<EventFormSection
+													form={form}
+													isEditing={!!editingProduct}
+													eventId={editingProduct?.id}
+													onGenerateSlug={generateSlug}
+												/>
+											)}
+										</div>
 
 										<Separator />
 
@@ -986,7 +1001,12 @@ function AdminProductsContent() {
 											type="submit"
 											className="flex-1 disabled:bg-gray-500 disabled:text-white cursor-pointer disabled:cursor-not-allowed"
 											size="lg"
-											disabled={form.formState.isSubmitting || (!form.formState.isValid && form.formState.isDirty)}
+											disabled={form.formState.isSubmitting}
+											onClick={() => {
+												if (!form.formState.isValid) {
+													console.log('Attempting to submit with validation errors:', form.formState.errors);
+												}
+											}}
 										>
 											{form.formState.isSubmitting ? (
 												<>
