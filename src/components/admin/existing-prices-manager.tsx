@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { Trash2, Edit2, Check, X, Star, StarOff, AlertTriangle, Car, Medal } from 'lucide-react';
+import { Trash2, Edit2, Check, X, Star, StarOff, AlertTriangle, Car, Medal, Plus, Minus, List } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Card } from '~/components/ui/card';
@@ -89,13 +89,22 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 	const handleEdit = (priceId: string) => {
 		const price = prices.find(p => p.id === priceId);
 		if (price) {
+			// Parse features if they exist
+			let features = [];
+			try {
+				features = price.metadata?.features ? JSON.parse(price.metadata.features) : [];
+			} catch (e) {
+				features = [];
+			}
+
 			setEditingPrice(priceId);
 			setEditValues({
 				[priceId]: {
 					nickname: price.nickname || '',
 					description: price.metadata?.description || '',
 					requiresVehicleSubmission: price.metadata?.requires_vehicle_submission === 'true',
-					isMostPopular: price.metadata?.is_most_popular === 'true'
+					isMostPopular: price.metadata?.is_most_popular === 'true',
+					features: features
 				}
 			});
 		}
@@ -106,10 +115,49 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 		setEditValues({});
 	};
 
+	const handleAddFeature = (priceId: string) => {
+		const currentFeatures = editValues[priceId]?.features || [];
+		setEditValues({
+			...editValues,
+			[priceId]: {
+				...editValues[priceId],
+				features: [...currentFeatures, '']
+			}
+		});
+	};
+
+	const handleRemoveFeature = (priceId: string, index: number) => {
+		const currentFeatures = editValues[priceId]?.features || [];
+		const newFeatures = currentFeatures.filter((_, i) => i !== index);
+		setEditValues({
+			...editValues,
+			[priceId]: {
+				...editValues[priceId],
+				features: newFeatures
+			}
+		});
+	};
+
+	const handleFeatureChange = (priceId: string, index: number, value: string) => {
+		const currentFeatures = editValues[priceId]?.features || [];
+		const newFeatures = [...currentFeatures];
+		newFeatures[index] = value;
+		setEditValues({
+			...editValues,
+			[priceId]: {
+				...editValues[priceId],
+				features: newFeatures
+			}
+		});
+	};
+
 	const handleSaveEdit = async (priceId: string) => {
 		try {
 			const values = editValues[priceId];
 			if (!values) return;
+
+			// Filter out empty features
+			const features = (values.features || []).filter((f: string) => f.trim() !== '');
 
 			const currentPrice = prices.find(p => p.id === priceId);
 			const metadata = {
@@ -117,6 +165,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 				description: values.description || '',
 				requires_vehicle_submission: String(values.requiresVehicleSubmission),
 				is_most_popular: String(values.isMostPopular),
+				features: JSON.stringify(features),
 				updated_at: new Date().toISOString(),
 			};
 
@@ -157,6 +206,49 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			toast.error('Failed to archive price');
 		}
 	};
+
+	const renderFeatures = (price: ExistingPrice) => {
+		let features = [];
+		try {
+			features = price.metadata?.features ? JSON.parse(price.metadata.features) : [];
+		} catch (e) {
+			features = [];
+		}
+
+		if (features.length === 0) return null;
+
+		return (
+			<div className="mt-2 text-sm text-muted-foreground">
+				<div className="flex items-center gap-1 mb-1">
+					<List className="w-3 h-3" />
+					<span className="font-medium">Features:</span>
+				</div>
+				<ul className="list-disc list-inside ml-4 space-y-0.5">
+					{features.map((feature: string, index: number) => (
+						<li key={index} className="text-xs">{feature}</li>
+					))}
+				</ul>
+			</div>
+		);
+	};
+
+	const renderDescription = (description: string | undefined) => {
+		if (!description) return null;
+
+		// Split by double line breaks to create paragraphs
+		const paragraphs = description.split(/\n\n+/).filter(p => p.trim());
+
+		return (
+			<div className="text-sm text-muted-foreground mt-1 space-y-1">
+				{paragraphs.map((paragraph, index) => (
+					<p key={index} className="whitespace-pre-wrap">
+						{paragraph.trim()}
+					</p>
+				))}
+			</div>
+		);
+	};
+
 
 	if (loading) {
 		return <div className="text-sm text-muted-foreground">Loading existing prices...</div>;
@@ -207,6 +299,47 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 												rows={3}
 											/>
 										</div>
+
+										{/* Features Management */}
+										<div>
+											<div className="flex items-center justify-between mb-2">
+												<Label>Features (Optional)</Label>
+												<Button
+													type="button"
+													size="sm"
+													variant="outline"
+													onClick={() => handleAddFeature(price.id)}
+													className="h-8"
+												>
+													<Plus className="w-4 h-4 mr-1" /> Add Feature
+												</Button>
+											</div>
+											<div className="space-y-2">
+												{(editValues[price.id]?.features || []).map((feature: string, index: number) => (
+													<div key={index} className="flex items-center gap-2">
+														<Input
+															value={feature}
+															onChange={(e) => handleFeatureChange(price.id, index, e.target.value)}
+															placeholder={`Feature ${index + 1}`}
+															className="flex-1"
+														/>
+														<Button
+															type="button"
+															size="sm"
+															variant="ghost"
+															onClick={() => handleRemoveFeature(price.id, index)}
+															className="h-9 w-9 p-0"
+														>
+															<Minus className="w-4 h-4" />
+														</Button>
+													</div>
+												))}
+												{(!editValues[price.id]?.features || editValues[price.id].features.length === 0) && (
+													<p className="text-sm text-muted-foreground">No features added yet</p>
+												)}
+											</div>
+										</div>
+
 										<div className="flex flex-col space-y-3">
 											<div className="flex items-center space-x-2">
 												<Switch
@@ -249,39 +382,45 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 							</div>
 						) : (
 							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-3">
-									<div>
-										<div className="font-medium flex items-center gap-2">
-											{price.nickname || `${productType === 'event' ? 'Ticket' : 'Variant'} - $${(price.unit_amount / 100).toFixed(2)}`}
-											{price.isDefault && (
-												<Badge variant="default" className="text-xs">
-													<Star className="w-3 h-3 mr-1" /> Default
-												</Badge>
+								<div className="flex-1">
+									<div className="flex items-center gap-3">
+										<div className="flex-1">
+											<div className="font-medium flex items-center gap-2">
+												{price.nickname || `${productType === 'event' ? 'Ticket' : 'Variant'} - $${(price.unit_amount / 100).toFixed(2)}`}
+												{price.isDefault && (
+													<Badge variant="default" className="text-xs">
+														<Star className="w-3 h-3 mr-1" /> Default
+													</Badge>
+												)}
+												{price.metadata?.is_most_popular === 'true' && (
+													<Badge variant="secondary" className="text-xs">
+														<Medal className="w-3 h-3 mr-1" /> Most Popular
+													</Badge>
+												)}
+											</div>
+											<div className="text-sm text-muted-foreground">
+												${(price.unit_amount / 100).toFixed(2)} {price.currency.toUpperCase()}
+												{productType === 'event' && price.metadata?.requires_vehicle_submission === 'true' && (
+													<TooltipProvider>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<Car className="w-4 h-4 ml-2 inline-block text-blue-500" />
+															</TooltipTrigger>
+															<TooltipContent>
+																<p>Requires vehicle submission</p>
+															</TooltipContent>
+														</Tooltip>
+													</TooltipProvider>
+												)}
+											</div>
+											{price.metadata?.description && (
+												renderDescription(price.metadata.description)
 											)}
-											{price.metadata?.is_most_popular === 'true' && (
-												<Badge variant="secondary" className="text-xs">
-													<Medal className="w-3 h-3 mr-1" /> Most Popular
-												</Badge>
-											)}
-										</div>
-										<div className="text-sm text-muted-foreground">
-											${(price.unit_amount / 100).toFixed(2)} {price.currency.toUpperCase()}
-											{productType === 'event' && price.metadata?.requires_vehicle_submission === 'true' && (
-												<TooltipProvider>
-													<Tooltip>
-														<TooltipTrigger asChild>
-															<Car className="w-4 h-4 ml-2 inline-block text-blue-500" />
-														</TooltipTrigger>
-														<TooltipContent>
-															<p>Requires vehicle submission</p>
-														</TooltipContent>
-													</Tooltip>
-												</TooltipProvider>
-											)}
+											{renderFeatures(price)}
 										</div>
 									</div>
 								</div>
-								<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 ml-4">
 									{!price.active && <Badge variant="secondary">Archived</Badge>}
 
 									{price.active && !price.isDefault && (

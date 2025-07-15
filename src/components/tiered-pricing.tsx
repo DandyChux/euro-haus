@@ -62,23 +62,39 @@ export function TieredPricing({
 
 		const isExpanded = expandedDescriptions[tier.id] || showFullDescriptions;
 		const needsTruncation = tier.description.length > maxDescriptionLength && !showFullDescriptions;
-		const displayText = isExpanded || !needsTruncation
-			? tier.description
-			: `${tier.description.substring(0, maxDescriptionLength)}...`;
+
+		// For truncation, we need to be careful with line breaks
+		let displayText = tier.description;
+		if (!isExpanded && needsTruncation) {
+			// Find a good truncation point that doesn't break in the middle of a word
+			displayText = tier.description.substring(0, maxDescriptionLength);
+			const lastSpace = displayText.lastIndexOf(' ');
+			if (lastSpace > maxDescriptionLength * 0.8) {
+				displayText = displayText.substring(0, lastSpace);
+			}
+			displayText += '...';
+		}
+
+		// Split text into paragraphs and render with proper spacing
+		const paragraphs = displayText.split(/\n\n+/).filter(p => p.trim());
 
 		return (
 			<div className="mb-3">
-				<p className={cn(
-					"text-sm text-muted-foreground",
+				<div className={cn(
+					"text-sm text-muted-foreground space-y-2",
 					layout === 'list' && "text-xs"
 				)}>
-					{displayText}
-				</p>
+					{paragraphs.map((paragraph, index) => (
+						<p key={index} className="whitespace-pre-wrap">
+							{paragraph.trim()}
+						</p>
+					))}
+				</div>
 				{needsTruncation && (
 					<Button
 						variant="ghost"
 						size="sm"
-						className="h-auto p-0 text-xs text-primary hover:bg-transparent"
+						className="h-auto p-0 text-xs text-primary hover:bg-transparent mt-1"
 						onClick={(e) => {
 							e.stopPropagation();
 							toggleDescription(tier.id);
