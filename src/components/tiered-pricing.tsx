@@ -174,11 +174,9 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 							</Badge>
 						)}
 						<CardHeader className="pb-3">
-							<div className="flex items-start justify-between gap-2">
-								<div className="flex items-center gap-2 min-w-0">
-									{getTierIcon(index)}
-									<CardTitle className="text-base truncate">{tier.name}</CardTitle>
-								</div>
+							<div className="flex items-start gap-2 min-h-[3rem]">
+								<span className="flex-shrink-0 pt-1">{getTierIcon(index)}</span>
+								<CardTitle className="text-base">{tier.name}</CardTitle>
 							</div>
 							<CardDescription className="mt-2">
 								<span className="text-2xl font-bold">
@@ -189,47 +187,53 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 						</CardHeader>
 
 						<CardContent className="flex-1 pb-3">
-							{tier.description && (
-								<p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+							{tier.description ? (
+								<p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
 									{tier.description}
 								</p>
+							) : (
+								<div className="mb-3 min-h-[2.5rem]" />
 							)}
 
-							{tier.features && tier.features.length > 0 && (
-								<ul className="space-y-1.5">
-									{tier.features.slice(0, 4).map((feature, idx) => (
-										<li key={idx} className="flex items-start">
-											<Check className="h-3 w-3 text-primary mr-1.5 mt-0.5 flex-shrink-0" />
-											<span className="text-xs line-clamp-2">{feature}</span>
-										</li>
-									))}
-									{tier.features.length > 4 && (
-										<li className="text-xs text-muted-foreground">
-											+{tier.features.length - 4} more
-										</li>
-									)}
-								</ul>
-							)}
+							<div className="min-h-[60px]">
+								{tier.features && tier.features.length > 0 && (
+									<ul className="space-y-1.5">
+										{tier.features.slice(0, 3).map((feature, idx) => (
+											<li key={idx} className="flex items-start">
+												<Check className="h-3 w-3 text-primary mr-1.5 mt-0.5 flex-shrink-0" />
+												<span className="text-xs line-clamp-1">{feature}</span>
+											</li>
+										))}
+										{tier.features.length > 3 && (
+											<li className="text-xs text-muted-foreground">
+												+{tier.features.length - 3} more
+											</li>
+										)}
+									</ul>
+								)}
+							</div>
 						</CardContent>
 
 						<CardFooter className="flex flex-col gap-2 pt-3">
-							{!tier.soldOut && tier.maxQuantity && (
-								<Select
-									value={String(selectedQuantities[tier.id] || 1)}
-									onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
-								>
-									<SelectTrigger className="w-full h-9 text-sm">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
-											<SelectItem key={num} value={String(num)}>
-												{num} {num === 1 ? 'ticket' : 'tickets'}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							)}
+							<div className="h-9">
+								{!tier.soldOut && tier.maxQuantity && (
+									<Select
+										value={String(selectedQuantities[tier.id] || 1)}
+										onValueChange={(value) => handleQuantityChange(tier.id, parseInt(value))}
+									>
+										<SelectTrigger className="w-full h-9 text-sm">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{Array.from({ length: Math.min(tier.maxQuantity, 10) }, (_, i) => i + 1).map(num => (
+												<SelectItem key={num} value={String(num)}>
+													{num} {num === 1 ? 'ticket' : 'tickets'}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								)}
+							</div>
 
 							<Button
 								className="w-full h-9 text-sm"
@@ -240,11 +244,13 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 								{tier.soldOut ? 'Sold Out' : 'Select'}
 							</Button>
 
-							{tier.maxQuantity && !tier.soldOut && tier.maxQuantity < 20 && (
-								<p className="text-xs text-center text-orange-600">
-									Only {tier.maxQuantity} left!
-								</p>
-							)}
+							<div className="h-4">
+								{tier.maxQuantity && !tier.soldOut && tier.maxQuantity < 20 && (
+									<p className="text-xs text-center text-orange-600">
+										Only {tier.maxQuantity} left!
+									</p>
+								)}
+							</div>
 						</CardFooter>
 					</Card>
 				))}
