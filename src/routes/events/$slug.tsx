@@ -279,8 +279,8 @@ function EventDetailPage() {
 								</Badge>
 							))}
 						</div>
-						<h1 className="text-4xl font-bold mb-2 text-foreground drop-shadow-lg">{event.title}</h1>
-						<p className="text-lg text-foreground/90 drop-shadow">{event.description}</p>
+						<h1 className="text-4xl font-bold mb-2 drop-shadow-lg">{event.title}</h1>
+						<p className="text-lg drop-shadow">{event.description}</p>
 					</div>
 				</div>
 			</div>

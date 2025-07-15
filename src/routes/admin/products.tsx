@@ -434,7 +434,6 @@ function AdminProductsContent() {
 					metadata.has_tiers = 'true';
 					metadata.available_spots = data.capacity;
 
-					// ADD THIS: Calculate and store the lowest price
 					const prices = data.priceTiers.map(tier => parseFloat(tier.price));
 					const lowestPrice = Math.min(...prices);
 					metadata.lowest_price = lowestPrice.toString();

@@ -6,7 +6,7 @@ export const priceTierSchema = z.object({
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
 	description: z.string().optional(),
 	features: z.array(z.string()).optional(),
-	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
+	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
 });
 
@@ -39,7 +39,7 @@ export const productSchema = baseSchema.extend({
 	compareAtPrice: z.string().regex(/^\d*\.?\d{0,2}$/, 'Invalid price format').optional().or(z.literal('')),
 	inStock: z.boolean().optional(),
 	isNew: z.boolean(),
-	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional(),
+	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	// Variants for products with size/color options
 	variants: z.array(productVariantSchema).optional(),
 });

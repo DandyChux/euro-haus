@@ -87,23 +87,33 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 					const response = await apiClient.get(`/products/${eventId}/prices`);
 					const prices = response.data.prices || [];
 
-					// Convert prices to tier format
-					const tiers = prices.map((price: any, index: number) => ({
-						name: price.nickname || '',
-						price: (price.unit_amount / 100).toFixed(2),
-						description: price.metadata?.description || '',
-						features: JSON.parse(price.metadata?.features || '[]'),
-						maxQuantity: price.metadata?.max_quantity || '',
-						sortOrder: parseInt(price.metadata?.sort_order || index.toString()),
-					}));
+					if (tierPrices.length > 0) {
+						// Convert prices to tier format
+						const tiers = tierPrices.map((price: any, index: number) => ({
+							name: price.nickname || '',
+							price: (price.unit_amount / 100).toFixed(2),
+							description: price.metadata?.description || '',
+							features: JSON.parse(price.metadata?.features || '[]'),
+							maxQuantity: price.metadata?.max_quantity || '',
+							sortOrder: parseInt(price.metadata?.sort_order || index.toString()),
+						}));
 
-					// Sort by sortOrder
-					tiers.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+						// Sort by sortOrder
+						tiers.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
 
-					// Update form with loaded tiers
-					if (tiers.length > 0) {
+						// Update form with loaded tiers
 						form.setValue('hasTiers', true);
 						form.setValue('priceTiers', tiers);
+					} else {
+						// Single price event - ensure hasTiers is false
+						form.setValue('hasTiers', false);
+						form.setValue('priceTiers', []);
+
+						// Set the single price if it exists
+						if (prices.length > 0 && prices[0].unit_amount) {
+							const singlePrice = (prices[0].unit_amount / 100).toFixed(2);
+							form.setValue('price', singlePrice);
+						}
 					}
 				} catch (error) {
 					console.error('Error fetching event price tiers:', error);
@@ -762,7 +772,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 												<FormItem>
 													<FormLabel>Max Tickets Available (Optional)</FormLabel>
 													<FormControl>
-														<Input {...field} placeholder="50" />
+														<Input {...field} placeholder="50" value={field.value || ''} />
 													</FormControl>
 													<FormMessage />
 												</FormItem>
@@ -833,7 +843,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 							<FormItem>
 								<FormLabel>Max Tickets per Order</FormLabel>
 								<FormControl>
-									<Input {...field} placeholder="10" />
+									<Input {...field} placeholder="10" value={field.value || ''} />
 								</FormControl>
 								<FormMessage />
 							</FormItem>
