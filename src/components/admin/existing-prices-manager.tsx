@@ -17,6 +17,7 @@ import {
 import { Alert, AlertDescription } from '../ui/alert';
 import { Switch } from '~/components/ui/switch';
 import { Label } from '~/components/ui/label';
+import { Textarea } from '../ui/textarea';
 
 interface ExistingPrice {
 	id: string;
@@ -92,8 +93,9 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			setEditValues({
 				[priceId]: {
 					nickname: price.nickname || '',
-					requiresVehicleSubmission: price.metadata?.requires_vehicle_submission,
-					isMostPopular: price.metadata?.is_most_popular
+					description: price.metadata?.description || '',
+					requiresVehicleSubmission: price.metadata?.requires_vehicle_submission === 'true',
+					isMostPopular: price.metadata?.is_most_popular === 'true'
 				}
 			});
 		}
@@ -112,6 +114,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 			const currentPrice = prices.find(p => p.id === priceId);
 			const metadata = {
 				...currentPrice?.metadata,
+				description: values.description || '',
 				requires_vehicle_submission: String(values.requiresVehicleSubmission),
 				is_most_popular: String(values.isMostPopular),
 				updated_at: new Date().toISOString(),
@@ -124,6 +127,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 
 			toast.success('Price updated successfully');
 			setEditingPrice(null);
+			setEditValues({});
 			setTimeout(fetchPrices, 2500);
 
 		} catch (error) {
@@ -187,34 +191,51 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 								</div>
 
 								{productType === 'event' && (
-									<div className="flex flex-col space-y-3">
-										<div className="flex items-center space-x-2">
-											<Switch
-												id={`requires-vehicle-${price.id}`}
-												checked={editValues[price.id]?.requiresVehicleSubmission}
-												onCheckedChange={(checked) => setEditValues({
-													...editValues,
-													[price.id]: { ...editValues[price.id], requiresVehicleSubmission: checked }
-												})}
-											/>
-											<Label htmlFor={`requires-vehicle-${price.id}`}>
-												Requires Vehicle Submission?
+									<>
+										<div>
+											<Label htmlFor={`description-${price.id}`} className="mb-2">
+												Description (Optional)
 											</Label>
-										</div>
-										<div className="flex items-center space-x-2">
-											<Switch
-												id={`is-popular-${price.id}`}
-												checked={editValues[price.id]?.isMostPopular}
-												onCheckedChange={(checked) => setEditValues({
-													...editValues,
-													[price.id]: { ...editValues[price.id], isMostPopular: checked }
-												})}
+											<Textarea
+												id={`description-${price.id}`}
+												value={editValues[price.id]?.description || ''}
+												onChange={(e) => setEditValues(prev => ({
+													...prev,
+													[price.id]: { ...prev[price.id], description: e.target.value }
+												}))}
+												placeholder="Describe what's included in this tier..."
+												rows={3}
 											/>
-											<Label htmlFor={`is-popular-${price.id}`}>
-												Most Popular Tier?
-											</Label>
 										</div>
-									</div>
+										<div className="flex flex-col space-y-3">
+											<div className="flex items-center space-x-2">
+												<Switch
+													id={`requires-vehicle-${price.id}`}
+													checked={editValues[price.id]?.requiresVehicleSubmission}
+													onCheckedChange={(checked) => setEditValues({
+														...editValues,
+														[price.id]: { ...editValues[price.id], requiresVehicleSubmission: checked }
+													})}
+												/>
+												<Label htmlFor={`requires-vehicle-${price.id}`}>
+													Requires Vehicle Submission?
+												</Label>
+											</div>
+											<div className="flex items-center space-x-2">
+												<Switch
+													id={`is-popular-${price.id}`}
+													checked={editValues[price.id]?.isMostPopular}
+													onCheckedChange={(checked) => setEditValues({
+														...editValues,
+														[price.id]: { ...editValues[price.id], isMostPopular: checked }
+													})}
+												/>
+												<Label htmlFor={`is-popular-${price.id}`}>
+													Most Popular Tier?
+												</Label>
+											</div>
+										</div>
+									</>
 								)}
 
 								<div className="flex gap-2">

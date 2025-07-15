@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { Check, Users, Star, Sparkles, Car } from 'lucide-react';
+import { Check, Users, Star, Sparkles, Car, ChevronDown, ChevronUp } from 'lucide-react';
 import { TieredPrice } from '../lib/services/stripe-service';
 import { cn } from '../lib/utils';
 import { Badge } from './ui/badge';
@@ -19,15 +19,27 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 interface TieredPricingProps {
 	tiers: TieredPrice[];
 	onSelectTier: (tier: TieredPrice, quantity: number) => void;
+	showFullDescriptions?: boolean; // New prop to control description display
+	maxDescriptionLength?: number; // New prop to control truncation
 }
 
-export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
+export function TieredPricing({
+	tiers,
+	onSelectTier,
+	showFullDescriptions = false,
+	maxDescriptionLength = 100
+}: TieredPricingProps) {
 	const [selectedQuantities, setSelectedQuantities] = useState<Record<string, number>>({});
 	const [selectedTierId, setSelectedTierId] = useState<string>(tiers[0]?.id || '');
 	const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
+	const [expandedDescriptions, setExpandedDescriptions] = useState<Record<string, boolean>>({});
 
 	const handleQuantityChange = (tierId: string, quantity: number) => {
 		setSelectedQuantities(prev => ({ ...prev, [tierId]: quantity }));
+	};
+
+	const toggleDescription = (tierId: string) => {
+		setExpandedDescriptions(prev => ({ ...prev, [tierId]: !prev[tierId] }));
 	};
 
 	// Find the most popular tier based on metadata
@@ -44,14 +56,54 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 
 	const selectedTier = tiers.find(t => t.id === selectedTierId);
 
+	// Helper function to render description with truncation
+	const renderDescription = (tier: TieredPrice, layout: 'grid' | 'mobile-stack' | 'list') => {
+		if (!tier.description) return null;
+
+		const isExpanded = expandedDescriptions[tier.id] || showFullDescriptions;
+		const needsTruncation = tier.description.length > maxDescriptionLength && !showFullDescriptions;
+		const displayText = isExpanded || !needsTruncation
+			? tier.description
+			: `${tier.description.substring(0, maxDescriptionLength)}...`;
+
+		return (
+			<div className="mb-3">
+				<p className={cn(
+					"text-sm text-muted-foreground",
+					layout === 'list' && "text-xs"
+				)}>
+					{displayText}
+				</p>
+				{needsTruncation && (
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-auto p-0 text-xs text-primary hover:bg-transparent"
+						onClick={(e) => {
+							e.stopPropagation();
+							toggleDescription(tier.id);
+						}}
+					>
+						{isExpanded ? (
+							<>Show less <ChevronUp className="h-3 w-3 ml-1" /></>
+						) : (
+							<>Show more <ChevronDown className="h-3 w-3 ml-1" /></>
+						)}
+					</Button>
+				)}
+			</div>
+		);
+	};
+
 	const renderTierCard = (tier: TieredPrice, index: number, layout: 'grid' | 'mobile-stack') => {
 		const isPopular = tier.isMostPopular;
 		const cardClasses = cn(
 			"relative transition-all hover:shadow-lg",
 			tier.soldOut && "opacity-60",
 			isPopular && "ring-2 ring-primary",
-			layout === 'grid' && "h-full flex flex-col"
+			layout === 'grid' && "flex flex-col" // Remove "h-full" from here
 		);
+
 		const badgeClasses = cn(
 			"absolute z-10",
 			layout === 'grid' ? "-top-3 left-1/2 -translate-x-1/2 whitespace-nowrap" : "-top-3 left-4"
@@ -103,18 +155,11 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 				</CardHeader>
 
 				<CardContent className={cn("pb-3", layout === 'grid' && "flex-1")}>
-					{tier.description ? (
-						<p className={cn(
-							"text-sm text-muted-foreground mb-3",
-							layout === 'grid' && "line-clamp-2 min-h-[2.5rem]"
-						)}>
-							{tier.description}
-						</p>
-					) : (
-						layout === 'grid' && <div className="mb-3 min-h-[2.5rem]" />
-					)}
+					{/* Render description with better formatting */}
+					{renderDescription(tier, layout)}
 
-					<div className={cn(layout === 'grid' && "min-h-[60px]")}>
+					{/* Features section */}
+					<div className={cn(layout === 'grid' && tier.features && tier.features.length > 0 && "min-h-[60px]")}>
 						{tier.features && tier.features.length > 0 && (
 							<ul className="space-y-1.5">
 								{tier.features.slice(0, layout === 'grid' ? 3 : undefined).map((feature, idx) => (
@@ -214,10 +259,12 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 				</div>
 			</div>
 
-			{/* Desktop: Always show cards in grid */}
-			<div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+			{/* Desktop: Auto-responsive grid that adjusts based on content */}
+			<div className="hidden md:grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4 items-start">
 				{tiers.map((tier, index) => renderTierCard(tier, index, 'grid'))}
 			</div>
+
+
 
 			{/* Mobile: Show cards or list based on selection */}
 			<div className="md:hidden">
@@ -262,12 +309,11 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 															</TooltipProvider>
 														)}
 													</div>
-													{tier.description && (
-														<p className="text-sm text-muted-foreground mt-0.5">{tier.description}</p>
-													)}
+													{/* Render description in list view */}
+													{renderDescription(tier, 'list')}
 												</div>
 											</div>
-											<div className="text-right">
+											<div className="text-right ml-3 flex-shrink-0">
 												<div className="font-bold">${tier.amount}</div>
 												{tier.soldOut && <Badge variant="secondary" className="text-xs">Sold Out</Badge>}
 											</div>
@@ -278,6 +324,21 @@ export function TieredPricing({ tiers, onSelectTier }: TieredPricingProps) {
 
 							{selectedTier && !selectedTier.soldOut && (
 								<div className="mt-4 pt-4 border-t space-y-3">
+									{/* Show selected tier's features if any */}
+									{selectedTier.features && selectedTier.features.length > 0 && (
+										<div className="space-y-1">
+											<p className="text-sm font-medium">Includes:</p>
+											<ul className="space-y-1">
+												{selectedTier.features.map((feature, idx) => (
+													<li key={idx} className="flex items-start">
+														<Check className="h-3 w-3 text-primary mr-1.5 mt-0.5 flex-shrink-0" />
+														<span className="text-xs">{feature}</span>
+													</li>
+												))}
+											</ul>
+										</div>
+									)}
+
 									<div className="flex items-center justify-between">
 										<Label>Quantity</Label>
 										<Select

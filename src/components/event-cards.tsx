@@ -163,12 +163,12 @@ export const EventCard: React.FC<EventCardProps> = ({
 						<MapPin className="h-4 w-4" />
 						<span>{event.location}</span>
 					</div>
-					{event.availableSpots && event.capacity && (
+					{/* {event.availableSpots && event.capacity && (
 						<div className="flex items-center gap-2 text-sm">
 							<Users className="h-4 w-4" />
 							<span>{event.availableSpots} of {event.capacity} spots available</span>
 						</div>
-					)}
+					)} */}
 				</CardDescription>
 			</CardHeader>
 			<CardContent>

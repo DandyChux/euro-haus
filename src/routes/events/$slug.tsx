@@ -70,6 +70,7 @@ const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function EventDetailPage() {
 	const { event, hasTiers, singlePriceInfo } = Route.useLoaderData();
+	console.log(event)
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
