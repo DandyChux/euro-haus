@@ -208,6 +208,8 @@ function AdminProductsContent() {
 		const isEvent = product.metadata.type === 'event';
 		setProductType(isEvent ? 'event' : 'product');
 
+		form.clearErrors();
+
 		// Parse price from cents
 		const price = product.default_price
 			? (product.default_price.unit_amount / 100).toFixed(2)
@@ -984,7 +986,7 @@ function AdminProductsContent() {
 											type="submit"
 											className="flex-1 disabled:bg-gray-500 disabled:text-white cursor-pointer disabled:cursor-not-allowed"
 											size="lg"
-											disabled={form.formState.isSubmitting || !form.formState.isValid}
+											disabled={form.formState.isSubmitting || (!form.formState.isValid && form.formState.isDirty)}
 										>
 											{form.formState.isSubmitting ? (
 												<>

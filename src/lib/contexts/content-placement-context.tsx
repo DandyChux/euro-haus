@@ -1,15 +1,27 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { apiClient } from '../api';
 
-interface DynamicPlacement {
+interface BasePlacement {
 	id: string;
 	name: string;
 	description: string;
 	page: string;
+}
+
+interface MediaPlacement extends BasePlacement {
 	type: 'image' | 'video' | 'document';
 	defaultUrl: string;
 	currentUrl?: string;
 }
+
+interface TextPlacement extends BasePlacement {
+	type: 'text';
+	defaultText: string;
+	currentText?: string;
+	html?: boolean;
+}
+
+type DynamicPlacement = MediaPlacement | TextPlacement;
 
 interface ContentPlacementContextType {
 	registerPlacement: (placement: DynamicPlacement) => void;
@@ -55,15 +67,29 @@ export function ContentPlacementProvider({ children }: { children: React.ReactNo
 				// Register all pending placements
 				pendingRegistrations.current.forEach(async (p) => {
 					try {
-						await apiClient.post('/content-placements/register', {
+						const basePayload = {
 							id: p.id,
 							name: p.name,
 							description: p.description,
 							page: p.page,
 							type: p.type,
-							mediaUrl: p.defaultUrl,
-							currentUrl: p.currentUrl,
-						});
+						};
+
+						// Add type-specific properties based on placement type
+						const payload = p.type === 'text'
+							? {
+								...basePayload,
+								textContent: (p as TextPlacement).currentText || (p as TextPlacement).defaultText,
+								defaultText: (p as TextPlacement).defaultText,
+								html: (p as TextPlacement).html,
+							}
+							: {
+								...basePayload,
+								mediaUrl: (p as MediaPlacement).defaultUrl,
+								currentUrl: (p as MediaPlacement).currentUrl,
+							};
+
+						await apiClient.post('/content-placements/register', payload);
 					} catch (error) {
 						console.error('Failed to register placement:', error);
 					}
@@ -76,7 +102,10 @@ export function ContentPlacementProvider({ children }: { children: React.ReactNo
 	// Get the current URL for a placement
 	const getPlacementUrl = useCallback((id: string, defaultUrl: string) => {
 		const placement = activePlacements.get(id);
-		return placement?.currentUrl || defaultUrl;
+		if (!placement || placement.type === 'text') {
+			return defaultUrl;
+		}
+		return placement.currentUrl || defaultUrl;
 	}, [activePlacements]);
 
 	// Load saved placements from backend on mount
@@ -84,16 +113,43 @@ export function ContentPlacementProvider({ children }: { children: React.ReactNo
 		apiClient.get('/content-placements/dynamic')
 			.then(response => {
 				const map = new Map<string, DynamicPlacement>();
-				response.data.placements?.forEach((p: any) => {
-					const placement: DynamicPlacement = {
-						id: p.id,
-						name: p.name,
-						description: p.description,
-						page: p.page,
-						type: p.type,
-						defaultUrl: p.mediaUrl,
-						currentUrl: p.currentUrl || p.mediaUrl,
-					};
+				response.data.placements?.forEach((p: {
+					id: string;
+					name: string;
+					description: string;
+					page: string;
+					type: 'image' | 'video' | 'document' | 'text';
+					mediaUrl?: string;
+					currentUrl?: string;
+					defaultText?: string;
+					currentText?: string;
+					html?: boolean;
+				}) => {
+					let placement: DynamicPlacement;
+
+					if (p.type === 'text') {
+						placement = {
+							id: p.id,
+							name: p.name,
+							description: p.description,
+							page: p.page,
+							type: 'text',
+							defaultText: p.defaultText || '',
+							currentText: p.currentText,
+							html: p.html
+						};
+					} else {
+						placement = {
+							id: p.id,
+							name: p.name,
+							description: p.description,
+							page: p.page,
+							type: p.type,
+							defaultUrl: p.mediaUrl || '',
+							currentUrl: p.currentUrl
+						};
+					}
+
 					map.set(p.id, placement);
 					registeredIds.current.add(p.id);
 				});

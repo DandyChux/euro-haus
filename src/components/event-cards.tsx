@@ -170,7 +170,7 @@ const EventCard: React.FC<EventCardProps> = ({
 						month: 'long',
 						day: 'numeric'
 					})}</span>
-					<span className="line-clamp-2">{event.description}</span>
+					<span className="line-clamp-3">{event.description}</span>
 					<span className="font-medium text-primary">{getPriceDisplay()}</span>
 				</CardDescription>
 			</CardHeader>

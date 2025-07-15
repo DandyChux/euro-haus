@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { Badge } from '~/components/ui/badge';
 import { Skeleton } from '~/components/ui/skeleton';
 import { toast } from 'sonner';
@@ -13,7 +13,7 @@ import {
 	LogOut,
 	Search,
 	ImageIcon,
-	Video,
+	VideoIcon,
 	Copy,
 	FolderOpen,
 	X,
@@ -66,6 +66,9 @@ import { useContentPlacements, useUpdateContentPlacement } from '~/lib/hooks/use
 import type { ContentPlacement } from '~/lib/schemas/content-placement-schema';
 import { MediaCard } from '~/components/media-card';
 import { MediaListItem } from '~/components/media-list-item';
+import { useQueryClient } from '@tanstack/react-query';
+import { Video } from '~/components/ui/video';
+import { TextContentEditor } from '~/components/ui/text-content-editor';
 
 export interface MediaFile {
 	key: string;
@@ -97,6 +100,7 @@ function AdminMediaPage() {
 
 function AdminMediaContent() {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const { logout } = useAuth();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,10 +119,30 @@ function AdminMediaContent() {
 	const [isUploading, setIsUploading] = useState(false);
 	const [folders, setFolders] = useState<string[]>(['images', 'videos', 'products', 'events']);
 	const [selectedPlacement, setSelectedPlacement] = useState<ContentPlacement | null>(null);
+	const [editingTextPlacement, setEditingTextPlacement] = useState<ContentPlacement | null>(null);
 
 	// Content placement hooks
 	const { data: contentPlacements, isLoading: isLoadingPlacements } = useContentPlacements();
+	console.log(contentPlacements)
 	const updatePlacement = useUpdateContentPlacement();
+
+	const handleEditMedia = (placement: ContentPlacement) => {
+		setSelectedPlacement(placement);
+		setActiveTab('browse');
+		const newUrl = new URL(window.location.href);
+		newUrl.searchParams.set('mode', 'select');
+		newUrl.searchParams.set('placementId', placement.id);
+		window.history.pushState({}, '', newUrl.toString());
+	}
+
+	const handleEditTextContent = (placement: ContentPlacement) => {
+		setEditingTextPlacement(placement);
+	};
+
+	const handleTextEditComplete = () => {
+		setEditingTextPlacement(null);
+		queryClient.invalidateQueries({ queryKey: ['content-placements'] });
+	};
 
 	// Fetch media files from backend
 	const fetchMediaFiles = async () => {
@@ -329,7 +353,7 @@ function AdminMediaContent() {
 
 	// Get file type icon
 	const getFileIcon = (type: string) => {
-		return type === 'image' ? ImageIcon : type === 'video' ? Video : FolderOpen;
+		return type === 'image' ? ImageIcon : type === 'video' ? VideoIcon : FolderOpen;
 	};
 
 	// Handle assigning media to content placement
@@ -742,66 +766,53 @@ function AdminMediaContent() {
 													</h3>
 													<div className="grid gap-4 pl-6">
 														{placements.map((placement) => (
-															<div
-																key={placement.id}
-																className="p-4 border rounded-lg space-y-2 hover:shadow-md transition-shadow"
-															>
-																<div className="flex justify-between items-start">
-																	<div className="space-y-1">
-																		<h4 className="font-medium">{placement.name}</h4>
-																		<p className="text-sm text-muted-foreground">
-																			{placement.description}
-																		</p>
-																		<div className="flex gap-2 text-xs">
-																			<Badge variant="outline">{placement.type}</Badge>
-																			{placement.id.startsWith('dynamic-') && (
-																				<Badge variant="secondary">Auto-discovered</Badge>
+															<Card key={placement.id} className="p-4 border rounded-lg space-y-2 hover:shadow-md transition-shadow">
+																<CardHeader className="pb-2">
+																	<CardTitle className="text-lg">{placement.name}</CardTitle>
+																	<CardDescription>{placement.description}</CardDescription>
+																</CardHeader>
+																<CardContent>
+																	{/* Display content based on type */}
+																	{placement.type === 'text' ? (
+																		<div className="bg-muted p-4 rounded-md mb-2 relative max-h-48 overflow-auto">
+																			{placement.html ? (
+																				<div dangerouslySetInnerHTML={{ __html: placement.textContent || placement.defaultText || '' }} />
+																			) : (
+																				<p>{placement.textContent || placement.defaultText || ''}</p>
 																			)}
 																		</div>
-																	</div>
+																	) : placement.type === 'image' ? (
+																		<Image
+																			src={placement.mediaUrl || ''}
+																			alt={placement.name}
+																			className="h-32 w-44 object-cover rounded-md mb-2"
+																		/>
+																	) : (
+																		<Video
+																			src={placement.mediaUrl}
+																			className="h-32 w-44 object-cover rounded"
+																			muted
+																		/>
+																	)}
+																</CardContent>
+																<CardFooter className='flex-col space-y-4'>
 																	<Button
-																		size="sm"
+																		onClick={() => placement.type === 'text'
+																			? handleEditTextContent(placement)
+																			: handleEditMedia(placement)
+																		}
 																		variant="outline"
-																		onClick={() => {
-																			setSelectedPlacement(placement);
-																			setActiveTab('browse');
-																			// Navigate with search params
-																			const newUrl = new URL(window.location.href);
-																			newUrl.searchParams.set('mode', 'select');
-																			newUrl.searchParams.set('placementId', placement.id);
-																			window.history.pushState({}, '', newUrl.toString());
-																		}}
+																		className="w-full"
 																	>
 																		<Settings className="h-4 w-4 mr-2" />
-																		Change
+																		{placement.type === 'text' ? 'Edit Text' : 'Change Media'}
 																	</Button>
-																</div>
-																{placement.mediaUrl && (
-																	<div className="mt-2">
-																		{placement.type === 'image' ? (
-																			<Image
-																				src={placement.mediaUrl}
-																				alt={placement.name}
-																				className="h-20 w-32 object-cover rounded"
-																			/>
-																		) : placement.type === 'video' ? (
-																			<video
-																				src={placement.mediaUrl}
-																				className="h-20 w-32 object-cover rounded"
-																				muted
-																			/>
-																		) : (
-																			<div className="h-20 w-32 bg-muted rounded flex items-center justify-center">
-																				<FileText className="h-8 w-8 text-muted-foreground" />
-																			</div>
-																		)}
-																	</div>
-																)}
-																<p className="text-xs text-muted-foreground">
-																	Last updated: {new Date(placement.updatedAt).toLocaleDateString()}
-																	{placement.updatedBy && ` by ${placement.updatedBy}`}
-																</p>
-															</div>
+																	<p className="text-xs text-muted-foreground">
+																		Last updated: {new Date(placement.updatedAt).toLocaleDateString()}
+																		{placement.updatedBy && ` by ${placement.updatedBy}`}
+																	</p>
+																</CardFooter>
+															</Card>
 														))}
 													</div>
 												</div>
@@ -893,6 +904,27 @@ function AdminMediaContent() {
 						</AlertDialogFooter>
 					</AlertDialogContent>
 				</AlertDialog>
+
+				<Dialog open={!!editingTextPlacement} onOpenChange={(open) => !open && setEditingTextPlacement(null)}>
+					<DialogContent className="sm:max-w-xl">
+						<DialogHeader>
+							<DialogTitle>Edit Text Content</DialogTitle>
+							<DialogDescription>
+								Update the text for "{editingTextPlacement?.name}"
+							</DialogDescription>
+						</DialogHeader>
+
+						<TextContentEditor
+							placementId={editingTextPlacement?.id || ''}
+							currentText={editingTextPlacement?.textContent || ''}
+							defaultText={editingTextPlacement?.defaultText || ''}
+							placementName={editingTextPlacement?.name || ''}
+							isHtml={editingTextPlacement?.html}
+							onSave={handleTextEditComplete}
+							onCancel={() => setEditingTextPlacement(null)}
+						/>
+					</DialogContent>
+				</Dialog>
 			</div>
 		</div>
 	);

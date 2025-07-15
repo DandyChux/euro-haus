@@ -69,7 +69,7 @@ export function Navbar() {
 
 	return (
 		<header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-			<div className="px-8 flex h-16 items-center">
+			<div className="px-8 py-4 flex h-auto items-center">
 				<MainNav />
 				<div className="ml-auto flex items-center space-x-4">
 					<SearchBar
@@ -136,8 +136,8 @@ export function MainNav() {
 				<Image
 					src="https://euro-haus.nyc3.cdn.digitaloceanspaces.com/graphics/eurohaus-logo.png"
 					alt="Euro Haus Logo"
-					width={100}
-					height={100}
+					width={131.5}
+					height={50}
 				/>
 			</Link>
 			<NavigationMenu className='flex'>
