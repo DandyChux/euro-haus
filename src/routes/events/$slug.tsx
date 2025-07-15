@@ -270,7 +270,7 @@ function EventDetailPage() {
 					/>
 				</div>
 				{/* <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" /> */}
-				<div className="absolute bottom-0 left-0 right-0 p-6 text-white bg-black/10">
+				<div className="p-6 text-white bg-black/10">
 					<div className="max-w-7xl mx-auto">
 						<div className="flex items-center gap-4 mb-4">
 							{event.tags?.map((tag) => (

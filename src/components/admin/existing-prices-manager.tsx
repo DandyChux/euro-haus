@@ -232,9 +232,34 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 										</div>
 										<div className="text-sm text-muted-foreground">
 											${(price.unit_amount / 100).toFixed(2)} {price.currency.toUpperCase()}
+											{/* Event tier details */}
 											{productType === 'event' && price.metadata.tier_name && (
 												<span className="ml-2">• {price.metadata.tier_name}</span>
 											)}
+
+											{/* Show features for event tiers */}
+											{productType === 'event' && price.metadata.features && (
+												<div className="mt-1">
+													{(() => {
+														try {
+															const features = JSON.parse(price.metadata.features);
+															if (Array.isArray(features) && features.length > 0) {
+																return (
+																	<span className="text-xs">
+																		Features: {features.slice(0, 2).join(', ')}
+																		{features.length > 2 && ` +${features.length - 2} more`}
+																	</span>
+																);
+															}
+														} catch (_) {
+															return null;
+														}
+														return null;
+													})()}
+												</div>
+											)}
+
+											{/* Product variant details */}
 											{productType === 'product' && price.metadata.variant && (
 												<span className="ml-2">• {price.metadata.variant}</span>
 											)}
