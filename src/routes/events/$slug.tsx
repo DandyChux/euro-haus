@@ -623,6 +623,9 @@ function EventDetailPage() {
 						eventId={event.id}
 						eventSlug={event.slug}
 						eventName={event.title}
+						ticketTier={selectedTier?.name}
+						ticketPrice={selectedTier?.amount || event.price}
+						ticketQuantity={quantity}
 						onSuccess={handleSubmissionSuccess}
 						onCancel={() => setShowSubmissionForm(false)}
 					/>

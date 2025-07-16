@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Upload, X, Car, AlertCircle } from 'lucide-react';
+import { Upload, X, Car, AlertCircle, Ticket, DollarSign } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -17,6 +17,7 @@ import {
 	FormMessage,
 } from '~/components/ui/form';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { submissionService } from '~/lib/services/submission-service';
 import type { SubmissionWithFiles } from '~/lib/services/submission-service';
 
@@ -37,6 +38,9 @@ interface VehicleSubmissionFormProps {
 	eventId: string;
 	eventSlug: string;
 	eventName: string;
+	ticketTier?: string;
+	ticketPrice?: number;
+	ticketQuantity?: number;
 	onSuccess: (submissionId: string) => void;
 	onCancel: () => void;
 }
@@ -45,6 +49,9 @@ export function VehicleSubmissionForm({
 	eventId,
 	eventSlug,
 	eventName,
+	ticketTier,
+	ticketPrice,
+	ticketQuantity,
 	onSuccess,
 	onCancel,
 }: VehicleSubmissionFormProps) {
@@ -119,6 +126,9 @@ export function VehicleSubmissionForm({
 				eventId,
 				eventSlug,
 				images,
+				ticketTier,
+				ticketPrice,
+				ticketQuantity,
 			};
 
 			const submission = await submissionService.createSubmission(submissionData);
@@ -139,6 +149,50 @@ export function VehicleSubmissionForm({
 					Please provide details about the vehicle you wish to enter in this event.
 				</p>
 			</div>
+
+			{/* Ticket Information */}
+			{ticketTier && (
+				<Card className="bg-primary/5 border-primary/20">
+					<CardHeader className="pb-3">
+						<CardTitle className="text-lg flex items-center gap-2">
+							<Ticket className="w-5 h-5" />
+							Selected Ticket
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="flex flex-wrap gap-4 items-center">
+							<div>
+								<p className="text-sm text-muted-foreground">Tier</p>
+								<p className="font-semibold">{ticketTier}</p>
+							</div>
+							{ticketPrice && (
+								<div>
+									<p className="text-sm text-muted-foreground">Price</p>
+									<p className="font-semibold flex items-center">
+										<DollarSign className="w-4 h-4" />
+										{ticketPrice.toFixed(2)}
+									</p>
+								</div>
+							)}
+							{ticketQuantity && (
+								<div>
+									<p className="text-sm text-muted-foreground">Quantity</p>
+									<p className="font-semibold">{ticketQuantity} ticket{ticketQuantity > 1 ? 's' : ''}</p>
+								</div>
+							)}
+							{ticketPrice && ticketQuantity && (
+								<div className="ml-auto">
+									<p className="text-sm text-muted-foreground">Total</p>
+									<p className="font-semibold flex items-center">
+										<DollarSign className="w-4 h-4" />
+										{(ticketPrice * ticketQuantity).toFixed(2)}
+									</p>
+								</div>
+							)}
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{error && (
 				<Alert variant="destructive">

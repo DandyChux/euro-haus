@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ type VehicleSubmission struct {
 	VehicleDescription   string   `json:"vehicleDescription,omitempty"`
 	VehicleModifications string   `json:"vehicleModifications,omitempty"`
 	Images               []string `json:"images"`
-	Status               string   `json:"status"` // pending, approved, denied
+	Status               string   `json:"status"`
 	SubmittedAt          string   `json:"submittedAt"`
 	ReviewedAt           string   `json:"reviewedAt,omitempty"`
 	ReviewedBy           string   `json:"reviewedBy,omitempty"`
@@ -41,6 +42,9 @@ type VehicleSubmission struct {
 	CheckoutSessionID    string   `json:"checkoutSessionId,omitempty"`
 	PaymentIntentID      string   `json:"paymentIntentId,omitempty"`
 	TicketID             string   `json:"ticketId,omitempty"`
+	TicketTier           string   `json:"ticketTier,omitempty"`
+	TicketPrice          float64  `json:"ticketPrice,omitempty"`
+	TicketQuantity       int      `json:"ticketQuantity,omitempty"`
 }
 
 // CreateSubmission handles vehicle submission with image uploads
@@ -65,9 +69,24 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		VehicleModel:         r.FormValue("vehicleModel"),
 		VehicleDescription:   r.FormValue("vehicleDescription"),
 		VehicleModifications: r.FormValue("vehicleModifications"),
+		TicketTier:           r.FormValue("ticketTier"),
 		Status:               "pending",
 		SubmittedAt:          time.Now().Format(time.RFC3339),
 		Images:               []string{},
+	}
+
+	// Parse ticket price if provided
+	if priceStr := r.FormValue("ticketPrice"); priceStr != "" {
+		if price, err := strconv.ParseFloat(priceStr, 64); err == nil {
+			submission.TicketPrice = price
+		}
+	}
+
+	// Parse ticket quantity if provided
+	if qtyStr := r.FormValue("ticketQuantity"); qtyStr != "" {
+		if qty, err := strconv.Atoi(qtyStr); err == nil {
+			submission.TicketQuantity = qty
+		}
 	}
 
 	// Validate required fields
@@ -128,6 +147,11 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		submission.Images = append(submission.Images, imageURL)
 	}
 
+	if len(submission.Images) == 0 {
+		http.Error(w, "Failed to upload any images", http.StatusInternalServerError)
+		return
+	}
+
 	// Store submission in Redis
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
@@ -149,6 +173,9 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		"images":                strings.Join(submission.Images, ","),
 		"status":                submission.Status,
 		"submitted_at":          submission.SubmittedAt,
+		"ticket_tier":           submission.TicketTier,
+		"ticket_price":          fmt.Sprintf("%.2f", submission.TicketPrice),
+		"ticket_quantity":       strconv.Itoa(submission.TicketQuantity),
 	}
 
 	if err := rdb.HSet(ctx, submissionKey, submissionData).Err(); err != nil {
@@ -156,21 +183,16 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add to event submissions set
+	// Add submission ID to event's submission set
 	eventSubmissionsKey := fmt.Sprintf("event:%s:submissions", submission.EventID)
 	if err := rdb.SAdd(ctx, eventSubmissionsKey, submission.ID).Err(); err != nil {
-		log.Printf("Error adding to event submissions: %v", err)
-	}
-
-	// Add to pending submissions set
-	if err := rdb.SAdd(ctx, "submissions:pending", submission.ID).Err(); err != nil {
-		log.Printf("Error adding to pending submissions: %v", err)
+		log.Printf("Failed to add submission to event set: %v", err)
 	}
 
 	// Send confirmation email
 	go sendSubmissionConfirmationEmail(submission)
 
-	// Return success response
+	// Return the created submission
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(submission)
 }
@@ -546,6 +568,18 @@ func getSubmissionByID(submissionID string) (*VehicleSubmission, error) {
 		images = strings.Split(data["images"], ",")
 	}
 
+	// Parse ticket price
+	var ticketPrice float64
+	if data["ticket_price"] != "" {
+		ticketPrice, _ = strconv.ParseFloat(data["ticket_price"], 64)
+	}
+
+	// Parse ticket quantity
+	var ticketQuantity int
+	if data["ticket_quantity"] != "" {
+		ticketQuantity, _ = strconv.Atoi(data["ticket_quantity"])
+	}
+
 	submission := &VehicleSubmission{
 		ID:                   data["id"],
 		EventID:              data["event_id"],
@@ -567,6 +601,9 @@ func getSubmissionByID(submissionID string) (*VehicleSubmission, error) {
 		CheckoutSessionID:    data["checkout_session_id"],
 		PaymentIntentID:      data["payment_intent_id"],
 		TicketID:             data["ticket_id"],
+		TicketTier:           data["ticket_tier"],
+		TicketPrice:          ticketPrice,
+		TicketQuantity:       ticketQuantity,
 	}
 
 	return submission, nil

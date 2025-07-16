@@ -14,6 +14,8 @@ import {
 	ChevronRight,
 	Loader2,
 	AlertCircle,
+	Ticket,
+	DollarSign,
 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -175,9 +177,17 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 												</div>
 											)}
 										</div>
-										<div className="mt-4 flex items-center text-sm text-muted-foreground">
-											<Calendar className="w-4 h-4 mr-1" />
-											{format(new Date(submission.submittedAt), 'MMM dd, yyyy')}
+										<div className="mt-4 space-y-1">
+											<div className="flex items-center text-sm text-muted-foreground">
+												<Calendar className="w-4 h-4 mr-1" />
+												{format(new Date(submission.submittedAt), 'MMM dd, yyyy')}
+											</div>
+											{submission.ticketTier && (
+												<div className="flex items-center text-sm font-medium">
+													<Ticket className="w-4 h-4 mr-1 text-primary" />
+													{submission.ticketTier}
+												</div>
+											)}
 										</div>
 									</CardContent>
 								</Card>
@@ -236,6 +246,12 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 												<div className="flex items-center text-sm text-muted-foreground">
 													<Clock className="w-4 h-4 mr-1" />
 													Reviewed: {format(new Date(submission.reviewedAt), 'MMM dd, yyyy')}
+												</div>
+											)}
+											{submission.ticketTier && (
+												<div className="flex items-center text-sm font-medium">
+													<Ticket className="w-4 h-4 mr-1 text-primary" />
+													{submission.ticketTier}
 												</div>
 											)}
 										</div>
@@ -314,6 +330,41 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 										</div>
 									)}
 								</div>
+
+								{/* Ticket Information */}
+								{(selectedSubmission.ticketTier || selectedSubmission.ticketPrice) && (
+									<Card className="bg-primary/5 border-primary/20">
+										<CardHeader>
+											<CardTitle className="text-lg flex items-center gap-2">
+												<Ticket className="w-5 h-5" />
+												Ticket Information
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+											{selectedSubmission.ticketTier && (
+												<div>
+													<p className="text-sm text-muted-foreground">Ticket Tier</p>
+													<p className="font-semibold">{selectedSubmission.ticketTier}</p>
+												</div>
+											)}
+											{selectedSubmission.ticketPrice && (
+												<div>
+													<p className="text-sm text-muted-foreground">Price per Ticket</p>
+													<p className="font-semibold flex items-center">
+														<DollarSign className="w-4 h-4" />
+														{selectedSubmission.ticketPrice.toFixed(2)}
+													</p>
+												</div>
+											)}
+											{selectedSubmission.ticketQuantity && (
+												<div>
+													<p className="text-sm text-muted-foreground">Quantity</p>
+													<p className="font-semibold">{selectedSubmission.ticketQuantity} ticket{selectedSubmission.ticketQuantity > 1 ? 's' : ''}</p>
+												</div>
+											)}
+										</CardContent>
+									</Card>
+								)}
 
 								{/* Participant Details */}
 								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
