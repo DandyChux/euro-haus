@@ -15,9 +15,9 @@ import (
 	"euro-haus-api/services"
 
 	"github.com/gorilla/mux"
-	"github.com/stripe/stripe-go/paymentintent"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/paymentintent"
 )
 
 // VehicleSubmission represents a participant's vehicle submission
