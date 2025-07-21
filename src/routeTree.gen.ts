@@ -28,6 +28,7 @@ import { Route as AdminSubmissionsImport } from './routes/admin/submissions'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
+import { Route as AdminCouponsImport } from './routes/admin/coupons'
 import { Route as EventsSlugCheckinImport } from './routes/events/$slug_.checkin'
 
 // Create/Update Routes
@@ -134,6 +135,12 @@ const AdminLoginRoute = AdminLoginImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminCouponsRoute = AdminCouponsImport.update({
+  id: '/admin/coupons',
+  path: '/admin/coupons',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const EventsSlugCheckinRoute = EventsSlugCheckinImport.update({
   id: '/events/$slug_/checkin',
   path: '/events/$slug/checkin',
@@ -170,6 +177,13 @@ declare module '@tanstack/react-router' {
       path: '/payment'
       fullPath: '/payment'
       preLoaderRoute: typeof PaymentImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/coupons': {
+      id: '/admin/coupons'
+      path: '/admin/coupons'
+      fullPath: '/admin/coupons'
+      preLoaderRoute: typeof AdminCouponsImport
       parentRoute: typeof rootRoute
     }
     '/admin/login': {
@@ -280,6 +294,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -301,6 +316,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -323,6 +339,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -346,6 +363,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -366,6 +384,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -386,6 +405,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -408,6 +428,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   CartRoute: typeof CartRoute
   PaymentRoute: typeof PaymentRoute
+  AdminCouponsRoute: typeof AdminCouponsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
@@ -429,6 +450,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   CartRoute: CartRoute,
   PaymentRoute: PaymentRoute,
+  AdminCouponsRoute: AdminCouponsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
@@ -459,6 +481,7 @@ export const routeTree = rootRoute
         "/about",
         "/cart",
         "/payment",
+        "/admin/coupons",
         "/admin/login",
         "/admin/media",
         "/admin/products",
@@ -486,6 +509,9 @@ export const routeTree = rootRoute
     },
     "/payment": {
       "filePath": "payment.tsx"
+    },
+    "/admin/coupons": {
+      "filePath": "admin/coupons.tsx"
     },
     "/admin/login": {
       "filePath": "admin/login.tsx"

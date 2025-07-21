@@ -199,19 +199,6 @@ func GetContentPlacement(w http.ResponseWriter, r *http.Request) {
 func UpdateContentPlacement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get ID from URL
 	vars := mux.Vars(r)
 	id := vars["id"]

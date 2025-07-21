@@ -58,21 +58,6 @@ func ListMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get S3 client from storage service
 	if services.S3Client == nil {
 		log.Printf("S3 client not initialized")
@@ -186,21 +171,6 @@ func UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Parse multipart form
 	err := r.ParseMultipartForm(32 << 20) // 32MB max
 	if err != nil {
@@ -274,21 +244,6 @@ func DeleteMedia(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

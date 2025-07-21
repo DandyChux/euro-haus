@@ -18,7 +18,8 @@ import {
 	ExternalLink,
 	BarChart,
 	ShoppingBag,
-	Car
+	Car,
+	Tag
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -30,6 +31,7 @@ interface DashboardStats {
 	featuredItems: number;
 	mediaFiles?: number;
 	pendingSubmissions?: number;
+	activeCoupons?: number;
 }
 
 export const Route = createFileRoute('/admin/')({
@@ -81,6 +83,15 @@ function AdminDashboardContent() {
 				// Submissions endpoint might not be available
 			}
 
+			// Try to fetch active coupons count
+			try {
+				const couponsResponse = await apiClient.get('/admin/coupons');
+				const coupons = couponsResponse.data.coupons || [];
+				stats.activeCoupons = coupons.filter((c: any) => c.valid).length;
+			} catch {
+				// Coupons endpoint might not be available
+			}
+
 			setStats(stats);
 		} catch (error) {
 			console.error('Error fetching stats:', error);
@@ -118,6 +129,15 @@ function AdminDashboardContent() {
 			color: 'text-purple-600',
 			bgColor: 'bg-purple-50',
 			stats: stats ? `${stats.totalEvents} events` : null,
+		},
+		{
+			title: 'Discount Management',
+			description: 'Create and manage coupons and promotion codes',
+			icon: Tag,
+			href: '/admin/coupons',
+			color: 'text-green-600',
+			bgColor: 'bg-green-50',
+			stats: stats?.activeCoupons ? `${stats.activeCoupons} active` : null,
 		},
 		{
 			title: 'Vehicle Submissions',
@@ -244,13 +264,26 @@ function AdminDashboardContent() {
 
 							<Card>
 								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+									<CardTitle className="text-sm font-medium">Active Discounts</CardTitle>
+									<Tag className="h-4 w-4 text-muted-foreground" />
+								</CardHeader>
+								<CardContent>
+									<div className="text-2xl font-bold">{stats.activeCoupons || 0}</div>
+									<p className="text-xs text-muted-foreground">
+										Coupons available
+									</p>
+								</CardContent>
+							</Card>
+
+							<Card>
+								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
 									<CardTitle className="text-sm font-medium">Pending Submissions</CardTitle>
 									<Car className="h-4 w-4 text-muted-foreground" />
 								</CardHeader>
 								<CardContent>
 									<div className="text-2xl font-bold">{stats.pendingSubmissions || 0}</div>
 									<p className="text-xs text-muted-foreground">
-										Vehicle reviews needed
+										Vehicle submissions
 									</p>
 								</CardContent>
 							</Card>

@@ -1,25 +1,11 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"euro-haus-api/services"
+	"log"
 	"net/http"
-	"os"
-	"sync"
-	"time"
 )
-
-// Simple in-memory session store
-var (
-	sessions     = make(map[string]sessionData)
-	sessionMutex sync.RWMutex
-)
-
-type sessionData struct {
-	Token     string
-	ExpiresAt time.Time
-}
 
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -32,29 +18,9 @@ type LoginResponse struct {
 }
 
 type ValidateResponse struct {
-	Valid bool `json:"valid"`
-}
-
-// generateToken creates a random session token
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
-// cleanupExpiredSessions removes expired sessions from memory
-func cleanupExpiredSessions() {
-	sessionMutex.Lock()
-	defer sessionMutex.Unlock()
-
-	now := time.Now()
-	for token, session := range sessions {
-		if now.After(session.ExpiresAt) {
-			delete(sessions, token)
-		}
-	}
+	Valid     bool   `json:"valid"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // Login handles admin authentication
@@ -77,14 +43,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get admin password from environment
-	adminPassword := os.Getenv("ADMIN_PASSWORD")
-	if adminPassword == "" {
-		adminPassword = "eurohaus2024" // Default for development
-	}
+	// Get auth service
+	authService := services.GetAuthService()
 
 	// Validate password
-	if req.Password != adminPassword {
+	if !authService.ValidatePassword(req.Password) {
 		response := LoginResponse{
 			Success: false,
 			Message: "Invalid password",
@@ -94,23 +57,18 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate session token
-	token, err := generateToken()
+	// Generate access token
+	token, err := authService.GenerateToken()
 	if err != nil {
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		log.Printf("Failed to generate token: %v", err)
+		response := LoginResponse{
+			Success: false,
+			Message: "Failed to generate access token",
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
-
-	// Store session (expires in 24 hours)
-	sessionMutex.Lock()
-	sessions[token] = sessionData{
-		Token:     token,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
-	}
-	sessionMutex.Unlock()
-
-	// Clean up old sessions periodically
-	go cleanupExpiredSessions()
 
 	// Return success response
 	response := LoginResponse{
@@ -145,14 +103,21 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 
 	token := authHeader[7:]
 
-	// Remove session
-	sessionMutex.Lock()
-	delete(sessions, token)
-	sessionMutex.Unlock()
+	// Get auth service and revoke token
+	authService := services.GetAuthService()
+	if err := authService.RevokeToken(token); err != nil {
+		log.Printf("Failed to revoke token: %v", err)
+		// Continue anyway - the token might already be gone
+	}
 
 	// Return success
+	response := map[string]interface{}{
+		"success": true,
+		"message": "Logged out successfully",
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	json.NewEncoder(w).Encode(response)
 }
 
 // ValidateToken checks if a token is valid
@@ -171,38 +136,45 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) {
 	// Get token from Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		json.NewEncoder(w).Encode(ValidateResponse{Valid: false})
+		response := ValidateResponse{
+			Valid: false,
+			Error: "Missing or invalid authorization header",
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	token := authHeader[7:]
 
-	// Check if token exists and is not expired
-	sessionMutex.RLock()
-	session, exists := sessions[token]
-	sessionMutex.RUnlock()
+	// Get auth service and validate token
+	authService := services.GetAuthService()
+	isValid := authService.ValidateToken(token)
 
-	valid := exists && time.Now().Before(session.ExpiresAt)
+	if isValid {
+		// Try to extend token expiration
+		if err := authService.ExtendToken(token); err != nil {
+			log.Printf("Failed to extend token: %v", err)
+		}
 
-	json.NewEncoder(w).Encode(ValidateResponse{Valid: valid})
-}
+		// Try to get token info for expiration time
+		tokenInfo, err := authService.GetTokenInfo(token)
+		response := ValidateResponse{
+			Valid: true,
+		}
 
-// VerifyAuth is a middleware function to verify authentication
-func VerifyAuth(token string) bool {
-	// For backward compatibility, also accept the raw admin password
-	adminPassword := os.Getenv("ADMIN_PASSWORD")
-	if adminPassword == "" {
-		adminPassword = "eurohaus2024"
+		if err == nil && tokenInfo != nil {
+			response.ExpiresAt = tokenInfo.ExpiresAt.Unix() * 1000 // Convert to milliseconds for JavaScript
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	} else {
+		response := ValidateResponse{
+			Valid: false,
+			Error: "Invalid or expired token",
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
 	}
-
-	if token == adminPassword {
-		return true
-	}
-
-	// Check session token
-	sessionMutex.RLock()
-	session, exists := sessions[token]
-	sessionMutex.RUnlock()
-
-	return exists && time.Now().Before(session.ExpiresAt)
 }

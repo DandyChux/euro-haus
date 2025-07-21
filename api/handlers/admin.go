@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/gorilla/mux"
@@ -38,27 +37,6 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Simple auth check
-	adminPassword := os.Getenv("ADMIN_PASSWORD")
-	if adminPassword == "" {
-		adminPassword = "eurohaus2024"
-	}
-
-	// Check authorization header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -165,21 +143,6 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -306,21 +269,6 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get product ID from URL
 	vars := mux.Vars(r)
 	productID := vars["id"]
@@ -400,21 +348,6 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	var req struct {
 		Product    string            `json:"product"`
 		UnitAmount int64             `json:"unit_amount"`
@@ -491,25 +424,14 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
+	// Get price ID from URL
 	vars := mux.Vars(r)
 	priceID := vars["id"]
 
 	var req struct {
 		Nickname string            `json:"nickname"`
 		Metadata map[string]string `json:"metadata"`
+		Active   *bool             `json:"active"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -590,19 +512,6 @@ func ArchivePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	vars := mux.Vars(r)
 	priceID := vars["id"]
 
@@ -652,19 +561,6 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

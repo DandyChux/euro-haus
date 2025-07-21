@@ -86,7 +86,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("GET")
 
-	// Products endpoints
+	// Public endpoints (no auth required)
 	api.HandleFunc("/products", handlers.GetProducts).Methods("GET")
 	api.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
 	api.HandleFunc("/products/{id}/prices", handlers.GetProductPrices).Methods("GET", "OPTIONS")
@@ -127,27 +127,37 @@ func main() {
 	api.HandleFunc("/content-placements/{id}", handlers.UpdateContentPlacement).Methods("PUT", "OPTIONS")
 	api.HandleFunc("/content-placements/by-media/{key}", handlers.GetContentPlacementsByMedia).Methods("GET", "OPTIONS")
 
+	// Public discount validation endpoint
+	api.HandleFunc("/validate-promotion-code", handlers.ValidatePromotionCode).Methods("POST", "OPTIONS")
+
 	// Admin endpoints (requires authentication)
-	api.HandleFunc("/admin/create-product", handlers.CreateProduct).Methods("POST", "OPTIONS")
-	api.HandleFunc("/admin/update-product/{id}", handlers.UpdateProduct).Methods("PUT", "OPTIONS")
-	api.HandleFunc("/admin/delete-product/{id}", handlers.DeleteProduct).Methods("DELETE", "OPTIONS")
+	// Product management
+	api.Handle("/admin/create-product", middleware.RequireAuth(http.HandlerFunc(handlers.CreateProduct))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/update-product/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdateProduct))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/delete-product/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteProduct))).Methods("DELETE", "OPTIONS")
 
 	// Media management endpoints (requires authentication)
-	api.HandleFunc("/admin/media", handlers.ListMedia).Methods("GET", "OPTIONS")
-	api.HandleFunc("/admin/media/upload", handlers.UploadMedia).Methods("POST", "OPTIONS")
-	api.HandleFunc("/admin/media/delete", handlers.DeleteMedia).Methods("DELETE", "OPTIONS")
+	api.Handle("/admin/media", middleware.RequireAuth(http.HandlerFunc(handlers.ListMedia))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/media/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadMedia))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/media/delete", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteMedia))).Methods("DELETE", "OPTIONS")
 
 	// Price management endpoints (requires authentication)
-	api.HandleFunc("/admin/create-price", handlers.CreatePrice).Methods("POST", "OPTIONS")
-	api.HandleFunc("/admin/update-price/{id}", handlers.UpdatePrice).Methods("PUT", "OPTIONS")
-	api.HandleFunc("/admin/archive-price/{id}", handlers.ArchivePrice).Methods("PUT", "OPTIONS")
-	api.HandleFunc("/admin/set-default-price/{id}", handlers.SetDefaultPrice).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/update-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePrice))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/archive-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.ArchivePrice))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/set-default-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("PUT", "OPTIONS")
+
+	// Discount management endpoints (requires authentication)
+	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.CreateCoupon))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.ListCoupons))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/coupons/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteCoupon))).Methods("DELETE", "OPTIONS")
+	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePromotionCode))).Methods("POST", "OPTIONS")
 
 	// Admin submission endpoints (requires authentication)
-	api.HandleFunc("/admin/submissions/pending-count", handlers.GetPendingSubmissionsCount).Methods("GET", "OPTIONS")
-	api.HandleFunc("/admin/submissions/{eventId}", handlers.GetEventSubmissions).Methods("GET", "OPTIONS")
-	api.HandleFunc("/admin/submissions/{submissionId}/approve", handlers.ApproveSubmission).Methods("PUT", "OPTIONS")
-	api.HandleFunc("/admin/submissions/{submissionId}/deny", handlers.DenySubmission).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/submissions/pending-count", middleware.RequireAuth(http.HandlerFunc(handlers.GetPendingSubmissionsCount))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/submissions/{eventId}", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventSubmissions))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/approve", middleware.RequireAuth(http.HandlerFunc(handlers.ApproveSubmission))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/deny", middleware.RequireAuth(http.HandlerFunc(handlers.DenySubmission))).Methods("PUT", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

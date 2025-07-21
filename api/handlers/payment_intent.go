@@ -17,11 +17,14 @@ type CreatePaymentIntentRequest struct {
 
 // Updated to support cart checkout with multiple items
 type CreateCheckoutSessionRequest struct {
-	LineItems  []LineItem        `json:"line_items"`
-	Mode       string            `json:"mode"`
-	SuccessURL string            `json:"success_url"`
-	CancelURL  string            `json:"cancel_url"`
-	Metadata   map[string]string `json:"metadata"`
+	LineItems           []LineItem        `json:"line_items"`
+	Mode                string            `json:"mode"`
+	SuccessURL          string            `json:"success_url"`
+	CancelURL           string            `json:"cancel_url"`
+	Metadata            map[string]string `json:"metadata"`
+	AllowPromotionCodes bool              `json:"allow_promotion_codes"`
+	PromotionCode       string            `json:"promotion_code"`
+	CouponID            string            `json:"coupon_id"`
 }
 
 type LineItem struct {
@@ -89,7 +92,6 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 	// Build line items for Stripe
 	var stripeLineItems []*stripe.CheckoutSessionLineItemParams
-
 	for _, item := range req.LineItems {
 		lineItem := &stripe.CheckoutSessionLineItemParams{
 			Quantity: stripe.Int64(item.Quantity),
@@ -129,6 +131,26 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA"}),
 		},
 		BillingAddressCollection: stripe.String("required"),
+	}
+
+	// Handle discount options (these are mutually exclusive)
+	if req.CouponID != "" {
+		// Apply automatic discount using coupon ID
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{
+				Coupon: stripe.String(req.CouponID),
+			},
+		}
+	} else if req.PromotionCode != "" {
+		// Pre-fill a specific promotion code
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{
+				PromotionCode: stripe.String(req.PromotionCode),
+			},
+		}
+	} else if req.AllowPromotionCodes {
+		// Allow customers to enter promotion codes at checkout
+		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
 	// Add shipping options for physical products
