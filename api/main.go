@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -60,7 +61,13 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		log.Printf("%s %s %d %v", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
+		// Use fmt.Printf to write to stdout for successful requests
+		if wrapped.statusCode < 400 {
+			fmt.Printf("%s %s %d %v\n", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
+		} else {
+			// Use log.Printf (stderr) for errors
+			log.Printf("ERROR: %s %s %d %v", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start))
+		}
 	})
 }
 
