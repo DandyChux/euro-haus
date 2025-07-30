@@ -109,10 +109,6 @@ func ListMedia(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	// Build Space URL
-	// region := os.Getenv("SPACES_REGION")
-	// if region == "" {
-	// 	region = "nyc3"
-	// }
 	spaceURL := fmt.Sprintf("https://%s.nyc3.cdn.digitaloceanspaces.com", bucketName)
 
 	// Convert S3 objects to MediaFile format

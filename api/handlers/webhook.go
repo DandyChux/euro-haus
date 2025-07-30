@@ -117,17 +117,16 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	}
 
 	// Get customer details from metadata
-	customerEmail := pi.Customer.Email
-	customerName := pi.Customer.Name
+	var customerEmail, customerName string
 	if metadata, ok := pi.Metadata["customer_name"]; ok {
 		customerName = metadata
 	}
 
-	// If receipt email not available, try to get from metadata
-	if customerEmail == "" {
-		if email, ok := pi.Metadata["customer_email"]; ok {
-			customerEmail = email
-		}
+	// Get receipt email from metadata or receipt email field
+	if pi.ReceiptEmail != "" {
+		customerEmail = pi.ReceiptEmail
+	} else if email, ok := pi.Metadata["customer_email"]; ok {
+		customerEmail = email
 	}
 
 	// Don't send email if we don't have an address
@@ -392,14 +391,12 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 	// Handle failed payment
 	log.Printf("PaymentIntent failed: %s, Reason: %s\n", pi.ID, pi.LastPaymentError.Msg)
 
-	// Get customer details
-	customerEmail := pi.Customer.Email
-
-	// If receipt email not available, try to get from metadata
-	if customerEmail == "" {
-		if email, ok := pi.Metadata["customer_email"]; ok {
-			customerEmail = email
-		}
+	// Get customer details from metadata or receipt email
+	var customerEmail string
+	if pi.ReceiptEmail != "" {
+		customerEmail = pi.ReceiptEmail
+	} else if email, ok := pi.Metadata["customer_email"]; ok {
+		customerEmail = email
 	}
 
 	// Don't send email if we don't have an address
@@ -477,11 +474,16 @@ func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 
 // formatShippingAddress formats the shipping address from checkout session
 func formatShippingAddress(session *stripe.CheckoutSession) string {
-	if session.Customer == nil || session.Customer.Address == nil {
+	// Use ShippingDetails if available, otherwise check CustomerDetails
+	var address *stripe.Address
+
+	if session.Customer.Shipping != nil && session.Customer.Shipping.Address != nil {
+		address = session.Customer.Shipping.Address
+	} else if session.CustomerDetails != nil && session.CustomerDetails.Address != nil {
+		address = session.CustomerDetails.Address
+	} else {
 		return "No shipping address provided"
 	}
-
-	address := session.Customer.Address
 
 	formatted := ""
 	if address.Line1 != "" {
