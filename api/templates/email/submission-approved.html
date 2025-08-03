@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Submission Approved</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #28a745; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background-color: #f8f9fa; margin: 20px 0; }
+        .cta-button { display: inline-block; background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; font-size: 12px; color: #777; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Congratulations! Your Vehicle is Approved</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear {{.ParticipantName}},</p>
+
+            <p>Great news! Your vehicle submission has been approved for our Euro Haus event.</p>
+
+            <h3>Vehicle Details:</h3>
+            <p><strong>{{.VehicleDetails}}</strong></p>
+
+            {{if .ReviewNotes}}
+            <h3>Review Notes:</h3>
+            <p>{{.ReviewNotes}}</p>
+            {{end}}
+
+            <p>To complete your registration and secure your spot, please proceed with payment:</p>
+
+            <div style="text-align: center;">
+                <a href="{{.PaymentLink}}" class="cta-button">Complete Registration</a>
+            </div>
+
+            <p><small>Please complete your payment within 48 hours to guarantee your spot.</small></p>
+        </div>
+
+        <div class="footer">
+            <p>We're excited to have you at our event!</p>
+            <p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -418,7 +418,11 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 								{selectedSubmission.vehicleModifications && (
 									<div className="space-y-2">
 										<h3 className="font-semibold">Modifications</h3>
-										<p className="text-sm text-muted-foreground">{selectedSubmission.vehicleModifications}</p>
+										<ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+											{selectedSubmission.vehicleModifications.split('\n').map((mod, index) => (
+												<li key={index}>{mod.trim()}</li>
+											))}
+										</ul>
 									</div>
 								)}
 
