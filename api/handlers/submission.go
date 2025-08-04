@@ -301,6 +301,8 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		"reviewed_by":       "admin", // TODO: Get from auth context
 		"review_notes":      req.Notes,
 		"payment_intent_id": submission.PaymentIntentID,
+		// Default to false until email is actually sent
+		"approval_email_sent": "false",
 	}
 
 	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
@@ -314,64 +316,41 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	// Add to approved set
 	rdb.SAdd(ctx, "submissions:approved", submissionID)
 
-	// Send approval email immediately (don't wait for webhook)
-	// First, check if we have a payment link
-	var paymentLink string
+	// Try to send an approval email if possible
+	// Create a simple payment URL for now (to be replaced by a proper one later)
+	paymentLink := fmt.Sprintf("%s/events/%s?submission=%s",
+		os.Getenv("BASE_URL"),
+		submission.EventSlug,
+		submission.ID)
 
-	if submission.CheckoutSessionID != "" {
-		// Try to get existing checkout session URL
-		params := &stripe.CheckoutSessionParams{}
-		sess, err := session.Get(submission.CheckoutSessionID, params)
-		if err == nil && sess.URL != "" {
-			paymentLink = sess.URL
+	// Send approval email - but don't fail if it doesn't work
+	go func() {
+		emailData := map[string]interface{}{
+			"ParticipantName": submission.ParticipantName,
+			"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
+			"EventID":         submission.EventID,
+			"PaymentLink":     paymentLink,
+			"ReviewNotes":     req.Notes,
 		}
-	}
 
-	// If no checkout session, create one
-	if paymentLink == "" {
-		// Create a new checkout session for this submission
-		// You'll need to get the price ID - either from submission data or event defaults
-		// For now, we'll just create a link to the event page
-		paymentLink = fmt.Sprintf("%s/events/%s?submission=%s",
-			os.Getenv("BASE_URL"),
-			submission.EventSlug,
-			submission.ID)
+		msg := &services.EmailMessage{
+			To:           []string{submission.ParticipantEmail},
+			Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
+			TemplateID:   "submission-approved",
+			TemplateData: emailData,
+			BodyHTML:     generateApprovalEmailHTML(emailData),
+		}
 
-		// Mark that payment needs to be created
-		rdb.HSet(ctx, submissionKey, "needs_payment_link", "true")
-	}
-
-	// Send approval email
-	emailData := map[string]interface{}{
-		"ParticipantName": submission.ParticipantName,
-		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-		"EventID":         submission.EventID,
-		"PaymentLink":     paymentLink,
-		"ReviewNotes":     req.Notes,
-	}
-
-	msg := &services.EmailMessage{
-		To:           []string{submission.ParticipantEmail},
-		Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
-		TemplateID:   "submission-approved",
-		TemplateData: emailData,
-		BodyHTML:     generateApprovalEmailHTML(emailData),
-	}
-
-	emailSent := false
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending approval email for submission %s: %v", submission.ID, err)
-	} else {
-		emailSent = true
-	}
-
-	// Update email sent status
-	if emailSent {
-		rdb.HSet(ctx, submissionKey, map[string]interface{}{
-			"approval_email_sent":    "true",
-			"approval_email_sent_at": time.Now().Format(time.RFC3339),
-		})
-	}
+		if err := services.SendEmail(msg); err != nil {
+			log.Printf("Error sending approval email for submission %s: %v", submission.ID, err)
+		} else {
+			// Update email sent status
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	}()
 
 	// Get updated submission
 	updatedSubmission, _ := getSubmissionByID(submissionID)
@@ -811,54 +790,112 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For debugging, let's log how many submissions we found
+	log.Printf("Found %d submission keys in Redis", len(submissionKeys))
+
 	var issueSubmissions []map[string]interface{}
 
 	for _, key := range submissionKeys {
 		data, err := rdb.HGetAll(ctx, key).Result()
 		if err != nil || len(data) == 0 {
+			log.Printf("Error or empty data for key %s: %v", key, err)
 			continue
 		}
+
+		submissionID := extractSubmissionID(key)
+		status := data["status"]
+
+		// Log the submission we're processing for debugging
+		log.Printf("Processing submission %s with status %s", submissionID, status)
 
 		// Check for issues
 		hasIssue := false
 		issues := []string{}
 
-		// Only check approved submissions for issues
-		if data["status"] == "approved" {
+		// Issues for approved submissions
+		if status == "approved" {
 			// Issue 1: Approved but no payment initialized
 			if data["checkout_session_id"] == "" && data["payment_intent_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_payment")
+				log.Printf("Submission %s has no payment", submissionID)
 			}
 
 			// Issue 2: Approved but email not sent
+			// Note: this field might not be set in all cases
 			if data["approval_email_sent"] != "true" {
 				hasIssue = true
 				issues = append(issues, "email_not_sent")
+				log.Printf("Submission %s email not sent", submissionID)
 			}
 
-			// Issue 3: Has checkout session but payment failed or expired
+			// Issue 3: Has checkout session but need to check with Stripe
 			if data["checkout_session_id"] != "" {
 				params := &stripe.CheckoutSessionParams{}
 				sess, err := session.Get(data["checkout_session_id"], params)
-				if err == nil {
-					if sess.PaymentStatus != "paid" {
-						if sess.ExpiresAt < time.Now().Unix() {
-							hasIssue = true
-							issues = append(issues, "payment_expired")
-						} else {
-							hasIssue = true
-							issues = append(issues, "payment_incomplete")
-						}
-					}
-				} else {
-					// Can't check session status
+				if err != nil {
+					// Can't check session status - mark as potential issue
 					log.Printf("Error checking session %s: %v", data["checkout_session_id"], err)
+					hasIssue = true
+					issues = append(issues, "payment_check_failed")
+				} else if sess.PaymentStatus != "paid" {
+					if sess.ExpiresAt < time.Now().Unix() {
+						hasIssue = true
+						issues = append(issues, "payment_expired")
+						log.Printf("Submission %s payment expired", submissionID)
+					} else {
+						hasIssue = true
+						issues = append(issues, "payment_incomplete")
+						log.Printf("Submission %s payment incomplete", submissionID)
+					}
+				}
+			}
+
+			// Issue 4: Approved but no ticket created
+			if data["ticket_id"] == "" {
+				hasIssue = true
+				issues = append(issues, "no_ticket_created")
+				log.Printf("Submission %s has no ticket", submissionID)
+			}
+		}
+
+		// Include ALL submissions that were approved after a certain date and had no activity
+		// This helps catch submissions that might have been approved but didn't get properly processed
+		if status == "approved" {
+			reviewedAt, err := time.Parse(time.RFC3339, data["reviewed_at"])
+			if err == nil {
+				cutoffDate := time.Now().AddDate(0, -1, 0) // 1 month ago
+				if reviewedAt.Before(cutoffDate) {
+					if data["ticket_id"] == "" || data["payment_intent_id"] == "" {
+						hasIssue = true
+						issues = append(issues, "stalled_submission")
+						log.Printf("Submission %s is stalled", submissionID)
+					}
 				}
 			}
 		}
 
-		if hasIssue {
+		// Include submissions with payment info but no approval
+		if status != "approved" && (data["checkout_session_id"] != "" || data["payment_intent_id"] != "") {
+			hasIssue = true
+			issues = append(issues, "payment_without_approval")
+			log.Printf("Submission %s has payment but not approved", submissionID)
+		}
+
+		// Check if this submission has been stuck in pending for too long
+		if status == "pending" {
+			submittedAt, err := time.Parse(time.RFC3339, data["submitted_at"])
+			if err == nil {
+				twoWeeksAgo := time.Now().AddDate(0, 0, -14) // 2 weeks ago
+				if submittedAt.Before(twoWeeksAgo) {
+					hasIssue = true
+					issues = append(issues, "pending_too_long")
+					log.Printf("Submission %s pending too long", submissionID)
+				}
+			}
+		}
+
+		if hasIssue || r.URL.Query().Get("debug") == "true" {
 			// Parse images
 			var images []string
 			if data["images"] != "" {
@@ -867,7 +904,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 
 			// Convert to submission format
 			submission := map[string]interface{}{
-				"id":                   extractSubmissionID(key),
+				"id":                   submissionID,
 				"eventId":              data["event_id"],
 				"eventSlug":            data["event_slug"],
 				"participantName":      data["participant_name"],
@@ -878,7 +915,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				"vehicleModel":         data["vehicle_model"],
 				"vehicleDescription":   data["vehicle_description"],
 				"vehicleModifications": data["vehicle_modifications"],
-				"status":               data["status"],
+				"status":               status,
 				"submittedAt":          data["submitted_at"],
 				"reviewedAt":           data["reviewed_at"],
 				"reviewedBy":           data["reviewed_by"],
@@ -895,6 +932,8 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			issueSubmissions = append(issueSubmissions, submission)
 		}
 	}
+
+	log.Printf("Found %d submissions with issues", len(issueSubmissions))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
