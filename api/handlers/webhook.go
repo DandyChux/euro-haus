@@ -56,6 +56,8 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Webhook event type: %s\n", event.Type)
+
 	// Handle the event
 	switch event.Type {
 	case "payment_intent.succeeded":
