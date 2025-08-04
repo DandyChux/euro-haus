@@ -81,9 +81,9 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 
 	// Filter states
 	const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-		debug: searchParams.debug === 'true',
-		all: searchParams.all === 'true',
-		includeId: searchParams.include_id || '',
+		debug: debug === 'true',
+		all: all === 'true',
+		includeId: include_id || '',
 		issueType: [],
 		status: [],
 		searchTerm: '',
@@ -93,11 +93,11 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 	useEffect(() => {
 		setFilterOptions(prev => ({
 			...prev,
-			debug: searchParams.debug === 'true',
-			all: searchParams.all === 'true',
-			includeId: searchParams.include_id || '',
+			debug: debug === 'true',
+			all: all === 'true',
+			includeId: include_id || '',
 		}));
-	}, [searchParams]);
+	}, [debug, all, include_id]);
 
 	// Filtered submissions
 	const filteredSubmissions = submissions.filter(submission => {
