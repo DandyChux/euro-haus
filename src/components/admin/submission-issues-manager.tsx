@@ -1,4 +1,3 @@
-// euro-haus/src/components/admin/submission-issues-manager.tsx
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import {
@@ -6,13 +5,10 @@ import {
 	Mail,
 	DollarSign,
 	CheckCircle,
-	XCircle,
 	ExternalLink,
 	Loader2,
 	RefreshCw,
 	User,
-	Calendar,
-	Car,
 	AlertCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -36,6 +32,13 @@ interface EventPrice {
 	id: string;
 	label: string;
 	amount: number;
+}
+
+interface PriceResponse {
+	id: string;
+	nickname?: string;
+	unit_amount: number;
+	active: boolean;
 }
 
 interface SubmissionIssuesManagerProps {
@@ -72,7 +75,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 		setIsLoadingPrices(true);
 		setEventPrices([]);
 		try {
-			const response = await apiClient.get<{ prices: any[] }>(`/products/${eventId}/prices`);
+			const response = await apiClient.get<{ prices: PriceResponse[] }>(`/products/${eventId}/prices`);
 			const prices = response.data.prices || [];
 
 			const formattedPrices = prices
@@ -89,8 +92,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 			if (formattedPrices.length === 1) {
 				setSelectedPriceId(formattedPrices[0].id);
 			}
-		} catch (error) {
-			console.error('Failed to fetch event prices:', error);
+		} catch {
 			toast.error('Failed to load ticket prices');
 		} finally {
 			setIsLoadingPrices(false);
@@ -104,7 +106,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 			setPaymentStatus(status);
 			setSelectedSubmission(submission);
 			toast.success('Payment status retrieved');
-		} catch (error) {
+		} catch {
 			toast.error('Failed to check payment status');
 		} finally {
 			setIsCheckingPayment(false);
@@ -135,7 +137,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 				setShowPaymentDialog(false);
 				setSelectedPriceId('');
 			}
-		} catch (error) {
+		} catch {
 			toast.error('Failed to create payment');
 		} finally {
 			setIsCreatingPayment(false);
@@ -151,7 +153,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 			} else {
 				toast.error(response.message || 'Failed to send email');
 			}
-		} catch (error) {
+		} catch {
 			toast.error('Failed to resend email');
 		} finally {
 			setIsResendingEmail(false);

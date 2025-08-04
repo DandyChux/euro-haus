@@ -1,21 +1,32 @@
-import { createFileRoute } from '@tanstack/react-router';
+// euro-haus/src/routes/admin/submission-issues.tsx
+import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { SubmissionIssuesManager } from '~/components/admin/submission-issues-manager';
-import { submissionIssuesService } from '~/lib/services/submission-issues-service';
-import { stripeService } from '~/lib/services/stripe-service';
+import { submissionService } from '~/lib/services/submission-service';
+import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
+import type { StripeProduct } from '~/lib/services/stripe-service';
+
+interface ProductsResponse {
+	products: StripeProduct[];
+}
 
 export const Route = createFileRoute('/admin/submission-issues')({
 	loader: async () => {
 		try {
-			const [submissions, events] = await Promise.all([
-				submissionIssuesService.getSubmissionsWithIssues(),
-				stripeService.getAllEvents(),
+			const [submissions, productsResponse] = await Promise.all([
+				submissionService.getSubmissionsWithIssues(),
+				apiClient.get<ProductsResponse>('/products'),
 			]);
 
+			// Get raw StripeProduct data and filter for events
+			const events = productsResponse.data.products.filter(
+				(p: StripeProduct) => p.metadata?.type === 'event'
+			);
+
 			return { submissions, events };
-		} catch (error) {
+		} catch {
 			toast.error('Failed to load submission issues data');
 			return { submissions: [], events: [] };
 		}
@@ -33,14 +44,15 @@ function SubmissionIssuesPage() {
 
 function SubmissionIssuesContent() {
 	const { submissions, events } = Route.useLoaderData();
+	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(false);
 
 	const handleRefresh = async () => {
 		setIsLoading(true);
 		try {
-			await Route.router.invalidate();
+			await router.invalidate();
 			toast.success('Data refreshed');
-		} catch (error) {
+		} catch {
 			toast.error('Failed to refresh data');
 		} finally {
 			setIsLoading(false);
