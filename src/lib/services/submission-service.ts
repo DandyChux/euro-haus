@@ -14,7 +14,12 @@ export const submissionService = {
 			// Append text fields
 			Object.entries(data).forEach(([key, value]) => {
 				if (key !== 'images' && value !== undefined) {
-					formData.append(key, String(value));
+					// Handle array values specially - join with newlines for vehicleModifications
+					if (Array.isArray(value)) {
+						formData.append(key, value.join('\n'));
+					} else {
+						formData.append(key, String(value));
+					}
 				}
 			});
 

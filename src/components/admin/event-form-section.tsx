@@ -134,17 +134,6 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 		});
 	};
 
-	const updateFeatureInTier = (tierIndex: number, featureIndex: number, value: string) => {
-		const currentTier = tierFields[tierIndex];
-		const updatedFeatures = [...(currentTier.features || [])];
-		updatedFeatures[featureIndex] = value;
-
-		updateTier(tierIndex, {
-			...currentTier,
-			features: updatedFeatures
-		});
-	};
-
 	const removeFeatureFromTier = (tierIndex: number, featureIndex: number) => {
 		const currentTier = tierFields[tierIndex];
 		updateTier(tierIndex, {
