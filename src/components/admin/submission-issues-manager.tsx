@@ -66,7 +66,7 @@ interface FilterOptions {
 
 export function SubmissionIssuesManager({ submissions, events }: SubmissionIssuesManagerProps) {
 	const routeApi = getRouteApi('/admin/submission-issues');
-	const { debug, all, include_id } = routeApi.useParams();
+	const { debug, all, include_id } = routeApi.useSearch();
 	const navigate = useNavigate();
 	const [selectedSubmission, setSelectedSubmission] = useState<SubmissionWithIssues | null>(null);
 	const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
@@ -81,8 +81,8 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 
 	// Filter states
 	const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-		debug: debug === 'true',
-		all: all === 'true',
+		debug: debug === true,
+		all: all === true,
 		includeId: include_id || '',
 		issueType: [],
 		status: [],
@@ -93,8 +93,8 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 	useEffect(() => {
 		setFilterOptions(prev => ({
 			...prev,
-			debug: debug === 'true',
-			all: all === 'true',
+			debug: debug === true,
+			all: all === true,
 			includeId: include_id || '',
 		}));
 	}, [debug, all, include_id]);
