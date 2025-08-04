@@ -812,6 +812,12 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		hasIssue := false
 		issues := []string{}
 
+		// Check ALL submissions that have any payment-related fields
+		// This will catch any submissions that were started in the payment process
+		hasPaymentData := data["checkout_session_id"] != "" ||
+			data["payment_intent_id"] != "" ||
+			data["ticket_id"] != ""
+
 		// Issues for approved submissions
 		if status == "approved" {
 			// Issue 1: Approved but no payment initialized
@@ -822,7 +828,6 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Issue 2: Approved but email not sent
-			// Note: this field might not be set in all cases
 			if data["approval_email_sent"] != "true" {
 				hasIssue = true
 				issues = append(issues, "email_not_sent")
@@ -831,6 +836,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 
 			// Issue 3: Has checkout session but need to check with Stripe
 			if data["checkout_session_id"] != "" {
+				sessionValid := false
 				params := &stripe.CheckoutSessionParams{}
 				sess, err := session.Get(data["checkout_session_id"], params)
 				if err != nil {
@@ -838,48 +844,73 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Error checking session %s: %v", data["checkout_session_id"], err)
 					hasIssue = true
 					issues = append(issues, "payment_check_failed")
-				} else if sess.PaymentStatus != "paid" {
-					if sess.ExpiresAt < time.Now().Unix() {
-						hasIssue = true
-						issues = append(issues, "payment_expired")
-						log.Printf("Submission %s payment expired", submissionID)
+				} else {
+					if sess.PaymentStatus != "paid" {
+						if sess.ExpiresAt < time.Now().Unix() {
+							hasIssue = true
+							issues = append(issues, "payment_expired")
+							log.Printf("Submission %s payment expired", submissionID)
+						} else {
+							hasIssue = true
+							issues = append(issues, "payment_incomplete")
+							log.Printf("Submission %s payment incomplete", submissionID)
+						}
 					} else {
-						hasIssue = true
-						issues = append(issues, "payment_incomplete")
-						log.Printf("Submission %s payment incomplete", submissionID)
+						// Payment is paid
+						sessionValid = true
 					}
+				}
+
+				// Issue 3b: Has checkout_session_id but not payment_intent_id (incomplete process)
+				if data["payment_intent_id"] == "" && !sessionValid {
+					hasIssue = true
+					issues = append(issues, "missing_payment_intent")
+					log.Printf("Submission %s has checkout session but no payment intent", submissionID)
 				}
 			}
 
-			// Issue 4: Approved but no ticket created
-			if data["ticket_id"] == "" {
+			// Issue 4: Has payment_intent_id but we should verify it with Stripe
+			if data["payment_intent_id"] != "" && data["ticket_id"] == "" {
+				params := &stripe.PaymentIntentParams{}
+				pi, err := paymentintent.Get(data["payment_intent_id"], params)
+				if err != nil {
+					log.Printf("Error checking payment intent %s: %v", data["payment_intent_id"], err)
+					hasIssue = true
+					issues = append(issues, "payment_intent_check_failed")
+				} else if pi.Status != "succeeded" {
+					hasIssue = true
+					issues = append(issues, "payment_not_succeeded")
+					log.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
+				}
+			}
+
+			// Issue 5: Approved but no ticket created despite payment
+			if data["payment_intent_id"] != "" && data["ticket_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_ticket_created")
-				log.Printf("Submission %s has no ticket", submissionID)
+				log.Printf("Submission %s has payment but no ticket", submissionID)
+			}
+
+			// Issue 6: Missing checkout data (neither checkout session nor ticket)
+			if data["checkout_session_id"] == "" && data["ticket_id"] == "" {
+				hasIssue = true
+				issues = append(issues, "missing_checkout_data")
+				log.Printf("Submission %s missing checkout data", submissionID)
 			}
 		}
 
-		// Include ALL submissions that were approved after a certain date and had no activity
-		// This helps catch submissions that might have been approved but didn't get properly processed
-		if status == "approved" {
-			reviewedAt, err := time.Parse(time.RFC3339, data["reviewed_at"])
-			if err == nil {
-				cutoffDate := time.Now().AddDate(0, -1, 0) // 1 month ago
-				if reviewedAt.Before(cutoffDate) {
-					if data["ticket_id"] == "" || data["payment_intent_id"] == "" {
-						hasIssue = true
-						issues = append(issues, "stalled_submission")
-						log.Printf("Submission %s is stalled", submissionID)
-					}
-				}
-			}
-		}
-
-		// Include submissions with payment info but no approval
-		if status != "approved" && (data["checkout_session_id"] != "" || data["payment_intent_id"] != "") {
+		// Check for submissions that were paid but not approved
+		if status != "approved" && hasPaymentData {
 			hasIssue = true
 			issues = append(issues, "payment_without_approval")
-			log.Printf("Submission %s has payment but not approved", submissionID)
+			log.Printf("Submission %s has payment data but not approved", submissionID)
+		}
+
+		// Check for pending submissions that have checkout/payment info but no approval
+		if status == "pending" && hasPaymentData {
+			hasIssue = true
+			issues = append(issues, "pending_with_payment")
+			log.Printf("Submission %s is pending with payment data", submissionID)
 		}
 
 		// Check if this submission has been stuck in pending for too long
@@ -895,7 +926,31 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if hasIssue || r.URL.Query().Get("debug") == "true" {
+		// Include ALL submissions with checkout data that have no ticket
+		if hasPaymentData && data["ticket_id"] == "" {
+			hasIssue = true
+			if !contains(issues, "no_ticket_created") {
+				issues = append(issues, "no_ticket_created")
+				log.Printf("Submission %s has payment data but no ticket", submissionID)
+			}
+		}
+
+		// Include any submission with payment_intent_id that doesn't have either a checkout_session_id or ticket_id
+		// This could indicate a partially completed process
+		if data["payment_intent_id"] != "" && (data["checkout_session_id"] == "" || data["ticket_id"] == "") {
+			hasIssue = true
+			if !contains(issues, "incomplete_payment_process") {
+				issues = append(issues, "incomplete_payment_process")
+				log.Printf("Submission %s has incomplete payment process", submissionID)
+			}
+		}
+
+		// Allow forcing inclusion via URL parameter for debugging
+		forceInclude := r.URL.Query().Get("debug") == "true" ||
+			r.URL.Query().Get("all") == "true" ||
+			r.URL.Query().Get("include_id") == submissionID
+
+		if hasIssue || forceInclude {
 			// Parse images
 			var images []string
 			if data["images"] != "" {
@@ -927,6 +982,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				"ticketId":             data["ticket_id"],
 				"emailSent":            data["approval_email_sent"] == "true",
 				"emailSentAt":          data["approval_email_sent_at"],
+				"hasIssue":             hasIssue,
 			}
 
 			issueSubmissions = append(issueSubmissions, submission)
@@ -1163,4 +1219,14 @@ func generateDenialEmailHTML(data map[string]interface{}) string {
 		</body>
 		</html>
 	`, data["ParticipantName"], data["VehicleDetails"], data["DenialReason"])
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
