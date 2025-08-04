@@ -184,6 +184,44 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		return
 	}
 
+	// Check if approval email was already sent
+	approvalEmailSent := submissionData["approval_email_sent"] == "true"
+
+	// If submission is approved but email wasn't sent, send it now
+	if submissionData["status"] == "approved" && !approvalEmailSent {
+		// Send approval email with payment confirmation
+		vehicleDetails := fmt.Sprintf("%s %s %s",
+			submissionData["vehicle_year"],
+			submissionData["vehicle_make"],
+			submissionData["vehicle_model"])
+
+		emailData := map[string]interface{}{
+			"ParticipantName": submissionData["participant_name"],
+			"VehicleDetails":  vehicleDetails,
+			"EventID":         submissionData["event_id"],
+			"PaymentLink":     "Payment completed successfully!",
+			"ReviewNotes":     submissionData["review_notes"],
+		}
+
+		msg := &services.EmailMessage{
+			To:           []string{submissionData["participant_email"]},
+			Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
+			TemplateID:   "submission-approved",
+			TemplateData: emailData,
+			BodyHTML:     generateApprovalEmailHTML(emailData),
+		}
+
+		if err := services.SendEmail(msg); err != nil {
+			log.Printf("Error sending approval email: %v", err)
+		} else {
+			// Update email sent status
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	}
+
 	// Create and store ticket
 	ticketToken := generateUniqueToken()
 	ticketKey := "ticket:" + ticketToken
@@ -214,7 +252,11 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 	}
 
 	// Update submission with ticket ID
-	rdb.HSet(ctx, submissionKey, "ticket_id", ticketToken)
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"ticket_id":            ticketToken,
+		"payment_completed":    "true",
+		"payment_completed_at": time.Now().Format(time.RFC3339),
+	})
 
 	// Add to event attendees
 	eventAttendeesKey := fmt.Sprintf("event:%s:attendees", submissionData["event_id"])

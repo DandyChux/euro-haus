@@ -19,7 +19,8 @@ import {
 	BarChart,
 	ShoppingBag,
 	Car,
-	Tag
+	Tag,
+	AlertTriangle
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -156,6 +157,15 @@ function AdminDashboardContent() {
 			color: 'text-green-600',
 			bgColor: 'bg-green-50',
 			stats: stats?.mediaFiles ? `${stats.mediaFiles} files` : null,
+		},
+		{
+			title: 'Submission Issues',
+			description: 'Fix payment and email issues for approved submissions',
+			icon: AlertTriangle,
+			href: '/admin/submission-issues',
+			color: 'text-red-600',
+			bgColor: 'bg-red-50',
+			stats: null, // You could fetch count of issues if needed
 		},
 	];
 

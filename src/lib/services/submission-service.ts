@@ -5,6 +5,21 @@ export interface SubmissionWithFiles extends SubmissionCreateRequest {
 	images: File[];
 }
 
+export interface PaymentStatus {
+	hasPayment: boolean;
+	paymentStatus?: string;
+	paymentAmount?: number;
+	paymentCurrency?: string;
+	checkoutURL?: string;
+	errorMessage?: string;
+	emailSent?: boolean;
+	emailSentAt?: string;
+}
+
+export interface SubmissionWithIssues extends VehicleSubmission {
+	issues?: string[];
+}
+
 export const submissionService = {
 	async createSubmission(data: SubmissionWithFiles): Promise<VehicleSubmission> {
 		try {
@@ -107,6 +122,72 @@ export const submissionService = {
 		} catch (error) {
 			console.error('Failed to create checkout session:', error);
 			throw new Error('Failed to create checkout session');
+		}
+	},
+
+	// Get all submissions with issues
+	async getSubmissionsWithIssues(): Promise<SubmissionWithIssues[]> {
+		try {
+			const response = await apiClient.get<{ submissions: SubmissionWithIssues[] }>(
+				'/admin/submissions/issues'
+			);
+			return response.data.submissions || [];
+		} catch (error) {
+			console.error('Failed to fetch submissions with issues:', error);
+			throw new Error('Failed to load submissions with issues');
+		}
+	},
+
+	// Check payment status for a submission
+	async getPaymentStatus(submissionId: string): Promise<PaymentStatus> {
+		try {
+			const response = await apiClient.get<PaymentStatus>(
+				`/admin/submissions/${submissionId}/payment-status`
+			);
+			return response.data;
+		} catch (error) {
+			console.error('Failed to fetch payment status:', error);
+			throw new Error('Failed to check payment status');
+		}
+	},
+
+	// Create payment for submission
+	async createPayment(submissionId: string, priceId: string, eventName: string): Promise<{ sessionUrl: string }> {
+		try {
+			const response = await apiClient.post<{ sessionUrl: string }>(
+				`/admin/submissions/${submissionId}/create-payment`,
+				{ priceId, eventName }
+			);
+			return response.data;
+		} catch (error) {
+			console.error('Failed to create payment:', error);
+			throw new Error('Failed to create payment');
+		}
+	},
+
+	// Resend approval email
+	async resendApprovalEmail(submissionId: string): Promise<{ success: boolean; message: string }> {
+		try {
+			const response = await apiClient.post<{ success: boolean; message: string }>(
+				`/admin/submissions/${submissionId}/resend-email`
+			);
+			return response.data;
+		} catch (error) {
+			console.error('Failed to resend approval email:', error);
+			throw new Error('Failed to resend approval email');
+		}
+	},
+
+	// Get pending submissions count
+	async getPendingSubmissionsCount(): Promise<number> {
+		try {
+			const response = await apiClient.get<{ count: number }>(
+				'/admin/submissions/pending-count'
+			);
+			return response.data.count || 0;
+		} catch (error) {
+			console.error('Failed to fetch pending submissions count:', error);
+			return 0;
 		}
 	},
 

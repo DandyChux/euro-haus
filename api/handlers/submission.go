@@ -314,8 +314,64 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	// Add to approved set
 	rdb.SAdd(ctx, "submissions:approved", submissionID)
 
-	// The webhook will handle the rest (ticket creation, email sending)
-	// when it receives the payment_intent.succeeded event
+	// Send approval email immediately (don't wait for webhook)
+	// First, check if we have a payment link
+	var paymentLink string
+
+	if submission.CheckoutSessionID != "" {
+		// Try to get existing checkout session URL
+		params := &stripe.CheckoutSessionParams{}
+		sess, err := session.Get(submission.CheckoutSessionID, params)
+		if err == nil && sess.URL != "" {
+			paymentLink = sess.URL
+		}
+	}
+
+	// If no checkout session, create one
+	if paymentLink == "" {
+		// Create a new checkout session for this submission
+		// You'll need to get the price ID - either from submission data or event defaults
+		// For now, we'll just create a link to the event page
+		paymentLink = fmt.Sprintf("%s/events/%s?submission=%s",
+			os.Getenv("BASE_URL"),
+			submission.EventSlug,
+			submission.ID)
+
+		// Mark that payment needs to be created
+		rdb.HSet(ctx, submissionKey, "needs_payment_link", "true")
+	}
+
+	// Send approval email
+	emailData := map[string]interface{}{
+		"ParticipantName": submission.ParticipantName,
+		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
+		"EventID":         submission.EventID,
+		"PaymentLink":     paymentLink,
+		"ReviewNotes":     req.Notes,
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{submission.ParticipantEmail},
+		Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
+		TemplateID:   "submission-approved",
+		TemplateData: emailData,
+		BodyHTML:     generateApprovalEmailHTML(emailData),
+	}
+
+	emailSent := false
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending approval email for submission %s: %v", submission.ID, err)
+	} else {
+		emailSent = true
+	}
+
+	// Update email sent status
+	if emailSent {
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"approval_email_sent":    "true",
+			"approval_email_sent_at": time.Now().Format(time.RFC3339),
+		})
+	}
 
 	// Get updated submission
 	updatedSubmission, _ := getSubmissionByID(submissionID)
@@ -533,6 +589,327 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		"sessionId":  s.ID,
 		"sessionUrl": s.URL,
 	})
+}
+
+// GetSubmissionPaymentStatus checks the payment status for a submission
+func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	type PaymentStatus struct {
+		HasPayment      bool   `json:"hasPayment"`
+		PaymentStatus   string `json:"paymentStatus"`
+		PaymentAmount   int64  `json:"paymentAmount"`
+		PaymentCurrency string `json:"paymentCurrency"`
+		CheckoutURL     string `json:"checkoutUrl,omitempty"`
+		ErrorMessage    string `json:"errorMessage,omitempty"`
+		EmailSent       bool   `json:"emailSent"`
+		EmailSentAt     string `json:"emailSentAt,omitempty"`
+	}
+
+	status := PaymentStatus{
+		HasPayment: false,
+		EmailSent:  false,
+	}
+
+	// Check email status from Redis
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	emailStatus, _ := rdb.HGet(ctx, fmt.Sprintf("submission:%s", submissionID), "approval_email_sent").Result()
+	emailSentAt, _ := rdb.HGet(ctx, fmt.Sprintf("submission:%s", submissionID), "approval_email_sent_at").Result()
+
+	status.EmailSent = emailStatus == "true"
+	status.EmailSentAt = emailSentAt
+
+	// Check payment status from Stripe
+	if submission.CheckoutSessionID != "" {
+		// Check checkout session status
+		params := &stripe.CheckoutSessionParams{}
+		sess, err := session.Get(submission.CheckoutSessionID, params)
+		if err != nil {
+			status.ErrorMessage = fmt.Sprintf("Failed to retrieve checkout session: %v", err)
+		} else {
+			status.HasPayment = true
+			status.PaymentStatus = string(sess.PaymentStatus)
+			status.PaymentAmount = sess.AmountTotal
+			status.PaymentCurrency = string(sess.Currency)
+
+			// If payment is incomplete, provide the URL
+			if sess.PaymentStatus != "paid" && sess.URL != "" {
+				status.CheckoutURL = sess.URL
+			}
+		}
+	} else if submission.PaymentIntentID != "" {
+		// Check payment intent status
+		params := &stripe.PaymentIntentParams{}
+		pi, err := paymentintent.Get(submission.PaymentIntentID, params)
+		if err != nil {
+			status.ErrorMessage = fmt.Sprintf("Failed to retrieve payment intent: %v", err)
+		} else {
+			status.HasPayment = true
+			status.PaymentStatus = string(pi.Status)
+			status.PaymentAmount = pi.Amount
+			status.PaymentCurrency = string(pi.Currency)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// CreateSubmissionPayment manually creates a payment for an approved submission
+func CreateSubmissionPayment(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	var req struct {
+		PriceID   string `json:"priceId"`
+		EventName string `json:"eventName"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Ensure submission is approved
+	if submission.Status != "approved" {
+		http.Error(w, "Submission must be approved first", http.StatusBadRequest)
+		return
+	}
+
+	// Create checkout session
+	params := &stripe.CheckoutSessionParams{
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(req.PriceID),
+				Quantity: stripe.Int64(1),
+			},
+		},
+		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/success?session_id={CHECKOUT_SESSION_ID}", os.Getenv("BASE_URL"))),
+		CancelURL:  stripe.String(fmt.Sprintf("%s/events/%s", os.Getenv("BASE_URL"), submission.EventSlug)),
+		Metadata: map[string]string{
+			"submission_id": submission.ID,
+			"event_id":      submission.EventID,
+			"event_name":    req.EventName,
+			"type":          "participant_registration",
+		},
+		CustomerEmail: stripe.String(submission.ParticipantEmail),
+	}
+
+	s, err := session.New(params)
+	if err != nil {
+		log.Printf("Error creating checkout session: %v", err)
+		http.Error(w, "Failed to create payment session", http.StatusInternalServerError)
+		return
+	}
+
+	// Update submission with checkout session ID
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	if err := rdb.HSet(ctx, submissionKey, "checkout_session_id", s.ID).Err(); err != nil {
+		log.Printf("Error updating submission with checkout session: %v", err)
+	}
+
+	// Send or resend approval email with payment link
+	sendApprovalEmail(*submission, s.URL)
+
+	// Update email sent status
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"approval_email_sent":    "true",
+		"approval_email_sent_at": time.Now().Format(time.RFC3339),
+		"manual_payment_created": "true",
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"sessionUrl": s.URL,
+		"sessionId":  s.ID,
+	})
+}
+
+// ResendApprovalEmail resends the approval email for a submission
+func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Ensure submission is approved
+	if submission.Status != "approved" {
+		http.Error(w, "Submission must be approved to resend email", http.StatusBadRequest)
+		return
+	}
+
+	// Generate payment link
+	paymentLink := ""
+
+	// If there's a checkout session, get the URL
+	if submission.CheckoutSessionID != "" {
+		params := &stripe.CheckoutSessionParams{}
+		sess, err := session.Get(submission.CheckoutSessionID, params)
+		if err == nil && sess.URL != "" {
+			paymentLink = sess.URL
+		}
+	}
+
+	// If no checkout session URL, create a new payment link
+	if paymentLink == "" {
+		paymentLink, _ = createSubmissionPaymentLink(*submission)
+	}
+
+	// Send approval email
+	sendApprovalEmail(*submission, paymentLink)
+
+	// Update email sent status
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"approval_email_sent":    "true",
+		"approval_email_sent_at": time.Now().Format(time.RFC3339),
+		"approval_email_resent":  "true",
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Approval email resent successfully",
+	})
+}
+
+// GetAllSubmissionsWithIssues retrieves submissions that have issues
+func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Get all submission keys
+	submissionKeys, err := rdb.Keys(ctx, "submission:*").Result()
+	if err != nil {
+		http.Error(w, "Failed to retrieve submissions", http.StatusInternalServerError)
+		return
+	}
+
+	var issueSubmissions []map[string]interface{}
+
+	for _, key := range submissionKeys {
+		data, err := rdb.HGetAll(ctx, key).Result()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+
+		// Check for issues
+		hasIssue := false
+		issues := []string{}
+
+		// Only check approved submissions for issues
+		if data["status"] == "approved" {
+			// Issue 1: Approved but no payment initialized
+			if data["checkout_session_id"] == "" && data["payment_intent_id"] == "" {
+				hasIssue = true
+				issues = append(issues, "no_payment")
+			}
+
+			// Issue 2: Approved but email not sent
+			if data["approval_email_sent"] != "true" {
+				hasIssue = true
+				issues = append(issues, "email_not_sent")
+			}
+
+			// Issue 3: Has checkout session but payment failed or expired
+			if data["checkout_session_id"] != "" {
+				params := &stripe.CheckoutSessionParams{}
+				sess, err := session.Get(data["checkout_session_id"], params)
+				if err == nil {
+					if sess.PaymentStatus != "paid" {
+						if sess.ExpiresAt < time.Now().Unix() {
+							hasIssue = true
+							issues = append(issues, "payment_expired")
+						} else {
+							hasIssue = true
+							issues = append(issues, "payment_incomplete")
+						}
+					}
+				} else {
+					// Can't check session status
+					log.Printf("Error checking session %s: %v", data["checkout_session_id"], err)
+				}
+			}
+		}
+
+		if hasIssue {
+			// Parse images
+			var images []string
+			if data["images"] != "" {
+				json.Unmarshal([]byte(data["images"]), &images)
+			}
+
+			// Convert to submission format
+			submission := map[string]interface{}{
+				"id":                   extractSubmissionID(key),
+				"eventId":              data["event_id"],
+				"eventSlug":            data["event_slug"],
+				"participantName":      data["participant_name"],
+				"participantEmail":     data["participant_email"],
+				"participantPhone":     data["participant_phone"],
+				"vehicleYear":          data["vehicle_year"],
+				"vehicleMake":          data["vehicle_make"],
+				"vehicleModel":         data["vehicle_model"],
+				"vehicleDescription":   data["vehicle_description"],
+				"vehicleModifications": data["vehicle_modifications"],
+				"status":               data["status"],
+				"submittedAt":          data["submitted_at"],
+				"reviewedAt":           data["reviewed_at"],
+				"reviewedBy":           data["reviewed_by"],
+				"reviewNotes":          data["review_notes"],
+				"images":               images,
+				"issues":               issues,
+				"checkoutSessionId":    data["checkout_session_id"],
+				"paymentIntentId":      data["payment_intent_id"],
+				"ticketId":             data["ticket_id"],
+				"emailSent":            data["approval_email_sent"] == "true",
+				"emailSentAt":          data["approval_email_sent_at"],
+			}
+
+			issueSubmissions = append(issueSubmissions, submission)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"submissions": issueSubmissions,
+		"total":       len(issueSubmissions),
+	})
+}
+
+// Helper function to extract submission ID from Redis key
+func extractSubmissionID(key string) string {
+	parts := strings.Split(key, ":")
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return ""
 }
 
 // Helper functions

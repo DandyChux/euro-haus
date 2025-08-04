@@ -25,6 +25,7 @@ import { Route as CheckoutCancelImport } from './routes/checkout/cancel'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
 import { Route as AuthRegisterImport } from './routes/auth/register'
 import { Route as AdminSubmissionsImport } from './routes/admin/submissions'
+import { Route as AdminSubmissionIssuesImport } from './routes/admin/submission-issues'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
@@ -114,6 +115,12 @@ const AuthRegisterRoute = AuthRegisterImport.update({
 const AdminSubmissionsRoute = AdminSubmissionsImport.update({
   id: '/admin/submissions',
   path: '/admin/submissions',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminSubmissionIssuesRoute = AdminSubmissionIssuesImport.update({
+  id: '/admin/submission-issues',
+  path: '/admin/submission-issues',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -207,6 +214,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminProductsImport
       parentRoute: typeof rootRoute
     }
+    '/admin/submission-issues': {
+      id: '/admin/submission-issues'
+      path: '/admin/submission-issues'
+      fullPath: '/admin/submission-issues'
+      preLoaderRoute: typeof AdminSubmissionIssuesImport
+      parentRoute: typeof rootRoute
+    }
     '/admin/submissions': {
       id: '/admin/submissions'
       path: '/admin/submissions'
@@ -298,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
@@ -320,6 +335,7 @@ export interface FileRoutesByTo {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
@@ -343,6 +359,7 @@ export interface FileRoutesById {
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
@@ -367,6 +384,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
@@ -388,6 +406,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
@@ -409,6 +428,7 @@ export interface FileRouteTypes {
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
@@ -432,6 +452,7 @@ export interface RootRouteChildren {
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminSubmissionIssuesRoute: typeof AdminSubmissionIssuesRoute
   AdminSubmissionsRoute: typeof AdminSubmissionsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
@@ -454,6 +475,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminSubmissionIssuesRoute: AdminSubmissionIssuesRoute,
   AdminSubmissionsRoute: AdminSubmissionsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
@@ -485,6 +507,7 @@ export const routeTree = rootRoute
         "/admin/login",
         "/admin/media",
         "/admin/products",
+        "/admin/submission-issues",
         "/admin/submissions",
         "/auth/register",
         "/catalog/$id",
@@ -521,6 +544,9 @@ export const routeTree = rootRoute
     },
     "/admin/products": {
       "filePath": "admin/products.tsx"
+    },
+    "/admin/submission-issues": {
+      "filePath": "admin/submission-issues.tsx"
     },
     "/admin/submissions": {
       "filePath": "admin/submissions.tsx"

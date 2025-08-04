@@ -83,10 +83,10 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 func main() {
-	r := mux.NewRouter()
+	router := mux.NewRouter()
 
 	// API Routes
-	api := r.PathPrefix("/api").Subrouter()
+	api := router.PathPrefix("/api").Subrouter()
 
 	// Healthcheck
 	api.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +165,10 @@ func main() {
 	api.Handle("/admin/submissions/{eventId}", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventSubmissions))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/approve", middleware.RequireAuth(http.HandlerFunc(handlers.ApproveSubmission))).Methods("PUT", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/deny", middleware.RequireAuth(http.HandlerFunc(handlers.DenySubmission))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/payment-status", middleware.RequireAuth(http.HandlerFunc(handlers.GetSubmissionPaymentStatus))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/create-payment", middleware.RequireAuth(http.HandlerFunc(handlers.CreateSubmissionPayment))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/resend-email", middleware.RequireAuth(http.HandlerFunc(handlers.ResendApprovalEmail))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/submissions/issues", middleware.RequireAuth(http.HandlerFunc(handlers.GetAllSubmissionsWithIssues))).Methods("GET", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
@@ -180,9 +184,9 @@ func main() {
 	// Apply CORS to all routes except webhooks
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/webhook" {
-			r.ServeHTTP(w, req)
+			router.ServeHTTP(w, req)
 		} else {
-			corsMiddleware.Handler(r).ServeHTTP(w, req)
+			corsMiddleware.Handler(router).ServeHTTP(w, req)
 		}
 	})
 
