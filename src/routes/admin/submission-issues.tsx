@@ -7,16 +7,34 @@ import { submissionService } from '~/lib/services/submission-service';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
 import type { StripeProduct } from '~/lib/services/stripe-service';
+import z from 'zod';
 
 interface ProductsResponse {
 	products: StripeProduct[];
 }
 
+const submissionIssueSchema = z.object({
+	debug: z.boolean().optional(),
+	all: z.boolean().optional(),
+	include_id: z.string().optional()
+})
+
 export const Route = createFileRoute('/admin/submission-issues')({
-	loader: async () => {
+	validateSearch: submissionIssueSchema,
+	loaderDeps: ({ search: { debug, all, include_id } }) => ({
+		debug,
+		all,
+		include_id
+	}),
+	loader: async ({ deps: { debug, all, include_id } }) => {
 		try {
+			// Call the API with the query parameters
+			const submissionsPromise = debug || all || include_id
+				? apiClient.get(`/admin/submissions/issues?${debug ? 'debug=true' : ''}${all ? '&all=true' : ''}${include_id ? `&include_id=${include_id}` : ''}`).then(res => res.data.submissions)
+				: submissionService.getSubmissionsWithIssues();
+
 			const [submissions, productsResponse] = await Promise.all([
-				submissionService.getSubmissionsWithIssues(),
+				submissionsPromise,
 				apiClient.get<ProductsResponse>('/products'),
 			]);
 
