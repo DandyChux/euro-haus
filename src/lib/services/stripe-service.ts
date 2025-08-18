@@ -62,7 +62,19 @@ export interface EventProduct extends Product {
 	sponsorTiers?: SponsorTier[];
 	hasTiers?: boolean;
 	lowestPrice?: number;
+	venue?: string;
+	venueHours?: { day: string; hours: string; isToday?: boolean }[];
+	contactPhone?: string;
+	contactEmail?: string;
+	venueWebsite?: string;
+	parking?: string;
+	accessibility?: string;
+	publicTransport?: string;
+	specialInstructions?: string;
+	startTime?: string;
+	endTime?: string;
 }
+
 
 export interface TieredPrice {
 	id: string;
@@ -245,8 +257,19 @@ export const stripeService = {
 			maxQuantity: availableSpots || 10,
 			sponsors: stripeProduct.metadata.sponsors ? JSON.parse(stripeProduct.metadata.sponsors) : [],
 			sponsorTiers: stripeProduct.metadata.sponsor_tiers ? JSON.parse(stripeProduct.metadata.sponsor_tiers) : [],
-			hasTiers: stripeProduct.metadata.has_tiers === 'true', // Add this
-			lowestPrice: stripeProduct.metadata.lowest_price ? parseFloat(stripeProduct.metadata.lowest_price) : undefined, // Add this
+			hasTiers: stripeProduct.metadata.has_tiers === 'true',
+			lowestPrice: stripeProduct.metadata.lowest_price ? parseFloat(stripeProduct.metadata.lowest_price) : undefined,
+			venue: stripeProduct.metadata.venue,
+			venueHours: stripeProduct.metadata.venue_hours ? JSON.parse(stripeProduct.metadata.venue_hours) : undefined,
+			contactPhone: stripeProduct.metadata.contact_phone,
+			contactEmail: stripeProduct.metadata.contact_email,
+			venueWebsite: stripeProduct.metadata.venue_website,
+			parking: stripeProduct.metadata.parking,
+			accessibility: stripeProduct.metadata.accessibility,
+			publicTransport: stripeProduct.metadata.public_transport,
+			specialInstructions: stripeProduct.metadata.special_instructions,
+			startTime: stripeProduct.metadata.start_time,
+			endTime: stripeProduct.metadata.end_time,
 		};
 	},
 

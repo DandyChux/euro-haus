@@ -133,6 +133,18 @@
 			transform: translate(calc(-50% - 0rem));
 		}
 	}
+
+	@keyframes gradient {
+
+		0%,
+		100% {
+			background-position: 0% 50%;
+		}
+
+		50% {
+			background-position: 100% 50%;
+		}
+	}
 }
 
 @theme {
@@ -150,6 +162,14 @@
 
 	h1 {
 		@apply text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl lg:text-7xl;
+	}
+
+	.animate-gradient {
+		animation: gradient 3s ease infinite;
+	}
+
+	.bg-300\% {
+		background-size: 300% 300%;
 	}
 }
 
