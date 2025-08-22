@@ -691,6 +691,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 								maxQuantity: '',
 								sortOrder: tierFields.length,
 								requiresVehicleSubmission: false,
+								requiresApproval: true, // Default to true for safety
 								isMostPopular: false
 							})}
 						>
@@ -841,7 +842,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 											)}
 										</div>
 
-										<div className="flex items-center space-x-4">
+										<div className="flex items-center space-x-4 flex-wrap gap-y-2">
 											<FormField
 												control={form.control}
 												name={`priceTiers.${index}.requiresVehicleSubmission`}
@@ -859,6 +860,26 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 													</FormItem>
 												)}
 											/>
+
+											{form.watch(`priceTiers.${index}.requiresVehicleSubmission`) && (
+												<FormField
+													control={form.control}
+													name={`priceTiers.${index}.requiresApproval`}
+													render={({ field }) => (
+														<FormItem className="flex items-center space-x-2 mt-2">
+															<FormControl>
+																<Checkbox
+																	checked={field.value}
+																	onCheckedChange={field.onChange}
+																/>
+															</FormControl>
+															<FormLabel className="font-normal cursor-pointer">
+																Requires Approval?
+															</FormLabel>
+														</FormItem>
+													)}
+												/>
+											)}
 
 											<FormField
 												control={form.control}

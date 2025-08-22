@@ -20,6 +20,7 @@ import { Route as CatalogIndexImport } from './routes/catalog/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as EventsSlugImport } from './routes/events/$slug'
 import { Route as CheckoutSuccessImport } from './routes/checkout/success'
+import { Route as CheckoutRecoverImport } from './routes/checkout/recover'
 import { Route as CheckoutPendingImport } from './routes/checkout/pending'
 import { Route as CheckoutCancelImport } from './routes/checkout/cancel'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
@@ -85,6 +86,12 @@ const EventsSlugRoute = EventsSlugImport.update({
 const CheckoutSuccessRoute = CheckoutSuccessImport.update({
   id: '/checkout/success',
   path: '/checkout/success',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const CheckoutRecoverRoute = CheckoutRecoverImport.update({
+  id: '/checkout/recover',
+  path: '/checkout/recover',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -256,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutPendingImport
       parentRoute: typeof rootRoute
     }
+    '/checkout/recover': {
+      id: '/checkout/recover'
+      path: '/checkout/recover'
+      fullPath: '/checkout/recover'
+      preLoaderRoute: typeof CheckoutRecoverImport
+      parentRoute: typeof rootRoute
+    }
     '/checkout/success': {
       id: '/checkout/success'
       path: '/checkout/success'
@@ -318,6 +332,7 @@ export interface FileRoutesByFullPath {
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -341,6 +356,7 @@ export interface FileRoutesByTo {
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -365,6 +381,7 @@ export interface FileRoutesById {
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -390,6 +407,7 @@ export interface FileRouteTypes {
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
@@ -412,6 +430,7 @@ export interface FileRouteTypes {
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
@@ -434,6 +453,7 @@ export interface FileRouteTypes {
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin/'
@@ -458,6 +478,7 @@ export interface RootRouteChildren {
   CatalogIdRoute: typeof CatalogIdRoute
   CheckoutCancelRoute: typeof CheckoutCancelRoute
   CheckoutPendingRoute: typeof CheckoutPendingRoute
+  CheckoutRecoverRoute: typeof CheckoutRecoverRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   EventsSlugRoute: typeof EventsSlugRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -481,6 +502,7 @@ const rootRouteChildren: RootRouteChildren = {
   CatalogIdRoute: CatalogIdRoute,
   CheckoutCancelRoute: CheckoutCancelRoute,
   CheckoutPendingRoute: CheckoutPendingRoute,
+  CheckoutRecoverRoute: CheckoutRecoverRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   EventsSlugRoute: EventsSlugRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -513,6 +535,7 @@ export const routeTree = rootRoute
         "/catalog/$id",
         "/checkout/cancel",
         "/checkout/pending",
+        "/checkout/recover",
         "/checkout/success",
         "/events/$slug",
         "/admin/",
@@ -562,6 +585,9 @@ export const routeTree = rootRoute
     },
     "/checkout/pending": {
       "filePath": "checkout/pending.tsx"
+    },
+    "/checkout/recover": {
+      "filePath": "checkout/recover.tsx"
     },
     "/checkout/success": {
       "filePath": "checkout/success.tsx"

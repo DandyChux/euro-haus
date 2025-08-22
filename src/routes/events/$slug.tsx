@@ -377,7 +377,7 @@ function EventDetailPage() {
 										</div>
 									</div>
 
-									{event.capacity && (
+									{/*{event.capacity && (
 										<div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-accent/5 to-transparent hover:from-accent/10 transition-all">
 											<div className="p-3 bg-gradient-to-br from-accent to-chart-1 rounded-xl shadow-lg">
 												<Users className="h-6 w-6 text-accent-foreground" />
@@ -397,7 +397,7 @@ function EventDetailPage() {
 												</div>
 											</div>
 										</div>
-									)}
+									)}*/}
 
 									{event.organizer && (
 										<div className="p-4 rounded-xl bg-gradient-to-r from-chart-2/5 to-transparent">

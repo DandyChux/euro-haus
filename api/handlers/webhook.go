@@ -56,7 +56,7 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Webhook event type: %s\n", event.Type)
+	fmt.Printf("Webhook event type: %s\n", event.Type)
 
 	// Handle the event
 	switch event.Type {
@@ -268,7 +268,7 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	// Handle completed checkout session
-	log.Printf("Checkout session completed: %s\n", checkoutSession.ID)
+	fmt.Printf("Checkout session completed: %s\n", checkoutSession.ID)
 
 	// Check if this is a participant submission checkout
 	if submissionID, ok := checkoutSession.Metadata["submission_id"]; ok && submissionID != "" {
@@ -362,12 +362,12 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		log.Printf("Error sending order confirmation email: %v", err)
 	}
 
-	log.Printf("Order fulfilled for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
+	fmt.Printf("Order fulfilled for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
 }
 
 // handleParticipantCheckout handles checkout completion for approved vehicle submissions
 func handleParticipantCheckout(checkoutSession stripe.CheckoutSession, submissionID string) {
-	log.Printf("Handling participant checkout for submission: %s\n", submissionID)
+	fmt.Printf("Handling participant checkout for submission: %s\n", submissionID)
 
 	// Get Redis client
 	rdb := services.GetRedisClient()
@@ -467,7 +467,7 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 		"ErrorMessage":  errorMessage,
 		"PaymentDate":   time.Now().Format(time.RFC1123),
 		"PaymentStatus": "Failed",
-		"RecoveryURL":   os.Getenv("WEBSITE_URL") + "/checkout/recover?session=" + pi.ID,
+		"RecoveryURL":   os.Getenv("BASE_URL") + "/checkout/recover?session=" + pi.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -486,20 +486,170 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 
 func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 	// Handle expired checkout session
-	log.Printf("Checkout session expired: %s\n", checkoutSession.ID)
+	fmt.Printf("Checkout session expired: %s\n", checkoutSession.ID)
 
-	// Get customer email if available
+	// Check if this is a participant submission checkout (has manual capture)
+	submissionID := ""
+	isParticipant := false
+
+	if checkoutSession.Metadata != nil {
+		if sid, ok := checkoutSession.Metadata["submission_id"]; ok && sid != "" {
+			submissionID = sid
+		}
+		if participant, ok := checkoutSession.Metadata["participant"]; ok && participant == "true" {
+			isParticipant = true
+		}
+	}
+
+	// Get customer email
 	customerEmail := checkoutSession.CustomerEmail
 	if customerEmail == "" {
 		log.Printf("No email address available for expired checkout session %s", checkoutSession.ID)
 		return
 	}
 
-	// Send abandoned cart email
+	// If this is a participant submission with manual capture, create a new checkout session
+	if submissionID != "" && isParticipant {
+		handleExpiredParticipantCheckout(checkoutSession, submissionID, customerEmail)
+	} else {
+		// Handle regular abandoned cart
+		handleRegularAbandonedCart(checkoutSession, customerEmail)
+	}
+}
+
+// handleExpiredParticipantCheckout creates a new checkout session for an expired participant submission
+func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, submissionID string, customerEmail string) {
+	fmt.Printf("Handling expired participant checkout for submission: %s\n", submissionID)
+
+	// Get submission from Redis
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		log.Printf("Failed to get submission %s: %v", submissionID, err)
+		// Still send a recovery email even if we can't get the submission
+		sendGenericRecoveryEmail(customerEmail, submissionID)
+		return
+	}
+
+	// Get the line items from the expired session (need to expand it first)
+	expandParams := &stripe.CheckoutSessionParams{}
+	expandParams.AddExpand("line_items")
+	fullSession, err := session.Get(expiredSession.ID, expandParams)
+	if err != nil {
+		log.Printf("Failed to expand expired session %s: %v", expiredSession.ID, err)
+		sendGenericRecoveryEmail(customerEmail, submissionID)
+		return
+	}
+
+	// Extract price ID and quantity from the expired session
+	var priceID string
+	var quantity int64 = 1
+
+	if fullSession.LineItems != nil && len(fullSession.LineItems.Data) > 0 {
+		lineItem := fullSession.LineItems.Data[0]
+		if lineItem.Price != nil {
+			priceID = lineItem.Price.ID
+		}
+		quantity = lineItem.Quantity
+	}
+
+	if priceID == "" {
+		log.Printf("Could not extract price ID from expired session %s", expiredSession.ID)
+		sendGenericRecoveryEmail(customerEmail, submissionID)
+		return
+	}
+
+	// Create a new checkout session with the same parameters
+	baseUrl := os.Getenv("BASE_URL")
+	newParams := &stripe.CheckoutSessionParams{
+		PaymentMethodTypes: []*string{
+			stripe.String("card"),
+		},
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(priceID),
+				Quantity: stripe.Int64(quantity),
+			},
+		},
+		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/pending?submission_id=%s", baseUrl, submissionID)),
+		CancelURL:  stripe.String(fmt.Sprintf("%s/checkout/cancel", baseUrl)),
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			CaptureMethod: stripe.String("manual"),
+			Metadata: map[string]string{
+				"submission_id":          submissionID,
+				"event_id":               submission.EventID,
+				"event_name":             expiredSession.Metadata["event_name"],
+				"participant":            "true",
+				"recovered_from_session": expiredSession.ID,
+			},
+		},
+		Metadata: map[string]string{
+			"submission_id":          submissionID,
+			"event_id":               submission.EventID,
+			"event_name":             expiredSession.Metadata["event_name"],
+			"participant":            "true",
+			"recovered_from_session": expiredSession.ID,
+		},
+		CustomerEmail: stripe.String(customerEmail),
+		ExpiresAt:     stripe.Int64(time.Now().Add(24 * time.Hour).Unix()), // Set explicit 24-hour expiration
+	}
+
+	// Create the new checkout session
+	newSession, err := session.New(newParams)
+	if err != nil {
+		log.Printf("Failed to create recovery checkout session for submission %s: %v", submissionID, err)
+		sendGenericRecoveryEmail(customerEmail, submissionID)
+		return
+	}
+
+	// Update the submission with the new checkout session ID
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	updates := map[string]interface{}{
+		"checkout_session_id":          newSession.ID,
+		"previous_checkout_session_id": expiredSession.ID,
+		"checkout_recovered_at":        time.Now().Format(time.RFC3339),
+		"checkout_recovery_count":      "1", // Track recovery attempts
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		log.Printf("Failed to update submission %s with new checkout session: %v", submissionID, err)
+	}
+
+	// Send recovery email with the new payment link
+	emailData := map[string]interface{}{
+		"ParticipantName": submission.ParticipantName,
+		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
+		"EventName":       expiredSession.Metadata["event_name"],
+		"PaymentLink":     newSession.URL,
+		"ExpirationTime":  time.Now().Add(24 * time.Hour).Format(time.RFC1123),
+		"SubmissionID":    submissionID,
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      "Action Required: Complete Your Euro Haus Registration",
+		TemplateID:   "participant-checkout-recovery",
+		TemplateData: emailData,
+		BodyHTML:     generateParticipantRecoveryHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending recovery email for submission %s: %v", submissionID, err)
+	}
+
+	fmt.Printf("Successfully created recovery checkout session %s for submission %s", newSession.ID, submissionID)
+}
+
+// handleRegularAbandonedCart handles regular abandoned cart (non-participant)
+func handleRegularAbandonedCart(checkoutSession stripe.CheckoutSession, customerEmail string) {
+	// Send standard abandoned cart email
 	emailData := map[string]interface{}{
 		"SessionID":      checkoutSession.ID,
 		"ExpirationTime": time.Now().Format(time.RFC1123),
-		"RecoveryURL":    os.Getenv("WEBSITE_URL") + "/checkout/recover?session=" + checkoutSession.ID,
+		"RecoveryURL":    os.Getenv("BASE_URL") + "/checkout/recover?session=" + checkoutSession.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -507,8 +657,7 @@ func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 		Subject:      "Complete Your Euro Haus Purchase",
 		TemplateID:   "checkout-abandoned",
 		TemplateData: emailData,
-		// Fallback if template not found
-		BodyHTML: generateAbandonedCartHTML(emailData),
+		BodyHTML:     generateAbandonedCartHTML(emailData),
 	}
 
 	if err := services.SendEmail(msg); err != nil {
@@ -558,7 +707,6 @@ func formatShippingAddress(session *stripe.CheckoutSession) string {
 }
 
 // Generate HTML fallback templates for when email templates aren't available
-
 func generateOrderConfirmationHTML(data map[string]interface{}) string {
 	customerName, _ := data["CustomerName"].(string)
 	orderId, _ := data["OrderID"].(string)
@@ -795,6 +943,76 @@ func generateAbandonedCartHTML(data map[string]interface{}) string {
 	return html
 }
 
+// generateParticipantRecoveryHTML generates the HTML for participant checkout recovery emails
+func generateParticipantRecoveryHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventName, _ := data["EventName"].(string)
+	paymentLink, _ := data["PaymentLink"].(string)
+	expirationTime, _ := data["ExpirationTime"].(string)
+	submissionID, _ := data["SubmissionID"].(string)
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Complete Your Registration - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1 style="color: #e74c3c;">⚠️ Your Payment Session Expired</h1>
+			</div>
+
+			<p>Hello %s,</p>
+
+			<p>Your payment session for the vehicle registration has expired. Don't worry - your submission is still pending approval, and we've created a new payment link for you.</p>
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0;">Registration Details</h2>
+				<p><strong>Event:</strong> %s</p>
+				<p><strong>Vehicle:</strong> %s</p>
+				<p><strong>Submission ID:</strong> %s</p>
+			</div>
+
+			<div style="background-color: #fff3cd; padding: 20px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffc107;">
+				<h3 style="margin-top: 0; color: #856404;">Important Information</h3>
+				<ul style="margin: 10px 0;">
+					<li>Your vehicle submission is still pending admin approval</li>
+					<li>Payment will only be captured after your submission is approved</li>
+					<li>This new payment link will expire in 24 hours (%s)</li>
+					<li>You will receive a confirmation email once approved</li>
+				</ul>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; font-size: 16px; font-weight: bold;">Complete Registration</a>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<h3>What happens next?</h3>
+				<ol>
+					<li>Click the button above to complete your payment information</li>
+					<li>Your card will be authorized but not charged immediately</li>
+					<li>Our team will review your submission</li>
+					<li>Once approved, your payment will be processed and you'll receive your event ticket</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>If you have any questions or continue to experience issues, please contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a> with your submission ID: %s</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, eventName, vehicleDetails, submissionID, expirationTime, paymentLink, submissionID, time.Now().Year())
+
+	return html
+}
+
 func updateEventInventory(productID string, quantitySold int64) {
 	// Get current product
 	p, err := product.Get(productID, nil)
@@ -955,7 +1173,7 @@ func sendParticipantTicketEmail(submissionData map[string]string, ticketToken st
 		"QRCodeURL":      qrCodeURL,
 		"VehicleDetails": vehicleDetails,
 		"TicketType":     "Event Participant",
-		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("WEBSITE_URL"), ticketToken),
+		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
 	}
 
 	// Generate ticket HTML
@@ -1006,4 +1224,87 @@ func sendParticipantTicketEmail(submissionData map[string]string, ticketToken st
 	if err := services.SendEmail(msg); err != nil {
 		log.Printf("Error sending participant ticket email: %v", err)
 	}
+}
+
+func sendGenericRecoveryEmail(customerEmail string, submissionID string) {
+	baseUrl := os.Getenv("BASE_URL")
+
+	// Create a recovery URL that leads to a page where they can re-initiate checkout
+	recoveryURL := fmt.Sprintf("%s/checkout/recover?submission=%s", baseUrl, submissionID)
+
+	emailData := map[string]interface{}{
+		"SessionID":      submissionID, // Using submission ID as reference
+		"ExpirationTime": "Your payment session has expired",
+		"RecoveryURL":    recoveryURL,
+		"SubmissionID":   submissionID,
+		"IsSubmission":   true, // Flag to indicate this is for a submission recovery
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      "Complete Your Euro Haus Registration",
+		TemplateID:   "checkout-recovery",
+		TemplateData: emailData,
+		// Use modified abandoned cart HTML for consistency
+		BodyHTML: generateSubmissionRecoveryHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending recovery email for submission %s: %v", submissionID, err)
+	}
+}
+
+// generateSubmissionRecoveryHTML generates recovery email HTML similar to abandoned cart
+func generateSubmissionRecoveryHTML(data map[string]interface{}) string {
+	submissionID, _ := data["SubmissionID"].(string)
+	recoveryURL, _ := data["RecoveryURL"].(string)
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Complete Your Registration - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1>Complete Your Registration!</h1>
+			</div>
+
+			<p>We noticed that your payment session expired before you could complete your vehicle registration.</p>
+			<p>Don't worry - your submission is still saved and waiting for you!</p>
+
+			<div style="margin-top: 20px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px;">Complete Your Registration</a>
+			</div>
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<p><strong>Submission Reference:</strong> %s</p>
+				<p><strong>Status:</strong> Payment session expired - awaiting new payment</p>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<h3>What happens next?</h3>
+				<ol style="line-height: 1.8;">
+					<li>Click the button above to restart your checkout</li>
+					<li>Your vehicle submission details are saved</li>
+					<li>Complete the payment process</li>
+					<li>Wait for admin approval of your submission</li>
+					<li>Once approved, your payment will be processed</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>If you continue to experience issues, please try again later or use a different browser.</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+				<p>If you believe you received this email by mistake, please disregard it.</p>
+			</div>
+		</body>
+		</html>
+	`, recoveryURL, submissionID, time.Now().Year())
+
+	return html
 }

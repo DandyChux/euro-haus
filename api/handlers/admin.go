@@ -369,7 +369,7 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure boolean values are stored as strings
 	for k, v := range req.Metadata {
-		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+		if k == "requires_vehicle_submission" || k == "is_most_popular" || k == "requires_approval" {
 			// Convert any value to proper "true" or "false" string
 			boolValue, err := strconv.ParseBool(v)
 			if err == nil {
@@ -379,9 +379,15 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 					finalMetadata[k] = "false"
 				}
 			} else {
-				// If we can't parse it as a boolean, default to "false"
-				finalMetadata[k] = "false"
+				// Default values
+				if k == "requires_approval" {
+					finalMetadata[k] = "true" // Default to requiring approval
+				} else {
+					finalMetadata[k] = "false"
+				}
 			}
+		} else {
+			finalMetadata[k] = v
 		}
 	}
 
@@ -454,9 +460,9 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 		finalMetadata = make(map[string]string)
 	}
 
+	// Ensure boolean values are stored as strings
 	for k, v := range req.Metadata {
-		// Ensure boolean values are stored as strings
-		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+		if k == "requires_vehicle_submission" || k == "is_most_popular" || k == "requires_approval" {
 			// Convert any value to proper "true" or "false" string
 			boolValue, err := strconv.ParseBool(v)
 			if err == nil {
@@ -466,8 +472,12 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 					finalMetadata[k] = "false"
 				}
 			} else {
-				// If we can't parse it as a boolean, default to "false"
-				finalMetadata[k] = "false"
+				// Default values
+				if k == "requires_approval" {
+					finalMetadata[k] = "true" // Default to requiring approval
+				} else {
+					finalMetadata[k] = "false"
+				}
 			}
 		} else {
 			finalMetadata[k] = v

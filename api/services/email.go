@@ -234,7 +234,7 @@ func SendEmail(msg *EmailMessage) error {
 	// Close the connection
 	client.Quit()
 
-	log.Printf("Email sent to %v with subject: %s", msg.To, msg.Subject)
+	fmt.Printf("Email sent to %v with subject: %s", msg.To, msg.Subject)
 	return nil
 }
 

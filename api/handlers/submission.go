@@ -18,6 +18,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/price"
 )
 
 // VehicleSubmission represents a participant's vehicle submission
@@ -74,6 +75,9 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		SubmittedAt:          time.Now().Format(time.RFC3339),
 		Images:               []string{},
 	}
+
+	// Get the price ID from the request to check metadata
+	priceID := r.FormValue("priceId")
 
 	// Parse ticket price if provided
 	if priceStr := r.FormValue("ticketPrice"); priceStr != "" {
@@ -152,6 +156,19 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if this tier requires approval
+	requiresApproval := checkIfTierRequiresApproval(priceID)
+
+	if !requiresApproval {
+		// Auto-approve the submission
+		submission.Status = "approved"
+		submission.ReviewedAt = time.Now().Format(time.RFC3339)
+		submission.ReviewedBy = "system-auto-approved"
+		submission.ReviewNotes = "Automatically approved - tier does not require manual approval"
+
+		fmt.Printf("Auto-approving submission %s for tier that doesn't require approval", submission.ID)
+	}
+
 	// Store submission in Redis
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
@@ -178,6 +195,13 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		"ticket_quantity":       strconv.Itoa(submission.TicketQuantity),
 	}
 
+	// Add approval fields if auto-approved
+	if !requiresApproval {
+		submissionData["reviewed_at"] = submission.ReviewedAt
+		submissionData["reviewed_by"] = submission.ReviewedBy
+		submissionData["review_notes"] = submission.ReviewNotes
+	}
+
 	if err := rdb.HSet(ctx, submissionKey, submissionData).Err(); err != nil {
 		http.Error(w, "Failed to store submission", http.StatusInternalServerError)
 		return
@@ -189,10 +213,31 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to add submission to event set: %v", err)
 	}
 
-	// Send confirmation email
-	go sendSubmissionConfirmationEmail(submission)
+	// Send appropriate email
+	if !requiresApproval {
+		// Generate payment link for auto-approved submission
+		paymentLink, err := createSubmissionPaymentLink(submission)
+		if err != nil {
+			log.Printf("Error creating payment link for auto-approved submission: %v", err)
+			// Use fallback link if payment link generation fails
+			baseUrl := os.Getenv("BASE_URL")
+			if baseUrl == "" {
+				baseUrl = "https://eurohaus.shop"
+			}
+			paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+		}
 
-	// Return the created submission
+		// Send approval email immediately for auto-approved submissions
+		go sendApprovalEmail(submission, paymentLink)
+
+		fmt.Printf("Auto-approved submission %s and sent approval email with payment link: %s", submission.ID, paymentLink)
+	} else {
+		// Send confirmation email for pending submissions
+		go sendSubmissionConfirmationEmail(submission)
+
+		fmt.Printf("Created pending submission %s and sent confirmation email", submission.ID)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(submission)
 }
@@ -1083,15 +1128,58 @@ func getSubmissionByID(submissionID string) (*VehicleSubmission, error) {
 
 func createSubmissionPaymentLink(submission VehicleSubmission) (string, error) {
 	// This creates a payment link that the participant can use to complete their purchase
-	// You might want to create a Stripe Payment Link or generate a custom checkout URL
 	baseUrl := os.Getenv("BASE_URL")
 	if baseUrl == "" {
-		baseUrl = os.Getenv("WEBSITE_URL")
+		baseUrl = "https://eurohaus.shop"
 	}
 
-	// For now, return a link to the event page with submission ID
-	paymentLink := fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
-	return paymentLink, nil
+	// Check if we have a price ID to create a proper checkout session
+	if submission.TicketID != "" {
+		// Initialize Stripe
+		stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
+		// Create checkout session for auto-approved submission
+		params := &stripe.CheckoutSessionParams{
+			Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+			LineItems: []*stripe.CheckoutSessionLineItemParams{
+				{
+					Price:    stripe.String(submission.TicketID),
+					Quantity: stripe.Int64(int64(submission.TicketQuantity)),
+				},
+			},
+			SuccessURL: stripe.String(fmt.Sprintf("%s/events/%s/success?submission=%s", baseUrl, submission.EventSlug, submission.ID)),
+			CancelURL:  stripe.String(fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)),
+			Metadata: map[string]string{
+				"submission_id": submission.ID,
+				"event_id":      submission.EventID,
+				"event_slug":    submission.EventSlug,
+				"auto_approved": "true",
+			},
+		}
+
+		// Add customer email if available
+		if submission.ParticipantEmail != "" {
+			params.CustomerEmail = stripe.String(submission.ParticipantEmail)
+		}
+
+		session, err := session.New(params)
+		if err != nil {
+			log.Printf("Failed to create checkout session for auto-approved submission: %v", err)
+			// Fallback to basic link
+			return fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID), nil
+		}
+
+		// Store the checkout session ID with the submission
+		rdb := services.GetRedisClient()
+		ctx := context.Background()
+		submissionKey := fmt.Sprintf("submission:%s", submission.ID)
+		rdb.HSet(ctx, submissionKey, "checkout_session_id", session.ID)
+
+		return session.URL, nil
+	}
+
+	// Fallback: return a link to the event page with submission ID
+	return fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID), nil
 }
 
 // Email functions
@@ -1219,6 +1307,34 @@ func generateDenialEmailHTML(data map[string]interface{}) string {
 		</body>
 		</html>
 	`, data["ParticipantName"], data["VehicleDetails"], data["DenialReason"])
+}
+
+// checkIfTierRequiresApproval checks if a price tier requires manual approval
+func checkIfTierRequiresApproval(priceID string) bool {
+	if priceID == "" {
+		// If no price ID provided, default to requiring approval
+		return true
+	}
+
+	// Initialize Stripe client
+	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
+	// Fetch the price from Stripe
+	priceObj, err := price.Get(priceID, nil)
+	if err != nil {
+		log.Printf("Error fetching price %s: %v", priceID, err)
+		// Default to requiring approval if we can't fetch the price
+		return true
+	}
+
+	// Check the metadata for requires_approval flag
+	if requiresApproval, exists := priceObj.Metadata["requires_approval"]; exists {
+		// If explicitly set to "false", don't require approval
+		return requiresApproval != "false"
+	}
+
+	// Default to requiring approval if not specified
+	return true
 }
 
 // Helper function to check if a slice contains a string
