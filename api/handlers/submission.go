@@ -46,6 +46,8 @@ type VehicleSubmission struct {
 	TicketTier           string   `json:"ticketTier,omitempty"`
 	TicketPrice          float64  `json:"ticketPrice,omitempty"`
 	TicketQuantity       int      `json:"ticketQuantity,omitempty"`
+	ApprovalEmailSent    bool     `json:"approvalEmailSent,omitempty"`
+	ApprovalEmailSentAt  string   `json:"approvalEmailSentAt,omitempty"`
 }
 
 // CreateSubmission handles vehicle submission with image uploads
@@ -315,39 +317,23 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the checkout session to find the payment intent
-	if submission.CheckoutSessionID != "" {
-		// Retrieve the checkout session
-		sess, err := session.Get(submission.CheckoutSessionID, nil)
-		if err != nil {
-			log.Printf("Error retrieving checkout session: %v", err)
-		} else if sess.PaymentIntent != nil {
-			// Capture the payment intent
-			pi, err := paymentintent.Capture(sess.PaymentIntent.ID, nil)
-			if err != nil {
-				log.Printf("Error capturing payment: %v", err)
-				http.Error(w, "Failed to capture payment", http.StatusInternalServerError)
-				return
-			}
-
-			// Update submission with payment intent ID
-			submission.PaymentIntentID = pi.ID
-		}
+	// Check if already approved
+	if submission.Status == "approved" {
+		log.Printf("Submission %s is already approved", submissionID)
+		http.Error(w, "Submission is already approved", http.StatusBadRequest)
+		return
 	}
 
-	// Update submission status
+	// Update submission status first
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
 	submissionKey := fmt.Sprintf("submission:%s", submissionID)
 
 	updates := map[string]interface{}{
-		"status":            "approved",
-		"reviewed_at":       time.Now().Format(time.RFC3339),
-		"reviewed_by":       "admin", // TODO: Get from auth context
-		"review_notes":      req.Notes,
-		"payment_intent_id": submission.PaymentIntentID,
-		// Default to false until email is actually sent
-		"approval_email_sent": "false",
+		"status":       "approved",
+		"reviewed_at":  time.Now().Format(time.RFC3339),
+		"reviewed_by":  "admin", // TODO: Get from auth context
+		"review_notes": req.Notes,
 	}
 
 	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
@@ -355,20 +341,87 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove from pending set
+	// Remove from pending set and add to approved set
 	rdb.SRem(ctx, "submissions:pending", submissionID)
-
-	// Add to approved set
 	rdb.SAdd(ctx, "submissions:approved", submissionID)
 
-	// Try to send an approval email if possible
-	// Create a simple payment URL for now (to be replaced by a proper one later)
-	paymentLink := fmt.Sprintf("%s/events/%s?submission=%s",
-		os.Getenv("BASE_URL"),
-		submission.EventSlug,
-		submission.ID)
+	fmt.Printf("Submission %s approved by admin", submissionID)
 
-	// Send approval email - but don't fail if it doesn't work
+	// Now handle payment capture if there's a payment intent
+	paymentCaptured := false
+
+	if submission.CheckoutSessionID != "" {
+		// Retrieve the checkout session
+		sess, err := session.Get(submission.CheckoutSessionID, nil)
+		if err != nil {
+			log.Printf("Error retrieving checkout session for submission %s: %v", submissionID, err)
+		} else if sess.PaymentIntent != nil {
+			// Check if payment intent needs to be captured
+			pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
+			if err != nil {
+				log.Printf("Error retrieving payment intent %s: %v", sess.PaymentIntent.ID, err)
+			} else {
+				// Check the status and capture method
+				if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
+					// Capture the payment
+					fmt.Printf("Capturing payment for submission %s (payment intent: %s)", submissionID, pi.ID)
+
+					capturedPI, err := paymentintent.Capture(pi.ID, nil)
+					if err != nil {
+						log.Printf("Error capturing payment for submission %s: %v", submissionID, err)
+						// Don't fail the approval, but note the error
+						rdb.HSet(ctx, submissionKey, map[string]interface{}{
+							"payment_capture_error":        err.Error(),
+							"payment_capture_attempted_at": time.Now().Format(time.RFC3339),
+						})
+					} else {
+						// Payment captured successfully
+						paymentCaptured = true
+						submission.PaymentIntentID = capturedPI.ID
+
+						rdb.HSet(ctx, submissionKey, map[string]interface{}{
+							"payment_intent_id":   capturedPI.ID,
+							"payment_captured":    "true",
+							"payment_captured_at": time.Now().Format(time.RFC3339),
+						})
+
+						fmt.Printf("Successfully captured payment %s for submission %s", capturedPI.ID, submissionID)
+
+						// The ticket will be created when the payment.intent.succeeded webhook fires
+						// This ensures proper flow and prevents duplicate tickets
+					}
+				} else if pi.Status == "succeeded" {
+					// Payment already succeeded (might be auto-capture)
+					log.Printf("Payment already succeeded for submission %s", submissionID)
+					paymentCaptured = true
+					submission.PaymentIntentID = pi.ID
+
+					// Check if ticket was already created
+					existingTicket, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
+					if existingTicket == "" {
+						log.Printf("No ticket found for approved submission %s with succeeded payment. Webhook might handle it.", submissionID)
+					}
+				} else {
+					fmt.Printf("Payment intent %s for submission %s has status: %s (capture method: %s)",
+						pi.ID, submissionID, pi.Status, pi.CaptureMethod)
+				}
+			}
+		}
+	}
+
+	// Send approval email (without payment link if payment was captured)
+	var paymentLink string
+	if !paymentCaptured && submission.CheckoutSessionID == "" {
+		// No payment initiated yet - create a payment link
+		baseUrl := os.Getenv("BASE_URL")
+		paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+	} else if paymentCaptured {
+		paymentLink = "Payment has been processed successfully. Your ticket will be sent shortly."
+	} else {
+		paymentLink = "Payment is being processed. You will receive your ticket once payment is complete."
+	}
+
+	// Send approval email
 	go func() {
 		emailData := map[string]interface{}{
 			"ParticipantName": submission.ParticipantName,
@@ -376,6 +429,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 			"EventID":         submission.EventID,
 			"PaymentLink":     paymentLink,
 			"ReviewNotes":     req.Notes,
+			"PaymentCaptured": paymentCaptured,
 		}
 
 		msg := &services.EmailMessage{
@@ -401,7 +455,11 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	updatedSubmission, _ := getSubmissionByID(submissionID)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedSubmission)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"submission":      updatedSubmission,
+		"paymentCaptured": paymentCaptured,
+		"message":         "Submission approved successfully",
+	})
 }
 
 // DenySubmission denies a vehicle submission
@@ -562,7 +620,16 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create checkout session with manual capture
+	// Check if this tier requires approval
+	requiresApproval := true // Default to requiring approval
+	if req.PriceID != "" {
+		requiresApproval = checkIfTierRequiresApproval(req.PriceID)
+	}
+
+	// Determine if we need manual capture based on submission status and tier requirements
+	needsManualCapture := requiresApproval && submission.Status != "approved"
+
+	// Create checkout session params
 	baseUrl := os.Getenv("BASE_URL")
 	params := &stripe.CheckoutSessionParams{
 		PaymentMethodTypes: []*string{
@@ -577,22 +644,45 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/pending?submission_id=%s", baseUrl, req.SubmissionID)),
 		CancelURL:  stripe.String(fmt.Sprintf("%s/checkout/cancel", baseUrl)),
-		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
-			CaptureMethod: stripe.String("manual"),
-			Metadata: map[string]string{
-				"submission_id": req.SubmissionID,
-				"event_id":      submission.EventID,
-				"event_name":    req.EventName,
-				"participant":   "true",
-			},
-		},
 		Metadata: map[string]string{
-			"submission_id": req.SubmissionID,
-			"event_id":      submission.EventID,
-			"event_name":    req.EventName,
-			"participant":   "true",
+			"submission_id":     req.SubmissionID,
+			"event_id":          submission.EventID,
+			"event_name":        req.EventName,
+			"participant":       "true",
+			"requires_approval": strconv.FormatBool(requiresApproval),
+			"submission_status": submission.Status,
 		},
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
+	}
+
+	// Only use manual capture if submission needs approval
+	if needsManualCapture {
+		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
+			CaptureMethod: stripe.String("manual"),
+			Metadata: map[string]string{
+				"submission_id":     req.SubmissionID,
+				"event_id":          submission.EventID,
+				"event_name":        req.EventName,
+				"participant":       "true",
+				"requires_approval": "true",
+			},
+		}
+
+		fmt.Printf("Creating participant checkout with manual capture for submission %s (requires approval)", req.SubmissionID)
+	} else {
+		// Auto-approved or already approved - use automatic capture
+		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
+			Metadata: map[string]string{
+				"submission_id":     req.SubmissionID,
+				"event_id":          submission.EventID,
+				"event_name":        req.EventName,
+				"participant":       "true",
+				"requires_approval": "false",
+				"auto_approved":     strconv.FormatBool(submission.Status == "approved"),
+			},
+		}
+
+		fmt.Printf("Creating participant checkout with automatic capture for submission %s (approved/auto-approved)", req.SubmissionID)
 	}
 
 	s, err := session.New(params)
@@ -606,12 +696,23 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
 	submissionKey := fmt.Sprintf("submission:%s", req.SubmissionID)
-	rdb.HSet(ctx, submissionKey, "checkout_session_id", s.ID)
+
+	updates := map[string]interface{}{
+		"checkout_session_id": s.ID,
+		"price_id":            req.PriceID,
+		"requires_approval":   strconv.FormatBool(requiresApproval),
+		"checkout_created_at": time.Now().Format(time.RFC3339),
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		log.Printf("Error updating submission with checkout session: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"sessionId":  s.ID,
-		"sessionUrl": s.URL,
+		"sessionId":        s.ID,
+		"sessionUrl":       s.URL,
+		"requiresApproval": requiresApproval,
 	})
 }
 

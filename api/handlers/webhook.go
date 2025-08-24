@@ -18,6 +18,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -109,7 +110,7 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	// Handle successful payment
-	log.Printf("PaymentIntent succeeded: %s, Amount: %d %s\n",
+	fmt.Printf("PaymentIntent succeeded: %s, Amount: %d %s\n",
 		pi.ID, pi.Amount, pi.Currency)
 
 	// Check if this is a participant payment
@@ -168,7 +169,7 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	}
 }
 
-// New function to handle participant payment success
+// handleParticipantPaymentSucceeded handles payment success for participant submissions
 func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID string) {
 	log.Printf("Handling participant payment for submission: %s\n", submissionID)
 
@@ -184,43 +185,30 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		return
 	}
 
+	// CRITICAL: Check if submission is approved before creating ticket
+	if submissionData["status"] != "approved" {
+		log.Printf("WARNING: Payment succeeded for unapproved submission %s (status: %s). Not creating ticket.",
+			submissionID, submissionData["status"])
+
+		// Update submission to note this unusual state
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"payment_succeeded_before_approval": "true",
+			"payment_intent_id":                 pi.ID,
+			"payment_succeeded_at":              time.Now().Format(time.RFC3339),
+		})
+
+		// Don't create ticket - wait for approval
+		return
+	}
+
+	// Check if ticket was already created (prevent duplicates)
+	if existingTicketID := submissionData["ticket_id"]; existingTicketID != "" {
+		log.Printf("Ticket already exists for submission %s: %s", submissionID, existingTicketID)
+		return
+	}
+
 	// Check if approval email was already sent
 	approvalEmailSent := submissionData["approval_email_sent"] == "true"
-
-	// If submission is approved but email wasn't sent, send it now
-	if submissionData["status"] == "approved" && !approvalEmailSent {
-		// Send approval email with payment confirmation
-		vehicleDetails := fmt.Sprintf("%s %s %s",
-			submissionData["vehicle_year"],
-			submissionData["vehicle_make"],
-			submissionData["vehicle_model"])
-
-		emailData := map[string]interface{}{
-			"ParticipantName": submissionData["participant_name"],
-			"VehicleDetails":  vehicleDetails,
-			"EventID":         submissionData["event_id"],
-			"PaymentLink":     "Payment completed successfully!",
-			"ReviewNotes":     submissionData["review_notes"],
-		}
-
-		msg := &services.EmailMessage{
-			To:           []string{submissionData["participant_email"]},
-			Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
-			TemplateID:   "submission-approved",
-			TemplateData: emailData,
-			BodyHTML:     generateApprovalEmailHTML(emailData),
-		}
-
-		if err := services.SendEmail(msg); err != nil {
-			log.Printf("Error sending approval email: %v", err)
-		} else {
-			// Update email sent status
-			rdb.HSet(ctx, submissionKey, map[string]interface{}{
-				"approval_email_sent":    "true",
-				"approval_email_sent_at": time.Now().Format(time.RFC3339),
-			})
-		}
-	}
 
 	// Create and store ticket
 	ticketToken := generateUniqueToken()
@@ -231,18 +219,28 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		eventName = "Euro Haus Event"
 	}
 
+	// Get ticket tier information
+	ticketTier := submissionData["ticket_tier"]
+	if ticketTier == "" {
+		ticketTier = "Participant"
+	}
+
 	ticketData := map[string]interface{}{
 		"customer_name":     submissionData["participant_name"],
 		"customer_email":    submissionData["participant_email"],
 		"event_name":        eventName,
 		"stripe_product_id": submissionData["event_id"],
-		"quantity":          "1",
-		"ticket_type":       "Participant",
+		"quantity":          submissionData["ticket_quantity"],
+		"ticket_type":       ticketTier,
 		"purchased_at":      time.Now().Format(time.RFC3339),
 		"checked_in":        "false",
 		"submission_id":     submissionID,
-		"vehicle_details":   fmt.Sprintf("%s %s %s", submissionData["vehicle_year"], submissionData["vehicle_make"], submissionData["vehicle_model"]),
-		"payment_intent_id": pi.ID,
+		"vehicle_details": fmt.Sprintf("%s %s %s",
+			submissionData["vehicle_year"],
+			submissionData["vehicle_make"],
+			submissionData["vehicle_model"]),
+		"payment_intent_id":    pi.ID,
+		"approved_participant": "true",
 	}
 
 	// Store ticket in Redis
@@ -256,6 +254,7 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		"ticket_id":            ticketToken,
 		"payment_completed":    "true",
 		"payment_completed_at": time.Now().Format(time.RFC3339),
+		"ticket_created_at":    time.Now().Format(time.RFC3339),
 	})
 
 	// Add to event attendees
@@ -264,6 +263,49 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 
 	// Send participant ticket email
 	sendParticipantTicketEmail(submissionData, ticketToken, eventName)
+
+	// Mark that ticket email was sent
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"ticket_email_sent":    "true",
+		"ticket_email_sent_at": time.Now().Format(time.RFC3339),
+	})
+
+	log.Printf("Successfully created and sent ticket %s for approved participant submission %s",
+		ticketToken, submissionID)
+
+	// If approval email wasn't sent earlier, send a combined approval + ticket email
+	if !approvalEmailSent {
+		vehicleDetails := fmt.Sprintf("%s %s %s",
+			submissionData["vehicle_year"],
+			submissionData["vehicle_make"],
+			submissionData["vehicle_model"])
+
+		emailData := map[string]interface{}{
+			"ParticipantName": submissionData["participant_name"],
+			"VehicleDetails":  vehicleDetails,
+			"EventID":         submissionData["event_id"],
+			"TicketCode":      ticketToken,
+			"ReviewNotes":     submissionData["review_notes"],
+		}
+
+		msg := &services.EmailMessage{
+			To:           []string{submissionData["participant_email"]},
+			Subject:      "Your Vehicle Submission Has Been Approved + Ticket - Euro Haus",
+			TemplateID:   "submission-approved-with-ticket",
+			TemplateData: emailData,
+			BodyHTML:     generateApprovalWithTicketEmailHTML(emailData),
+		}
+
+		if err := services.SendEmail(msg); err != nil {
+			log.Printf("Error sending approval email: %v", err)
+		} else {
+			// Update email sent status
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	}
 }
 
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
@@ -272,11 +314,49 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 
 	// Check if this is a participant submission checkout
 	if submissionID, ok := checkoutSession.Metadata["submission_id"]; ok && submissionID != "" {
-		handleParticipantCheckout(checkoutSession, submissionID)
-		return
+		// This is a participant submission
+		isParticipant := checkoutSession.Metadata["participant"] == "true"
+
+		if isParticipant {
+			// Check if this requires approval (has manual capture)
+			if checkoutSession.PaymentIntent != nil {
+				// Get the payment intent to check capture method
+				pi, err := paymentintent.Get(checkoutSession.PaymentIntent.ID, nil)
+				if err == nil && pi.CaptureMethod == "manual" {
+					// This needs approval - DON'T create ticket yet
+					fmt.Printf("Participant checkout pending approval for submission: %s\n", submissionID)
+
+					// Just update the submission with checkout details
+					rdb := services.GetRedisClient()
+					ctx := context.Background()
+					submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+					updates := map[string]interface{}{
+						"checkout_session_id":   checkoutSession.ID,
+						"payment_intent_id":     checkoutSession.PaymentIntent.ID,
+						"checkout_completed":    "true",
+						"awaiting_approval":     "true",
+						"checkout_completed_at": time.Now().Format(time.RFC3339),
+					}
+
+					if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+						log.Printf("Error updating submission with checkout details: %v", err)
+					}
+
+					// Don't create ticket - wait for approval and payment capture
+					log.Printf("Submission %s checkout completed, awaiting approval before ticket creation", submissionID)
+					return
+				}
+			}
+
+			// If we get here, it's auto-approved or payment doesn't require manual capture
+			// This would happen for auto-approved tiers
+			handleParticipantCheckout(checkoutSession, submissionID)
+			return
+		}
 	}
 
-	// Expand the session to get line items
+	// Expand the session to get line items for regular (non-participant) purchases
 	params := &stripe.CheckoutSessionParams{}
 	params.AddExpand("line_items.data.price.product")
 
@@ -315,8 +395,17 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		if lineItem.Price.Product.Metadata["type"] == "event" {
 			hasEventTickets = true
 			updateEventInventory(lineItem.Price.Product.ID, lineItem.Quantity)
-			// Store ticket purchase information and send ticket email
-			storeTicketPurchase(*fullSession, *lineItem)
+
+			// CRITICAL FIX: Only create tickets for non-participant purchases
+			// Check if this specific checkout is for a participant
+			isParticipantCheckout := fullSession.Metadata["participant"] == "true"
+
+			if !isParticipantCheckout {
+				// Regular attendee - create ticket immediately
+				storeTicketPurchase(*fullSession, *lineItem)
+			} else {
+				log.Printf("Skipping immediate ticket creation for participant checkout %s", fullSession.ID)
+			}
 		}
 
 		// Check for physical products
@@ -362,7 +451,7 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		log.Printf("Error sending order confirmation email: %v", err)
 	}
 
-	fmt.Printf("Order fulfilled for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
+	fmt.Printf("Order processed for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
 }
 
 // handleParticipantCheckout handles checkout completion for approved vehicle submissions
@@ -1077,6 +1166,39 @@ func generateQRCode(token string) (string, error) {
 
 // storeTicketPurchase stores ticket info in Redis after purchase
 func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineItem) {
+	// SAFETY CHECK: Don't create tickets for unapproved participant submissions
+	if session.Metadata != nil {
+		if submissionID, ok := session.Metadata["submission_id"]; ok && submissionID != "" {
+			if session.Metadata["participant"] == "true" {
+				// This is a participant checkout - verify approval status
+				rdb := services.GetRedisClient()
+				ctx := context.Background()
+
+				submissionKey := fmt.Sprintf("submission:%s", submissionID)
+				submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+
+				if err != nil {
+					log.Printf("ERROR: Could not verify submission status for %s: %v", submissionID, err)
+					return
+				}
+
+				if submissionData["status"] != "approved" {
+					log.Printf("WARNING: Attempted to create ticket for unapproved participant submission %s (status: %s). Blocking ticket creation.",
+						submissionID, submissionData["status"])
+					return
+				}
+
+				// Check if ticket already exists
+				if existingTicket := submissionData["ticket_id"]; existingTicket != "" {
+					log.Printf("Ticket already exists for submission %s: %s", submissionID, existingTicket)
+					return
+				}
+
+				fmt.Printf("Participant submission %s is approved, proceeding with ticket creation", submissionID)
+			}
+		}
+	}
+
 	// Generate unique token for this ticket
 	token := generateUniqueToken()
 	productID := lineItem.Price.Product.ID
@@ -1094,12 +1216,19 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 		"stripe_checkout_session_id": session.ID,
 		"stripe_payment_intent_id":   session.PaymentIntent.ID,
 		"stripe_product_id":          productID,
-		"customer_email":             session.CustomerDetails.Email,
-		"customer_name":              session.CustomerDetails.Name,
+		"customer_email":             customerEmail,
+		"customer_name":              customerName,
 		"quantity":                   lineItem.Quantity,
 		"purchase_date":              time.Now().Format(time.RFC3339),
 		"checked_in":                 "false",
 		"event_name":                 lineItem.Price.Product.Name,
+		"ticket_type":                "General Admission", // Default for non-participants
+	}
+
+	// Add submission info if this is a participant
+	if submissionID, ok := session.Metadata["submission_id"]; ok && submissionID != "" {
+		ticketData["submission_id"] = submissionID
+		ticketData["ticket_type"] = "Participant"
 	}
 
 	// Store the ticket data
@@ -1150,6 +1279,8 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	if err != nil {
 		log.Printf("Error sending ticket email: %v", err)
 	}
+
+	fmt.Printf("Successfully created ticket %s for customer %s", token, customerEmail)
 }
 
 // sendParticipantTicketEmail sends a special ticket email for approved vehicle participants
@@ -1307,4 +1438,95 @@ func generateSubmissionRecoveryHTML(data map[string]interface{}) string {
 	`, recoveryURL, submissionID, time.Now().Year())
 
 	return html
+}
+
+// generateApprovalWithTicketEmailHTML generates email HTML for approved participants with ticket
+func generateApprovalWithTicketEmailHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventID, _ := data["EventID"].(string)
+	ticketCode, _ := data["TicketCode"].(string)
+	reviewNotes, _ := data["ReviewNotes"].(string)
+
+	reviewNotesHTML := ""
+	if reviewNotes != "" {
+		reviewNotesHTML = fmt.Sprintf(`
+			<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffc107;">
+				<h3 style="margin-top: 0; color: #856404;">Review Notes from Our Team</h3>
+				<p style="margin: 0;">%s</p>
+			</div>
+		`, reviewNotes)
+	}
+
+	return fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Vehicle Approved + Your Ticket - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1 style="color: #28a745;">✓ Vehicle Approved & Ticket Issued!</h1>
+			</div>
+
+			<p>Dear %s,</p>
+
+			<p>Excellent news! Your vehicle submission has been approved and your payment has been processed successfully:</p>
+
+			<div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0; color: #007bff;">Vehicle Details</h2>
+				<p style="font-size: 18px; font-weight: bold; margin: 10px 0;">%s</p>
+				<p><strong>Event ID:</strong> %s</p>
+			</div>
+
+			%s
+
+			<div style="background-color: #d4edda; padding: 20px; border-radius: 5px; margin: 20px 0; border: 2px solid #28a745;">
+				<h2 style="margin-top: 0; color: #155724;">Your Event Ticket</h2>
+				<p style="margin: 10px 0;">Your ticket has been generated and your vehicle is confirmed for the event!</p>
+				<p style="font-size: 20px; font-family: monospace; background-color: white; padding: 10px; border-radius: 5px; text-align: center;">
+					<strong>Ticket Code:</strong> %s
+				</p>
+				<p style="font-size: 14px; color: #666; text-align: center;">
+					A separate email with your QR code and full ticket details has been sent.
+				</p>
+			</div>
+
+			<div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h3 style="margin-top: 0;">Important Information for Participants</h3>
+				<ul style="margin: 10px 0; padding-left: 20px;">
+					<li>Please arrive at least 30 minutes before the event start time</li>
+					<li>Have your vehicle clean and ready for display</li>
+					<li>Bring your ticket (printed or on your phone) for check-in</li>
+					<li>Follow all event guidelines and instructions from staff</li>
+					<li>Be prepared to position your vehicle as directed by event coordinators</li>
+				</ul>
+			</div>
+
+			<div style="margin-top: 30px; padding: 20px; background-color: #e8f4f8; border-radius: 5px;">
+				<h3 style="margin-top: 0;">What's Next?</h3>
+				<ol style="margin: 10px 0; padding-left: 20px;">
+					<li>Check your email for your event ticket with QR code</li>
+					<li>Save the ticket to your phone or print it out</li>
+					<li>Prepare your vehicle for the show</li>
+					<li>Arrive early on event day for participant check-in</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>We're thrilled to have you and your vehicle as part of our event! If you have any questions, please don't hesitate to contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a>.</p>
+			</div>
+
+			<div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; font-size: 12px; color: #6c757d;">
+				<p><strong>Euro Haus Events</strong><br>
+				Premium Automotive Experiences</p>
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+				<p style="margin-top: 10px;">
+					<em>This email confirms your approved participation status and successful payment processing.</em>
+				</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, vehicleDetails, eventID, reviewNotesHTML, ticketCode, time.Now().Year())
 }
