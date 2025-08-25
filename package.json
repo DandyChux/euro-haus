@@ -44,6 +44,7 @@
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.57.0",
     "react-qr-reader": "3.0.0-beta-1",
+    "react-qr-scanner": "1.0.0-alpha.11",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.8",

@@ -2,16 +2,21 @@ package handlers
 
 import (
 	"encoding/json"
+	"euro-haus-api/services"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 )
 
+// CreateProductRequest represents the request body for creating a product
 type CreateProductRequest struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
@@ -21,6 +26,7 @@ type CreateProductRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
+// CreateProductResponse represents the response body for creating a product
 type CreateProductResponse struct {
 	Success   bool   `json:"success"`
 	ProductID string `json:"product_id"`
@@ -54,11 +60,19 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Process metadata to handle large fields
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata)
+	if err != nil {
+		log.Printf("Warning: Error processing metadata: %v", err)
+		// Continue with original metadata if processing fails
+		processedMetadata = req.Metadata
+	}
+
 	// Create product in Stripe
 	productParams := &stripe.ProductParams{
 		Name:     stripe.String(req.Name),
 		Active:   stripe.Bool(true),
-		Metadata: req.Metadata,
+		Metadata: processedMetadata,
 	}
 
 	if req.Description != "" {
@@ -104,6 +118,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Warning: Failed to set default price for product %s: %v", newProduct.ID, err)
 		// Continue anyway, the product and price were created successfully
+		updatedProduct = newProduct
 	}
 
 	log.Printf("Successfully created product %s with price %s", newProduct.ID, newPrice.ID)
@@ -170,10 +185,18 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Process metadata to handle large fields
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata)
+	if err != nil {
+		log.Printf("Warning: Error processing metadata: %v", err)
+		// Continue with original metadata if processing fails
+		processedMetadata = req.Metadata
+	}
+
 	// Update product in Stripe
 	productParams := &stripe.ProductParams{
 		Name:     stripe.String(req.Name),
-		Metadata: req.Metadata,
+		Metadata: processedMetadata,
 	}
 
 	if req.Description != "" {
@@ -622,4 +645,85 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		"success":      true,
 		"defaultPrice": updatedProduct.DefaultPrice.ID,
 	})
+}
+
+// ProcessLargeMetadata handles metadata fields that might exceed Stripe's limits
+func ProcessLargeMetadata(metadata map[string]string) (map[string]string, error) {
+	processedMetadata := make(map[string]string)
+
+	// List of fields that might be large and should be stored externally
+	largeFields := []string{"sponsors", "sponsor_tiers", "agenda", "includes"}
+
+	for key, value := range metadata {
+		// Check if this is a potentially large field
+		isLargeField := false
+		for _, field := range largeFields {
+			if key == field {
+				isLargeField = true
+				break
+			}
+		}
+
+		// If it's a large field and exceeds 400 chars (leaving buffer), store externally
+		if isLargeField && len(value) > 400 {
+			// Generate a unique identifier for this metadata
+			metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+
+			// Parse the JSON value
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
+				// If it's not JSON, store as-is
+				jsonData = value
+			}
+
+			// Upload to Spaces
+			jsonURL, err := services.UploadJSON(jsonData, metadataID, "product-metadata")
+			if err != nil {
+				log.Printf("Warning: Failed to upload large metadata field %s: %v", key, err)
+				// Fall back to truncating the data
+				if len(value) > 490 {
+					processedMetadata[key] = value[:490] + "..."
+				} else {
+					processedMetadata[key] = value
+				}
+				processedMetadata[key+"_truncated"] = "true"
+			} else {
+				// Store the URL reference instead
+				processedMetadata[key+"_url"] = jsonURL
+				// Store a flag indicating this field is stored externally
+				processedMetadata[key+"_external"] = "true"
+				// Optionally store a preview/summary
+				if len(value) > 100 {
+					processedMetadata[key+"_preview"] = value[:100] + "..."
+				}
+			}
+		} else {
+			// Small enough to store directly
+			processedMetadata[key] = value
+		}
+	}
+
+	return processedMetadata, nil
+}
+
+// RetrieveLargeMetadata fetches externally stored metadata fields
+func RetrieveLargeMetadata(metadata map[string]string) map[string]string {
+	processedMetadata := make(map[string]string)
+
+	for key, value := range metadata {
+		// Check if this field is stored externally
+		if strings.HasSuffix(key, "_external") && value == "true" {
+			fieldName := strings.TrimSuffix(key, "_external")
+			if urlKey := fieldName + "_url"; metadata[urlKey] != "" {
+				// For now, just pass the URL through - the client can fetch it
+				// In a production system, you might want to fetch and cache the data
+				processedMetadata[fieldName] = metadata[urlKey]
+			}
+		} else if !strings.HasSuffix(key, "_url") && !strings.HasSuffix(key, "_preview") && !strings.HasSuffix(key, "_external") && !strings.HasSuffix(key, "_truncated") {
+			// Regular metadata field
+			processedMetadata[key] = value
+		}
+	}
+
+	return processedMetadata
 }

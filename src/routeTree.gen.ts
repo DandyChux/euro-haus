@@ -30,6 +30,7 @@ import { Route as AdminSubmissionIssuesImport } from './routes/admin/submission-
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
+import { Route as AdminEventsImport } from './routes/admin/events'
 import { Route as AdminCouponsImport } from './routes/admin/coupons'
 import { Route as EventsSlugCheckinImport } from './routes/events/$slug_.checkin'
 
@@ -149,6 +150,12 @@ const AdminLoginRoute = AdminLoginImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminEventsRoute = AdminEventsImport.update({
+  id: '/admin/events',
+  path: '/admin/events',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const AdminCouponsRoute = AdminCouponsImport.update({
   id: '/admin/coupons',
   path: '/admin/coupons',
@@ -198,6 +205,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/coupons'
       fullPath: '/admin/coupons'
       preLoaderRoute: typeof AdminCouponsImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/events': {
+      id: '/admin/events'
+      path: '/admin/events'
+      fullPath: '/admin/events'
+      preLoaderRoute: typeof AdminEventsImport
       parentRoute: typeof rootRoute
     }
     '/admin/login': {
@@ -323,6 +337,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -347,6 +362,7 @@ export interface FileRoutesByTo {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -372,6 +388,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
@@ -398,6 +415,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -421,6 +439,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -444,6 +463,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
@@ -469,6 +489,7 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   PaymentRoute: typeof PaymentRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
+  AdminEventsRoute: typeof AdminEventsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
@@ -493,6 +514,7 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   PaymentRoute: PaymentRoute,
   AdminCouponsRoute: AdminCouponsRoute,
+  AdminEventsRoute: AdminEventsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
@@ -526,6 +548,7 @@ export const routeTree = rootRoute
         "/cart",
         "/payment",
         "/admin/coupons",
+        "/admin/events",
         "/admin/login",
         "/admin/media",
         "/admin/products",
@@ -558,6 +581,9 @@ export const routeTree = rootRoute
     },
     "/admin/coupons": {
       "filePath": "admin/coupons.tsx"
+    },
+    "/admin/events": {
+      "filePath": "admin/events.tsx"
     },
     "/admin/login": {
       "filePath": "admin/login.tsx"

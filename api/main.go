@@ -98,10 +98,10 @@ func main() {
 	api.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
 	api.HandleFunc("/products/{id}/prices", handlers.GetProductPrices).Methods("GET", "OPTIONS")
 
-	// Event endpoints - specific routes first, then parameterized routes
+	// Event endpoints - public validation, admin check-in
 	api.HandleFunc("/events/ticket/validate", handlers.ValidateTicket).Methods("POST", "OPTIONS")
-	api.HandleFunc("/events/ticket/check-in", handlers.CheckInTicket).Methods("POST", "OPTIONS")
-	api.HandleFunc("/events/attendees", handlers.GetEventAttendees).Methods("GET", "OPTIONS")
+	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/updates", handlers.HandleEventUpdates)
 	api.HandleFunc("/events/{eventId}/tickets", handlers.GetEventTickets).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/{slug}", handlers.GetEventBySlug).Methods("GET", "OPTIONS")

@@ -20,7 +20,8 @@ import {
 	ShoppingBag,
 	Car,
 	Tag,
-	AlertTriangle
+	AlertTriangle,
+	TicketIcon
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -121,6 +122,15 @@ function AdminDashboardContent() {
 			color: 'text-blue-600',
 			bgColor: 'bg-blue-50',
 			stats: stats ? `${stats.totalProducts} products` : null,
+		},
+		{
+			title: 'Event Check-In',
+			description: 'Check in attendees and manage event tickets',
+			icon: TicketIcon,
+			href: '/admin/events',
+			color: 'text-indigo-600',
+			bgColor: 'bg-indigo-50',
+			stats: stats ? `${stats.totalEvents} events` : null,
 		},
 		{
 			title: 'Event Management',

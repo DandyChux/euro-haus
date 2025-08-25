@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,4 +101,56 @@ func UploadFile(fileData io.Reader, filename string, contentType string, folder 
 	)
 
 	return fileURL, nil
+}
+
+// UploadJSON uploads JSON data to DigitalOcean Spaces
+func UploadJSON(data interface{}, filename string, folder string) (string, error) {
+	// Marshal data to JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	// Generate unique filename if not provided
+	if filename == "" {
+		filename = fmt.Sprintf("data-%s.json", uuid.New().String()[:8])
+	} else if !strings.HasSuffix(filename, ".json") {
+		filename += ".json"
+	}
+
+	// Use provided folder or default
+	if folder == "" {
+		folder = "metadata"
+	}
+
+	// Ensure folder doesn't have leading/trailing slashes
+	folder = strings.Trim(folder, "/")
+	if folder != "" {
+		folder = folder + "/"
+	}
+
+	key := folder + filename
+
+	// Upload to DigitalOcean Spaces
+	_, err = S3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:        aws.String(os.Getenv("SPACES_BUCKET")),
+		Key:           aws.String(key),
+		Body:          bytes.NewReader(jsonData),
+		ContentLength: aws.Int64(int64(len(jsonData))),
+		ContentType:   aws.String("application/json"),
+		ACL:           types.ObjectCannedACLPublicRead,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to upload JSON: %w", err)
+	}
+
+	// Return the public URL
+	jsonURL := fmt.Sprintf("https://%s.%s/%s",
+		os.Getenv("SPACES_BUCKET"),
+		os.Getenv("SPACES_ENDPOINT"),
+		key,
+	)
+
+	return jsonURL, nil
 }

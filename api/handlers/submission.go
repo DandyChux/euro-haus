@@ -349,6 +349,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 
 	// Now handle payment capture if there's a payment intent
 	paymentCaptured := false
+	paymentProcessing := false
 
 	if submission.CheckoutSessionID != "" {
 		// Retrieve the checkout session
@@ -365,6 +366,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 				if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
 					// Capture the payment
 					fmt.Printf("Capturing payment for submission %s (payment intent: %s)", submissionID, pi.ID)
+					paymentProcessing = true
 
 					capturedPI, err := paymentintent.Capture(pi.ID, nil)
 					if err != nil {
@@ -389,6 +391,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 
 						// The ticket will be created when the payment.intent.succeeded webhook fires
 						// This ensures proper flow and prevents duplicate tickets
+						// The webhook will also send the approval + ticket email
 					}
 				} else if pi.Status == "succeeded" {
 					// Payment already succeeded (might be auto-capture)
@@ -409,47 +412,8 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Send approval email (without payment link if payment was captured)
-	var paymentLink string
-	if !paymentCaptured && submission.CheckoutSessionID == "" {
-		// No payment initiated yet - create a payment link
-		baseUrl := os.Getenv("BASE_URL")
-		paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
-	} else if paymentCaptured {
-		paymentLink = "Payment has been processed successfully. Your ticket will be sent shortly."
-	} else {
-		paymentLink = "Payment is being processed. You will receive your ticket once payment is complete."
-	}
-
-	// Send approval email
-	go func() {
-		emailData := map[string]interface{}{
-			"ParticipantName": submission.ParticipantName,
-			"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-			"EventID":         submission.EventID,
-			"PaymentLink":     paymentLink,
-			"ReviewNotes":     req.Notes,
-			"PaymentCaptured": paymentCaptured,
-		}
-
-		msg := &services.EmailMessage{
-			To:           []string{submission.ParticipantEmail},
-			Subject:      "Your Vehicle Submission Has Been Approved! - Euro Haus",
-			TemplateID:   "submission-approved",
-			TemplateData: emailData,
-			BodyHTML:     generateApprovalEmailHTML(emailData),
-		}
-
-		if err := services.SendEmail(msg); err != nil {
-			log.Printf("Error sending approval email for submission %s: %v", submission.ID, err)
-		} else {
-			// Update email sent status
-			rdb.HSet(ctx, submissionKey, map[string]interface{}{
-				"approval_email_sent":    "true",
-				"approval_email_sent_at": time.Now().Format(time.RFC3339),
-			})
-		}
-	}()
+	// Log the decision
+	fmt.Printf("Submission %s approved. Payment status: captured=%v, processing=%v. Email will be sent upon payment completion.", submissionID, paymentCaptured, paymentProcessing)
 
 	// Get updated submission
 	updatedSubmission, _ := getSubmissionByID(submissionID)
@@ -458,7 +422,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"submission":      updatedSubmission,
 		"paymentCaptured": paymentCaptured,
-		"message":         "Submission approved successfully",
+		"message":         "Submission approved successfully. Payment is being processed and confirmation email will be sent shortly.",
 	})
 }
 
@@ -1360,7 +1324,7 @@ func generateSubmissionConfirmationHTML(data map[string]interface{}) string {
 			<p>Thank you for submitting your vehicle for our event. We have received your submission for:</p>
 			<p><strong>%s</strong></p>
 			<p>Your submission ID is: <strong>%s</strong></p>
-			<p>We will review your submission and notify you within 48 hours. Once approved, you'll receive a link to complete your registration and payment.</p>
+			<p>We will review your submission and notify you within a week. Once approved, you'll receive a link to complete your registration and payment.</p>
 			<p>If you have any questions, please don't hesitate to contact us.</p>
 			<p>Best regards,<br>The Euro Haus Events Team</p>
 		</body>

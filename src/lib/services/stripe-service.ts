@@ -1,5 +1,33 @@
 import { apiClient } from '../api';
-import { Sponsor, SponsorTier } from '../schemas/product-schema';
+import { PriceTier, Sponsor, SponsorTier } from '../schemas/product-schema';
+import { fetchExternalMetadata } from '../utils';
+
+export interface AgendaItem {
+	time: string;
+	activity: string;
+}
+
+export interface EventFormData {
+	name: string;
+	slug: string;
+	description: string;
+	price: string;
+	capacity: string;
+	location: string;
+	eventDate: string;
+	eventTime: string;
+	organizer: string;
+	status: 'draft' | 'published' | 'sold_out';
+	sponsors: Sponsor[];
+	sponsorTiers?: SponsorTier[];
+	tags?: Array<{ value: string }>;
+	agenda?: AgendaItem[];
+	includes?: Array<{ value: string }>;
+	images?: string[];
+	hasTiers?: boolean;
+	priceTiers?: PriceTier[];
+	maxQuantity?: number;
+}
 
 export interface StripeProduct {
 	id: string;
@@ -56,7 +84,7 @@ export interface EventProduct extends Product {
 	organizer?: string;
 	tags?: string[];
 	status?: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' | 'soldout';
-	agenda?: { time: string; activity: string }[];
+	agenda?: AgendaItem[];
 	includes?: string[];
 	sponsors?: Sponsor[];
 	sponsorTiers?: SponsorTier[];
@@ -122,10 +150,13 @@ export const stripeService = {
 			}
 
 			// Filter for event products only
-			return response.data.products
-				.filter(p => p.metadata.type === 'event')
-				.map(p => this.transformStripeEventProduct(p))
-				.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+			const eventProducts = await Promise.all(
+				response.data.products
+					.filter(p => p.metadata.type === 'event')
+					.map(p => this.transformStripeEventProduct(p))
+			);
+
+			return eventProducts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 		} catch (error) {
 			console.error('Failed to fetch events from Stripe:', error);
 			throw new Error('Failed to load events');
@@ -224,52 +255,51 @@ export const stripeService = {
 		};
 	},
 
-	transformStripeEventProduct(stripeProduct: StripeProduct): EventProduct {
-		const baseProduct = this.transformStripeProduct(stripeProduct);
+	async transformStripeEventProduct(stripeProduct: StripeProduct): Promise<EventProduct> {
+		// Fetch external metadata if needed
+		const metadata = await fetchExternalMetadata(stripeProduct.metadata);
 
-		// Parse event-specific metadata
-		const availableSpots = stripeProduct.metadata.available_spots ?
-			parseInt(stripeProduct.metadata.available_spots) : undefined;
+		// Parse available spots
+		const availableSpots = metadata.available_spots
+			? parseInt(metadata.available_spots)
+			: (metadata.capacity ? parseInt(metadata.capacity) : null);
 
-		const capacity = stripeProduct.metadata.capacity ?
-			parseInt(stripeProduct.metadata.capacity) : undefined;
+		// Parse complex fields
+		const sponsors = metadata.sponsors ?
+			(typeof metadata.sponsors === 'string' ? JSON.parse(metadata.sponsors) : metadata.sponsors) : [];
 
-		// Determine status based on available spots and date
-		let status: EventProduct['status'] = 'upcoming';
-		if (availableSpots === 0) {
-			status = 'soldout';
-		} else if (stripeProduct.metadata.status) {
-			status = stripeProduct.metadata.status as EventProduct['status'];
-		}
+		const sponsorTiers = metadata.sponsor_tiers ?
+			(typeof metadata.sponsor_tiers === 'string' ? JSON.parse(metadata.sponsor_tiers) : metadata.sponsor_tiers) : [];
+
+		const includes = metadata.includes ?
+			(typeof metadata.includes === 'string' ? JSON.parse(metadata.includes) : metadata.includes) : [];
+
+		const agenda = metadata.agenda ?
+			(typeof metadata.agenda === 'string' ? JSON.parse(metadata.agenda) : metadata.agenda) : [];
+
+		const tags = metadata.tags ?
+			(typeof metadata.tags === 'string' ? JSON.parse(metadata.tags) : metadata.tags) : [];
 
 		return {
-			...baseProduct,
-			slug: stripeProduct.metadata.slug || stripeProduct.id,
-			date: stripeProduct.metadata.event_date || new Date().toISOString(),
-			location: stripeProduct.metadata.location || 'TBA',
-			capacity,
-			availableSpots,
-			organizer: stripeProduct.metadata.organizer || 'Euro Haus Events Team',
-			tags: stripeProduct.metadata.tags ? JSON.parse(stripeProduct.metadata.tags) : [],
-			status,
-			agenda: stripeProduct.metadata.agenda ? JSON.parse(stripeProduct.metadata.agenda) : [],
-			includes: stripeProduct.metadata.includes ? JSON.parse(stripeProduct.metadata.includes) : [],
+			id: stripeProduct.id,
+			title: stripeProduct.name,
+			description: stripeProduct.description || '',
+			price: stripeProduct.default_price?.unit_amount ? stripeProduct.default_price.unit_amount / 100 : 0,
+			imageUrl: stripeProduct.images?.[0] || '',
+			slug: metadata.slug || '',
+			date: metadata.event_date || '',
+			location: metadata.location || '',
+			capacity: metadata.capacity || '0',
+			organizer: metadata.organizer || '',
+			status: metadata.status || 'draft',
+			tags,
+			agenda,
+			includes,
 			maxQuantity: availableSpots || 10,
-			sponsors: stripeProduct.metadata.sponsors ? JSON.parse(stripeProduct.metadata.sponsors) : [],
-			sponsorTiers: stripeProduct.metadata.sponsor_tiers ? JSON.parse(stripeProduct.metadata.sponsor_tiers) : [],
-			hasTiers: stripeProduct.metadata.has_tiers === 'true',
-			lowestPrice: stripeProduct.metadata.lowest_price ? parseFloat(stripeProduct.metadata.lowest_price) : undefined,
-			venue: stripeProduct.metadata.venue,
-			venueHours: stripeProduct.metadata.venue_hours ? JSON.parse(stripeProduct.metadata.venue_hours) : undefined,
-			contactPhone: stripeProduct.metadata.contact_phone,
-			contactEmail: stripeProduct.metadata.contact_email,
-			venueWebsite: stripeProduct.metadata.venue_website,
-			parking: stripeProduct.metadata.parking,
-			accessibility: stripeProduct.metadata.accessibility,
-			publicTransport: stripeProduct.metadata.public_transport,
-			specialInstructions: stripeProduct.metadata.special_instructions,
-			startTime: stripeProduct.metadata.start_time,
-			endTime: stripeProduct.metadata.end_time,
+			sponsors,
+			sponsorTiers,
+			hasTiers: metadata.has_tiers === 'true',
+			lowestPrice: metadata.lowest_price ? parseFloat(metadata.lowest_price) : undefined,
 		};
 	},
 
