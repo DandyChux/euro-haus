@@ -70,7 +70,7 @@ export const Route = createFileRoute('/catalog/$id')({
 					return { product: eventWithTiers, isEvent: true, hasTiers: true };
 				}
 				// Fall back to regular event
-				const transformedEvent = stripeService.transformStripeEventProduct(product);
+				const transformedEvent = await stripeService.transformStripeEventProduct(product);
 				return { product: transformedEvent, isEvent: true, hasTiers: false };
 			} else {
 				// Try to fetch product with variants

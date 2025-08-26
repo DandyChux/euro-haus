@@ -32,7 +32,6 @@ import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
 import { Route as AdminEventsImport } from './routes/admin/events'
 import { Route as AdminCouponsImport } from './routes/admin/coupons'
-import { Route as EventsSlugCheckinImport } from './routes/events/$slug_.checkin'
 
 // Create/Update Routes
 
@@ -159,12 +158,6 @@ const AdminEventsRoute = AdminEventsImport.update({
 const AdminCouponsRoute = AdminCouponsImport.update({
   id: '/admin/coupons',
   path: '/admin/coupons',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const EventsSlugCheckinRoute = EventsSlugCheckinImport.update({
-  id: '/events/$slug_/checkin',
-  path: '/events/$slug/checkin',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -319,13 +312,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsIndexImport
       parentRoute: typeof rootRoute
     }
-    '/events/$slug_/checkin': {
-      id: '/events/$slug_/checkin'
-      path: '/events/$slug/checkin'
-      fullPath: '/events/$slug/checkin'
-      preLoaderRoute: typeof EventsSlugCheckinImport
-      parentRoute: typeof rootRoute
-    }
   }
 }
 
@@ -353,7 +339,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
-  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesByTo {
@@ -378,7 +363,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
-  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesById {
@@ -404,7 +388,6 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
-  '/events/$slug_/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRouteTypes {
@@ -431,7 +414,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog'
     | '/events'
-    | '/events/$slug/checkin'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -455,7 +437,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/catalog'
     | '/events'
-    | '/events/$slug/checkin'
   id:
     | '__root__'
     | '/'
@@ -479,7 +460,6 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/catalog/'
     | '/events/'
-    | '/events/$slug_/checkin'
   fileRoutesById: FileRoutesById
 }
 
@@ -505,7 +485,6 @@ export interface RootRouteChildren {
   AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
-  EventsSlugCheckinRoute: typeof EventsSlugCheckinRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -530,7 +509,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
-  EventsSlugCheckinRoute: EventsSlugCheckinRoute,
 }
 
 export const routeTree = rootRoute
@@ -563,8 +541,7 @@ export const routeTree = rootRoute
         "/events/$slug",
         "/admin/",
         "/catalog/",
-        "/events/",
-        "/events/$slug_/checkin"
+        "/events/"
       ]
     },
     "/": {
@@ -629,9 +606,6 @@ export const routeTree = rootRoute
     },
     "/events/": {
       "filePath": "events/index.tsx"
-    },
-    "/events/$slug_/checkin": {
-      "filePath": "events/$slug_.checkin.tsx"
     }
   }
 }

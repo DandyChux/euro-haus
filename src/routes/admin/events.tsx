@@ -25,7 +25,7 @@ import {
 	Ticket as TicketIcon
 } from 'lucide-react';
 import { format, isAfter } from 'date-fns';
-import QrScanner from 'react-qr-scanner';
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 export const Route = createFileRoute('/admin/events')({
 	loader: async () => {
@@ -340,16 +340,20 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 				<CardContent className="p-6">
 					{scanMode === 'camera' ? (
 						<div className="max-w-md mx-auto">
-							<QrScanner
-								delay={300}
+							<Scanner
+								scanDelay={300}
 								onError={(err: any) => {
-									console.error('QR Scanner error:', err);
-									toast.error('Camera error. Please try manual entry.');
+									console.error('Scanner error:', err);
+									toast.error('Scanner error. Please try manual entry.');
 								}}
 								onScan={handleScan}
-								style={{ width: '100%' }}
+								styles={{
+									container: {
+										width: '100%'
+									}
+								}}
 								constraints={{
-									video: { facingMode: 'environment' }
+									facingMode: 'environment'
 								}}
 							/>
 							<p className="text-sm text-muted-foreground text-center mt-4">
