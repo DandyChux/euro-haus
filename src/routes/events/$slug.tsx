@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { stripeService, TieredPrice, EventWithTiers } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '~/lib/api';
 import { TieredPricing } from '~/components/tiered-pricing';
@@ -18,6 +18,243 @@ import { VehicleSubmissionForm } from '~/components/vehicle-submission-form';
 import { loadStripe } from '@stripe/stripe-js';
 import { EventSponsorTiers } from '~/components/event-sponsor-tiers';
 import { MapLocation } from '~/components/ui/map-location';
+
+interface MerchandiseModalProps {
+	isOpen: boolean;
+	event: any; // Replace with your Event type
+	onClose: () => void;
+	onContinue: (selectedProducts: SelectedProduct[]) => void;
+	onSkip: () => void;
+}
+
+interface SelectedProduct {
+	id: string;
+	priceId: string;
+	name: string;
+	quantity: number;
+	price: {
+		id: string;
+		unit_amount: number;
+		currency: string;
+	};
+}
+
+const MerchandiseModal: React.FC<MerchandiseModalProps> = ({
+	isOpen,
+	event,
+	onClose,
+	onContinue,
+	onSkip
+}) => {
+	const [selectedMerchandise, setSelectedMerchandise] = useState<SelectedProduct[]>([]);
+
+	// Reset selections when modal closes
+	useEffect(() => {
+		if (!isOpen) {
+			setSelectedMerchandise([]);
+		}
+	}, [isOpen]);
+
+	if (!isOpen) return null;
+
+	// Filter for merchandise and addon products
+	const merchandiseProducts = event?.linkedProducts?.filter((p: any) =>
+		p.metadata?.type === 'merchandise' ||
+		p.metadata?.type === 'addon'
+	) || [];
+
+	const handleToggleProduct = (product: any) => {
+		const existing = selectedMerchandise.find(m => m.id === product.id);
+
+		if (existing) {
+			setSelectedMerchandise(
+				selectedMerchandise.filter(m => m.id !== product.id)
+			);
+		} else {
+			setSelectedMerchandise([
+				...selectedMerchandise,
+				{
+					id: product.id,
+					priceId: product.price?.id,
+					name: product.title,
+					quantity: 1,
+					price: product.price
+				}
+			]);
+		}
+	};
+
+	const handleUpdateQuantity = (productId: string, quantity: number) => {
+		if (quantity < 1) return;
+
+		setSelectedMerchandise(prev =>
+			prev.map(item =>
+				item.id === productId
+					? { ...item, quantity }
+					: item
+			)
+		);
+	};
+
+	const isProductSelected = (productId: string) => {
+		return selectedMerchandise.some(m => m.id === productId);
+	};
+
+	const getSelectedQuantity = (productId: string) => {
+		const item = selectedMerchandise.find(m => m.id === productId);
+		return item?.quantity || 1;
+	};
+
+	const getTotalAddedValue = () => {
+		return selectedMerchandise.reduce((total, item) => {
+			return total + ((item.price?.unit_amount || 0) * item.quantity);
+		}, 0) / 100;
+	};
+
+	const handleContinue = () => {
+		onContinue(selectedMerchandise);
+		onClose();
+	};
+
+	const handleSkip = () => {
+		onSkip();
+		onClose();
+	};
+
+	if (merchandiseProducts.length === 0) {
+		// If no merchandise available, skip directly
+		handleSkip();
+		return null;
+	}
+
+	return (
+		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+			<div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+				{/* Header */}
+				<div className="mb-4">
+					<h2 className="text-2xl font-bold mb-2">
+						Complete Your Event Experience
+					</h2>
+					<p className="text-gray-600">
+						Consider adding official merchandise and add-ons for this event
+					</p>
+				</div>
+
+				{/* Products Grid - Scrollable */}
+				<div className="flex-1 overflow-y-auto mb-4">
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						{merchandiseProducts.map((product: any) => {
+							const isSelected = isProductSelected(product.id);
+							const quantity = getSelectedQuantity(product.id);
+
+							return (
+								<div
+									key={product.id}
+									className={`border rounded-lg p-4 transition-all ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+										}`}
+								>
+									{product.images?.[0] && (
+										<img
+											src={product.images[0]}
+											alt={product.title}
+											className="w-full h-48 object-cover rounded mb-2"
+										/>
+									)}
+									<h3 className="font-semibold mb-1">{product.title}</h3>
+									<p className="text-sm text-gray-600 mb-3 line-clamp-2">
+										{product.description}
+									</p>
+
+									<div className="space-y-2">
+										<div className="flex justify-between items-center">
+											<span className="font-bold text-lg">
+												${((product.price?.unit_amount || 0) / 100).toFixed(2)}
+											</span>
+											{product.metadata?.type === 'merchandise' && (
+												<span className="text-xs bg-gray-100 px-2 py-1 rounded">
+													Official Merch
+												</span>
+											)}
+										</div>
+
+										{isSelected ? (
+											<div className="flex items-center gap-2">
+												<button
+													onClick={() => handleUpdateQuantity(product.id, quantity - 1)}
+													className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+												>
+													-
+												</button>
+												<span className="w-12 text-center">{quantity}</span>
+												<button
+													onClick={() => handleUpdateQuantity(product.id, quantity + 1)}
+													className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+												>
+													+
+												</button>
+												<button
+													onClick={() => handleToggleProduct(product)}
+													className="ml-auto px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+												>
+													Remove
+												</button>
+											</div>
+										) : (
+											<button
+												onClick={() => handleToggleProduct(product)}
+												className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+											>
+												Add to Cart
+											</button>
+										)}
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+
+				{/* Footer with Actions */}
+				<div className="border-t pt-4">
+					{selectedMerchandise.length > 0 && (
+						<div className="mb-4 p-3 bg-green-50 rounded-lg">
+							<div className="flex justify-between items-center">
+								<span className="text-sm">
+									{selectedMerchandise.length} item(s) selected
+								</span>
+								<span className="font-semibold">
+									Additional Total: ${getTotalAddedValue().toFixed(2)}
+								</span>
+							</div>
+						</div>
+					)}
+
+					<div className="flex justify-between">
+						<button
+							onClick={handleSkip}
+							className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+						>
+							Skip, Continue to Checkout
+						</button>
+
+						<button
+							onClick={handleContinue}
+							className={`px-6 py-3 rounded transition-colors ${selectedMerchandise.length > 0
+								? 'bg-green-500 text-white hover:bg-green-600'
+								: 'bg-blue-500 text-white hover:bg-blue-600'
+								}`}
+						>
+							{selectedMerchandise.length > 0
+								? `Continue with ${selectedMerchandise.length} Additional Item(s)`
+								: 'Continue to Checkout'
+							}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+};
 
 export const Route = createFileRoute('/events/$slug')({
 	loader: async ({ params }) => {
@@ -74,6 +311,11 @@ function EventDetailPage() {
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
 	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+	const [showMerchandiseModal, setShowMerchandiseModal] = useState(false);
+	const [pendingCheckout, setPendingCheckout] = useState<{
+		tier: TieredPrice | null;
+		quantity: number;
+	}>({ tier: null, quantity: 1 });
 
 	// Determine if single price requires vehicle submission
 	const singlePriceRequiresVehicle = singlePriceInfo?.requiresVehicleSubmission;
@@ -107,31 +349,121 @@ function EventDetailPage() {
 			return;
 		}
 
+		// Store the tier selection for later (for merchandise modal)
+		setPendingCheckout({ tier, quantity: tierQuantity });
+
+		// Check if this tier has included products
+		const hasIncludedProducts = tier.includedProducts;
+
+		// If tier doesn't include products and there are linked products, show merchandise modal
+		if (!hasIncludedProducts && event.linkedProducts && event.linkedProducts.length > 0) {
+			setShowMerchandiseModal(true);
+		} else {
+			// Add to cart instead of going to checkout
+			addTierToCart(tier, tierQuantity);
+		}
+	};
+
+	const addTierToCart = (tier: TieredPrice, tierQuantity: number) => {
+		// Build the item name with tier details
+		let itemTitle = `${event?.title || event?.title} - ${tier.name}`;
+
+		// Add included products info if available
+		const includedProducts = tier.includedProducts || [];
+		if (includedProducts.length > 0) {
+			const includedNames = includedProducts.map(p => p.title).join(', ');
+			itemTitle += ` (Includes: ${includedNames})`;
+		}
+
+		// Add to cart
+		addItem({
+			id: `${event?.id}-${tier.priceId}`, // Unique ID for this tier
+			priceId: tier.priceId,
+			title: itemTitle,
+			description: tier.description || `${tier.name} tier ticket`,
+			price: tier.amount,
+			quantity: tierQuantity,
+			imageUrl: event?.imageUrl || '',
+			maxQuantity: tier.maxQuantity,
+			type: 'event',
+			eventDate: event?.date || event?.date,
+		});
+
+		// Reset states
+		setPendingCheckout({ tier: null, quantity: 1 });
+
+		// Optional: Show success message or navigate to cart
+		// toast.success(`Added ${tierQuantity} ${tier.name} ticket(s) to cart`);
+	};
+
+	const proceedToCheckout = async (
+		tier: TieredPrice,
+		tierQuantity: number,
+		addons: SelectedProduct[] = []
+	) => {
 		try {
 			const response = await apiClient.post('/create-checkout-session', {
-				line_items: [
-					{
-						price: tier.priceId,
-						quantity: tierQuantity,
-					}
-				],
-				success_url: `${window.location.origin}/checkout/success`,
-				cancel_url: `${window.location.origin}/checkout/cancel`,
+				priceId: tier.priceId,
+				quantity: tierQuantity,
+				mode: 'payment',
 				metadata: {
 					event_id: event?.id,
 					event_name: event?.title,
 					tier_name: tier.name,
+					type: 'event_ticket',
 				},
+				addons: addons.map(item => ({
+					priceId: item.priceId,
+					quantity: item.quantity || 1
+				}))
 			});
 
 			const stripe = await stripePromise;
+
 			if (stripe && response.data.sessionId) {
 				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
+			} else if (response.data.url) {
+				window.location.href = response.data.url;
 			}
 		} catch (error) {
 			console.error('Checkout error:', error);
 			toast.error('Failed to start checkout');
 		}
+	};
+
+	// Handlers for merchandise modal
+	const handleMerchandiseContinue = (selectedProducts: SelectedProduct[]) => {
+		if (pendingCheckout.tier) {
+			// Add tier to cart
+			addTierToCart(pendingCheckout.tier, pendingCheckout.quantity);
+
+			// Add selected merchandise to cart
+			selectedProducts.forEach(product => {
+				addItem({
+					id: product.id,
+					priceId: product.priceId,
+					title: product.title,
+					description: `${event?.title || 'Event'} Merchandise`,
+					price: (product.price?.unit_amount || 0) / 100,
+					quantity: product.quantity,
+					imageUrl: '', // Add product image if available
+					type: 'product',
+				});
+			});
+		}
+
+		setShowMerchandiseModal(false);
+		setPendingCheckout({ tier: null, quantity: 1 });
+	};
+
+	const handleMerchandiseSkip = () => {
+		if (pendingCheckout.tier) {
+			// Just add the tier to cart without merchandise
+			addTierToCart(pendingCheckout.tier, pendingCheckout.quantity);
+		}
+
+		setShowMerchandiseModal(false);
+		setPendingCheckout({ tier: null, quantity: 1 });
 	};
 
 	const handleSingleCheckout = async () => {
@@ -524,62 +856,6 @@ function EventDetailPage() {
 										/>
 									</CardContent>
 								</Card>
-
-								{/* Add to Cart for Tiered Events */}
-								{selectedTier && (
-									<Card className="shadow-lg border-primary/20">
-										<CardHeader>
-											<CardTitle>Add to Cart</CardTitle>
-										</CardHeader>
-										<CardContent className="space-y-4 pt-6">
-											<div className="text-lg">
-												<span className="font-semibold">{selectedTier.name}</span>
-												<span className="text-muted-foreground"> - ${selectedTier.amount}</span>
-											</div>
-
-											{/* Quantity Selector */}
-											<div className="space-y-2">
-												<label className="text-sm font-medium">Number of Tickets</label>
-												<div className="flex items-center gap-2">
-													<Button
-														variant="outline"
-														size="icon"
-														className="h-8 w-8"
-														onClick={() => setQuantity(Math.max(1, quantity - 1))}
-														disabled={quantity <= 1}
-													>
-														<Minus className="h-3 w-3" />
-													</Button>
-													<Input
-														type="number"
-														value={quantity}
-														onChange={(e) => setQuantity(Math.max(1, Math.min(selectedTier.maxQuantity || 10, parseInt(e.target.value) || 1)))}
-														className="w-16 h-8 text-center"
-														min="1"
-														max={selectedTier.maxQuantity || 10}
-													/>
-													<Button
-														variant="outline"
-														size="icon"
-														className="h-8 w-8"
-														onClick={() => setQuantity(Math.min(selectedTier.maxQuantity || 10, quantity + 1))}
-														disabled={quantity >= (selectedTier.maxQuantity || 10)}
-													>
-														<Plus className="h-3 w-3" />
-													</Button>
-												</div>
-											</div>
-
-											<Button
-												className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-												size="lg"
-												onClick={handleAddToCart}
-											>
-												{selectedTier.requiresVehicleSubmission ? 'Submit Vehicle for Review' : `Add to Cart - $${(selectedTier.amount * quantity).toFixed(2)}`}
-											</Button>
-										</CardContent>
-									</Card>
-								)}
 							</div>
 						) : (
 							/* Single Price Booking */
@@ -726,6 +1002,51 @@ function EventDetailPage() {
 								</div>
 							</div>
 						)}
+						{event?.linkedProducts && event.linkedProducts.length > 0 && (
+							<div className="mt-12">
+								<h3 className="text-2xl font-bold mb-6">Event Merchandise & Add-ons</h3>
+								<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+									{event.linkedProducts.map((product) => (
+										<div key={product.id} className="border rounded-lg p-4">
+											{product.imageUrl && (
+												<img
+													src={product.imageUrl}
+													alt={product.title}
+													className="w-full h-48 object-cover rounded mb-4"
+												/>
+											)}
+											<h4 className="font-semibold mb-2">{product.title}</h4>
+											<p className="text-sm text-gray-600 mb-3">{product.description}</p>
+											{product.price && (
+												<div className="flex justify-between items-center">
+													<span className="font-bold text-lg">
+														${(product.price / 100).toFixed(2)}
+													</span>
+													<Button
+														size="sm"
+														onClick={() => {
+															// Add to cart
+															addItem({
+																id: product.id,
+																priceId: product.priceId,
+																title: product.title,
+																description: product.description || '',
+																price: product.price / 100,
+																quantity: 1,
+																imageUrl: product.imageUrl || '',
+																type: 'product'
+															});
+														}}
+													>
+														Add to Cart
+													</Button>
+												</div>
+											)}
+										</div>
+									))}
+								</div>
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
@@ -745,6 +1066,15 @@ function EventDetailPage() {
 					/>
 				</DialogContent>
 			</Dialog>
+
+			{/* Merchandise Modal */}
+			<MerchandiseModal
+				isOpen={showMerchandiseModal}
+				event={event}
+				onClose={() => setShowMerchandiseModal(false)}
+				onContinue={handleMerchandiseContinue}
+				onSkip={handleMerchandiseSkip}
+			/>
 		</div>
 	);
 }

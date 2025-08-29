@@ -29,25 +29,8 @@ import { apiClient } from '~/lib/api'
 import { useCart } from '~/lib/contexts/cart-context'
 import { toast } from 'sonner'
 import { cn } from '~/lib/utils'
-import { stripeService, ProductVariant, ProductWithVariants, EventWithTiers, TieredPrice } from '~/lib/services/stripe-service'
+import { stripeService, ProductVariant, ProductWithVariants, EventWithTiers, TieredPrice, StripeProduct } from '~/lib/services/stripe-service'
 import { TieredPricing } from '~/components/tiered-pricing'
-
-// Stripe product interface
-interface StripeProduct {
-	id: string
-	name: string
-	description: string | null
-	images: string[]
-	metadata: Record<string, string>
-	active: boolean
-	default_price: {
-		id: string
-		unit_amount: number
-		currency: string
-	} | null
-	created: number
-	updated: number
-}
 
 export const Route = createFileRoute('/catalog/$id')({
 	loader: async ({ params }) => {

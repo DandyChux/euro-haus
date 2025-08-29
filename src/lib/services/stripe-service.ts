@@ -58,6 +58,8 @@ export interface Product {
 	featured?: boolean;
 	category?: string;
 	maxQuantity?: number;
+	tags?: string[];
+	subcategory?: string;
 }
 
 export interface ProductVariant {
@@ -101,6 +103,7 @@ export interface EventProduct extends Product {
 	specialInstructions?: string;
 	startTime?: string;
 	endTime?: string;
+	linkedProducts?: Product[];
 }
 
 
@@ -116,6 +119,7 @@ export interface TieredPrice {
 	soldOut?: boolean;
 	isMostPopular?: boolean;
 	requiresVehicleSubmission?: boolean;
+	includedProducts?: Product[];
 }
 
 export interface EventWithTiers extends EventProduct {
@@ -165,8 +169,13 @@ export const stripeService = {
 
 	async getEventBySlug(slug: string): Promise<EventProduct | null> {
 		try {
-			const events = await this.getAllEvents();
-			return events.find(event => event.slug === slug) || null;
+			const response = await apiClient.get(`/events/${slug}`);
+
+			if (!response.data || !response.data.id) {
+				return null;
+			}
+
+			return this.transformStripeEventProduct(response.data);
 		} catch (error) {
 			console.error('Failed to fetch event:', error);
 			return null;
@@ -239,6 +248,17 @@ export const stripeService = {
 		const compareAtPrice = stripeProduct.metadata.compare_at_price ?
 			parseFloat(stripeProduct.metadata.compare_at_price) : undefined;
 
+		// Parse tags from metadata
+		let tags: string[] = [];
+		if (stripeProduct.metadata.tags) {
+			try {
+				tags = JSON.parse(stripeProduct.metadata.tags);
+			} catch (e) {
+				// If not JSON, treat as comma-separated string
+				tags = stripeProduct.metadata.tags.split(',').map(t => t.trim()).filter(Boolean);
+			}
+		}
+
 		return {
 			id: stripeProduct.id,
 			priceId: stripeProduct.default_price?.id,
@@ -251,6 +271,8 @@ export const stripeService = {
 			inStock: stripeProduct.active && stripeProduct.metadata.in_stock !== 'false',
 			featured: stripeProduct.metadata.featured === 'true',
 			category: stripeProduct.metadata.category || 'merchandise',
+			subcategory: stripeProduct.metadata.subcategory || 'general',
+			tags,
 			maxQuantity: stripeProduct.metadata.max_quantity ? parseInt(stripeProduct.metadata.max_quantity) : undefined,
 		};
 	},
@@ -368,4 +390,87 @@ export const stripeService = {
 			return null;
 		}
 	},
+
+	async linkProductsToEvent(eventId: string, productIds: string[]): Promise<void> {
+		try {
+			await apiClient.post(`/admin/events/${eventId}/link-products`, {
+				eventId,
+				productIds
+			});
+		} catch (error) {
+			console.error('Failed to link products:', error);
+			throw error;
+		}
+	},
+
+	async getEventLinkedProducts(eventId: string): Promise<{
+		linkedProducts: any[];
+		tierProducts: any[];
+	}> {
+		try {
+			const response = await apiClient.get(`/admin/events/${eventId}/linked-products`);
+			return response.data;
+		} catch (error) {
+			console.error('Failed to fetch linked products:', error);
+			throw error;
+		}
+	},
+
+	async addProductsToTier(priceId: string, products: Array<{ productId: string, quantity: number }>): Promise<void> {
+		try {
+			await apiClient.post('/admin/tiers/add-products', {
+				priceId,
+				products
+			});
+		} catch (error) {
+			console.error('Failed to add products to tier:', error);
+			throw error;
+		}
+	},
+
+	async removeProductFromEvent(eventId: string, productId: string): Promise<void> {
+		try {
+			await apiClient.delete(`/admin/events/${eventId}/products/${productId}`);
+		} catch (error) {
+			console.error('Failed to remove product from event:', error);
+			throw error;
+		}
+	},
+
+	// Create checkout session with linked products
+	async createEventCheckoutWithAddons(
+		eventId: string,
+		priceId: string,
+		quantity: number,
+		addons: Array<{ priceId: string, quantity: number }>,
+		metadata?: Record<string, string>
+	): Promise<string> {
+		try {
+			const lineItems = [
+				{
+					price: priceId,
+					quantity
+				},
+				...addons.map(addon => ({
+					price: addon.priceId,
+					quantity: addon.quantity
+				}))
+			];
+
+			const response = await apiClient.post('/create-checkout-session', {
+				lineItems,
+				metadata: {
+					...metadata,
+					eventId,
+					hasAddons: 'true',
+					addonCount: addons.length.toString()
+				}
+			});
+
+			return response.data.url;
+		} catch (error) {
+			console.error('Failed to create checkout session:', error);
+			throw error;
+		}
+	}
 };

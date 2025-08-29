@@ -414,6 +414,29 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		}
 	}
 
+	// Process any bundled products if this was an event with add-ons
+	if fullSession.Metadata != nil {
+		// Check if this checkout included add-ons or tier bundles
+		if fullSession.Metadata["has_addons"] == "true" || fullSession.Metadata["has_bundled_products"] == "true" {
+			customerEmail := fullSession.CustomerEmail
+			if customerEmail == "" && fullSession.Customer != nil {
+				// Get customer email from customer object if needed
+				customerEmail = fullSession.Customer.Email
+			}
+
+			customerName := fullSession.CustomerDetails.Name
+			if customerName == "" && fullSession.Metadata["customer_name"] != "" {
+				customerName = fullSession.Metadata["customer_name"]
+			}
+
+			// Process bundled products
+			if err := ProcessBundledProducts(fullSession.ID, customerEmail, customerName); err != nil {
+				log.Printf("Error processing bundled products for session %s: %v", fullSession.ID, err)
+				// Don't fail the webhook, just log the error
+			}
+		}
+	}
+
 	// Get customer details
 	customerEmail := fullSession.CustomerDetails.Email
 	customerName := fullSession.CustomerDetails.Name

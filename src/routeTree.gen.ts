@@ -31,6 +31,7 @@ import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
 import { Route as AdminEventsImport } from './routes/admin/events'
+import { Route as AdminEventDetailsImport } from './routes/admin/event-details'
 import { Route as AdminCouponsImport } from './routes/admin/coupons'
 
 // Create/Update Routes
@@ -155,6 +156,12 @@ const AdminEventsRoute = AdminEventsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminEventDetailsRoute = AdminEventDetailsImport.update({
+  id: '/admin/event-details',
+  path: '/admin/event-details',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const AdminCouponsRoute = AdminCouponsImport.update({
   id: '/admin/coupons',
   path: '/admin/coupons',
@@ -198,6 +205,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/coupons'
       fullPath: '/admin/coupons'
       preLoaderRoute: typeof AdminCouponsImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/event-details': {
+      id: '/admin/event-details'
+      path: '/admin/event-details'
+      fullPath: '/admin/event-details'
+      preLoaderRoute: typeof AdminEventDetailsImport
       parentRoute: typeof rootRoute
     }
     '/admin/events': {
@@ -323,6 +337,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
   '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
@@ -347,6 +362,7 @@ export interface FileRoutesByTo {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
   '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
@@ -372,6 +388,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
   '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
   '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
@@ -398,6 +415,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/event-details'
     | '/admin/events'
     | '/admin/login'
     | '/admin/media'
@@ -421,6 +439,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/event-details'
     | '/admin/events'
     | '/admin/login'
     | '/admin/media'
@@ -444,6 +463,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/payment'
     | '/admin/coupons'
+    | '/admin/event-details'
     | '/admin/events'
     | '/admin/login'
     | '/admin/media'
@@ -469,6 +489,7 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   PaymentRoute: typeof PaymentRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
+  AdminEventDetailsRoute: typeof AdminEventDetailsRoute
   AdminEventsRoute: typeof AdminEventsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
@@ -493,6 +514,7 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   PaymentRoute: PaymentRoute,
   AdminCouponsRoute: AdminCouponsRoute,
+  AdminEventDetailsRoute: AdminEventDetailsRoute,
   AdminEventsRoute: AdminEventsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
@@ -526,6 +548,7 @@ export const routeTree = rootRoute
         "/cart",
         "/payment",
         "/admin/coupons",
+        "/admin/event-details",
         "/admin/events",
         "/admin/login",
         "/admin/media",
@@ -558,6 +581,9 @@ export const routeTree = rootRoute
     },
     "/admin/coupons": {
       "filePath": "admin/coupons.tsx"
+    },
+    "/admin/event-details": {
+      "filePath": "admin/event-details.tsx"
     },
     "/admin/events": {
       "filePath": "admin/events.tsx"

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Complete Your Registration - Euro Haus</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #ffc107; color: #333; padding: 20px; text-align: center; }
+        .warning-icon { font-size: 48px; margin-bottom: 10px; }
+        .content { padding: 20px; background-color: #f8f9fa; margin: 20px 0; }
+        .details-box { background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .warning-box { background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border: 1px solid #ffc107; }
+        .cta-button { display: inline-block; background-color: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; }
+        .footer { text-align: center; font-size: 12px; color: #777; margin-top: 30px; }
+        .steps { background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .steps ol { margin: 10px 0; padding-left: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="warning-icon">⚠️</div>
+            <h1>Your Payment Session Expired</h1>
+        </div>
+
+        <div class="content">
+            <p>Hello {{.ParticipantName}},</p>
+
+            <p>Your payment session for the vehicle registration has expired. Don't worry - your submission is still pending approval, and we've created a new payment link for you.</p>
+
+            <div class="details-box">
+                <h3>Registration Details</h3>
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="padding: 5px;"><strong>Event:</strong></td>
+                        <td style="padding: 5px;">{{.EventName}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px;"><strong>Vehicle:</strong></td>
+                        <td style="padding: 5px;">{{.VehicleDetails}}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 5px;"><strong>Submission ID:</strong></td>
+                        <td style="padding: 5px; font-family: monospace;">{{.SubmissionID}}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="warning-box">
+                <h4 style="margin-top: 0; color: #856404;">Important Information</h4>
+                <ul style="margin: 10px 0;">
+                    <li>Your vehicle submission is still pending admin approval</li>
+                    <li>Payment will only be captured after your submission is approved</li>
+                    <li>This new payment link will expire at: <strong>{{.ExpirationTime}}</strong></li>
+                    <li>You will receive a confirmation email once approved</li>
+                </ul>
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{.PaymentLink}}" class="cta-button">Complete Registration</a>
+            </div>
+
+            <div class="steps">
+                <h3>What happens next?</h3>
+                <ol>
+                    <li>Click the button above to complete your payment information</li>
+                    <li>Your card will be authorized but not charged immediately</li>
+                    <li>Our team will review your submission</li>
+                    <li>Once approved, your payment will be processed and you'll receive your event ticket</li>
+                </ol>
+            </div>
+
+            <p>If you have any questions or continue to experience issues, please contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a> with your submission ID: <strong>{{.SubmissionID}}</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>Need immediate assistance? Contact us at info@theeurohaus.com</p>
+            <p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
+        </div>
+    </div>
+</body>
+</html>

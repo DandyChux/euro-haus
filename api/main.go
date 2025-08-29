@@ -100,8 +100,6 @@ func main() {
 
 	// Event endpoints - public validation, admin check-in
 	api.HandleFunc("/events/ticket/validate", handlers.ValidateTicket).Methods("POST", "OPTIONS")
-	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
-	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/updates", handlers.HandleEventUpdates)
 	api.HandleFunc("/events/{eventId}/tickets", handlers.GetEventTickets).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/{slug}", handlers.GetEventBySlug).Methods("GET", "OPTIONS")
@@ -137,6 +135,11 @@ func main() {
 	// Public discount validation endpoint
 	api.HandleFunc("/validate-promotion-code", handlers.ValidatePromotionCode).Methods("POST", "OPTIONS")
 
+	// Event merchandise management
+	api.Handle("/admin/events/{eventId}/tiers/{priceId}/products", middleware.RequireAuth(http.HandlerFunc(handlers.UpdateTierIncludedProducts))).Methods("PUT", "OPTIONS")
+	api.HandleFunc("/events/{eventId}/recommendations", handlers.GetEventMerchandiseRecommendations).Methods("GET", "OPTIONS")
+	api.HandleFunc("/create-event-checkout-session", handlers.CreateEventCheckoutSession).Methods("POST", "OPTIONS")
+
 	// Admin endpoints (requires authentication)
 	// Product management
 	api.Handle("/admin/create-product", middleware.RequireAuth(http.HandlerFunc(handlers.CreateProduct))).Methods("POST", "OPTIONS")
@@ -159,6 +162,18 @@ func main() {
 	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.ListCoupons))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/coupons/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteCoupon))).Methods("DELETE", "OPTIONS")
 	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePromotionCode))).Methods("POST", "OPTIONS")
+
+	// Admin event endpoints (requires authentication)
+	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/link-products", middleware.RequireAuth(http.HandlerFunc(handlers.LinkProductsToEvent))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/linked-products", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventLinkedProducts))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/products/{productId}", middleware.RequireAuth(http.HandlerFunc(handlers.RemoveProductFromEvent))).Methods("DELETE", "OPTIONS")
+	api.Handle("/admin/tiers/add-products", middleware.RequireAuth(http.HandlerFunc(handlers.AddProductsToTier))).Methods("POST", "OPTIONS")
+
+	// Fulfillment management (admin only)
+	api.Handle("/admin/fulfillments/pending", middleware.RequireAuth(http.HandlerFunc(handlers.GetPendingFulfillments))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/fulfillments/{id}/status", middleware.RequireAuth(http.HandlerFunc(handlers.UpdateFulfillmentStatus))).Methods("PUT", "OPTIONS")
 
 	// Admin submission endpoints (requires authentication)
 	api.Handle("/admin/submissions/pending-count", middleware.RequireAuth(http.HandlerFunc(handlers.GetPendingSubmissionsCount))).Methods("GET", "OPTIONS")

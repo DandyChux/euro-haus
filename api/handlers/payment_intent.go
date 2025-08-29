@@ -1,13 +1,19 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"euro-haus-api/services"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/price"
 )
 
 type CreatePaymentIntentRequest struct {
@@ -25,6 +31,12 @@ type CreateCheckoutSessionRequest struct {
 	AllowPromotionCodes bool              `json:"allow_promotion_codes"`
 	PromotionCode       string            `json:"promotion_code"`
 	CouponID            string            `json:"coupon_id"`
+	PriceID             string            `json:"priceId"`
+	Quantity            int64             `json:"quantity"`
+	AddOns              []struct {
+		PriceID  string `json:"priceId"`
+		Quantity int64  `json:"quantity"`
+	} `json:"addons"`
 }
 
 type LineItem struct {
@@ -85,131 +97,141 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	var req CreateCheckoutSessionRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Failed to decode request: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Build line items for Stripe
-	var stripeLineItems []*stripe.CheckoutSessionLineItemParams
-	for _, item := range req.LineItems {
-		lineItem := &stripe.CheckoutSessionLineItemParams{
-			Quantity: stripe.Int64(item.Quantity),
-		}
+	// Build line items
+	var lineItems []*stripe.CheckoutSessionLineItemParams
 
-		if item.Price != "" {
-			// Use existing Stripe Price ID
-			lineItem.Price = stripe.String(item.Price)
-		} else if item.PriceData != nil {
-			// Create price data dynamically
-			lineItem.PriceData = &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency: stripe.String(item.PriceData.Currency),
-				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-					Name:        stripe.String(item.PriceData.ProductData.Name),
-					Description: stripe.String(item.PriceData.ProductData.Description),
-					Images:      stripe.StringSlice(item.PriceData.ProductData.Images),
-					Metadata:    item.PriceData.ProductData.Metadata,
-				},
-				UnitAmount: stripe.Int64(item.PriceData.UnitAmount),
+	// Handle line_items from cart
+	if len(req.LineItems) > 0 {
+		for _, item := range req.LineItems {
+			if item.Price != "" {
+				// Use existing price ID
+				lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+					Price:    stripe.String(item.Price),
+					Quantity: stripe.Int64(item.Quantity),
+				})
+			} else if item.PriceData != nil {
+				// Use dynamic pricing
+				lineItem := &stripe.CheckoutSessionLineItemParams{
+					PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+						Currency: stripe.String(item.PriceData.Currency),
+						ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+							Name:        stripe.String(item.PriceData.ProductData.Name),
+							Description: stripe.String(item.PriceData.ProductData.Description),
+							Images:      stripe.StringSlice(item.PriceData.ProductData.Images),
+							Metadata:    item.PriceData.ProductData.Metadata,
+						},
+						UnitAmount: stripe.Int64(item.PriceData.UnitAmount),
+					},
+					Quantity: stripe.Int64(item.Quantity),
+				}
+				lineItems = append(lineItems, lineItem)
 			}
 		}
+	}
 
-		stripeLineItems = append(stripeLineItems, lineItem)
+	// Also handle the old format with priceId for backward compatibility
+	if req.PriceID != "" {
+		lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+			Price:    stripe.String(req.PriceID),
+			Quantity: stripe.Int64(req.Quantity),
+		})
+	}
+
+	// Add any add-on products
+	for _, addon := range req.AddOns {
+		lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+			Price:    stripe.String(addon.PriceID),
+			Quantity: stripe.Int64(addon.Quantity),
+		})
+	}
+
+	// Validate we have line items
+	if len(lineItems) == 0 {
+		http.Error(w, "No line items provided", http.StatusBadRequest)
+		return
+	}
+
+	// Set up metadata
+	metadata := req.Metadata
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+
+	// Track if this checkout includes add-ons
+	if len(req.AddOns) > 0 {
+		metadata["has_addons"] = "true"
+		metadata["addon_count"] = fmt.Sprintf("%d", len(req.AddOns))
+
+		// Store add-on details for fulfillment
+		addonsJSON, _ := json.Marshal(req.AddOns)
+		metadata["addons"] = string(addonsJSON)
+	}
+
+	// Set default URLs
+	baseURL := os.Getenv("BASE_URL")
+	successURL := req.SuccessURL
+	cancelURL := req.CancelURL
+
+	if successURL == "" {
+		successURL = baseURL + "/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+	}
+	if cancelURL == "" {
+		cancelURL = baseURL + "/checkout/cancel"
 	}
 
 	// Create checkout session params
 	params := &stripe.CheckoutSessionParams{
-		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
-		LineItems:  stripeLineItems,
-		SuccessURL: stripe.String(req.SuccessURL),
-		CancelURL:  stripe.String(req.CancelURL),
-		Metadata:   req.Metadata,
-		PaymentMethodTypes: stripe.StringSlice([]string{
-			"card",
-		}),
-		ShippingAddressCollection: &stripe.CheckoutSessionShippingAddressCollectionParams{
-			AllowedCountries: stripe.StringSlice([]string{"US", "CA"}),
-		},
-		BillingAddressCollection: stripe.String("required"),
+		PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
+		Mode:               stripe.String(stripe.CheckoutSessionModePayment),
+		LineItems:          lineItems,
+		SuccessURL:         stripe.String(successURL),
+		CancelURL:          stripe.String(cancelURL),
+		Metadata:           metadata,
 	}
 
-	// Handle discount options (these are mutually exclusive)
-	if req.CouponID != "" {
-		// Apply automatic discount using coupon ID
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{
-				Coupon: stripe.String(req.CouponID),
-			},
-		}
-	} else if req.PromotionCode != "" {
-		// Pre-fill a specific promotion code
-		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
-			{
-				PromotionCode: stripe.String(req.PromotionCode),
-			},
-		}
-	} else if req.AllowPromotionCodes {
-		// Allow customers to enter promotion codes at checkout
+	// Add customer email if provided
+	if email, ok := metadata["customer_email"]; ok && email != "" {
+		params.CustomerEmail = stripe.String(email)
+	}
+
+	// Add promotion codes if requested
+	if req.AllowPromotionCodes {
 		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
-	// Add shipping options for physical products
-	if hasPhysicalProducts(req.LineItems) {
-		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{
-			{
-				ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-					Type: stripe.String("fixed_amount"),
-					FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-						Amount:   stripe.Int64(999), // $9.99
-						Currency: stripe.String("usd"),
-					},
-					DisplayName: stripe.String("Standard Shipping (5-7 business days)"),
-					DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-						Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(5),
-						},
-						Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(7),
-						},
-					},
-				},
-			},
-			{
-				ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-					Type: stripe.String("fixed_amount"),
-					FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-						Amount:   stripe.Int64(1999), // $19.99
-						Currency: stripe.String("usd"),
-					},
-					DisplayName: stripe.String("Express Shipping (2-3 business days)"),
-					DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-						Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(2),
-						},
-						Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(3),
-						},
-					},
-				},
-			},
-		}
-	}
-
-	s, err := session.New(params)
+	// Create the session
+	session, err := session.New(params)
 	if err != nil {
-		log.Printf("Failed to create checkout session: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error creating checkout session: %v", err)
+		http.Error(w, "Failed to create checkout session", http.StatusInternalServerError)
 		return
 	}
 
+	// Store session details in Redis for webhook processing
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	sessionKey := fmt.Sprintf("checkout_session:%s", session.ID)
+	sessionData := map[string]interface{}{
+		"created_at": time.Now().Format(time.RFC3339),
+		"metadata":   fmt.Sprintf("%v", metadata),
+	}
+
+	if req.PriceID != "" {
+		sessionData["price_id"] = req.PriceID
+	}
+
+	rdb.HSet(ctx, sessionKey, sessionData)
+	rdb.Expire(ctx, sessionKey, 24*time.Hour) // Expire after 24 hours
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"session_id": s.ID,
-		"url":        s.URL,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"url":       session.URL,
+		"sessionId": session.ID,
 	})
 }
 
@@ -247,6 +269,116 @@ func GetCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		},
 		"items":   formatLineItems(session),
 		"created": session.Created,
+	})
+}
+
+func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PriceID       string `json:"priceId"`
+		Quantity      int64  `json:"quantity"`
+		EventID       string `json:"eventId"`
+		AddOnProducts []struct {
+			PriceID  string `json:"priceId"`
+			Quantity int64  `json:"quantity"`
+		} `json:"addOnProducts"` // Additional products customer wants to purchase
+		Metadata map[string]string `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Get the tier price details
+	tierPrice, err := price.Get(req.PriceID, nil)
+	if err != nil {
+		http.Error(w, "Price not found", http.StatusNotFound)
+		return
+	}
+
+	// Build line items
+	lineItems := []*stripe.CheckoutSessionLineItemParams{
+		{
+			Price:    stripe.String(req.PriceID),
+			Quantity: stripe.Int64(req.Quantity),
+		},
+	}
+
+	// Track included products for fulfillment
+	var includedProducts []map[string]interface{}
+	hasIncludedProducts := false
+
+	// Check if this tier has included products
+	if includedJSON, ok := tierPrice.Metadata["included_products"]; ok && includedJSON != "" {
+		if err := json.Unmarshal([]byte(includedJSON), &includedProducts); err == nil {
+			hasIncludedProducts = len(includedProducts) > 0
+		}
+	}
+
+	// Add any additional products the customer is purchasing
+	for _, addon := range req.AddOnProducts {
+		lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
+			Price:    stripe.String(addon.PriceID),
+			Quantity: stripe.Int64(addon.Quantity),
+		})
+	}
+
+	// Prepare metadata
+	metadata := req.Metadata
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+
+	metadata["event_id"] = req.EventID
+	metadata["tier_price_id"] = req.PriceID
+
+	if hasIncludedProducts {
+		metadata["has_included_products"] = "true"
+		includedJSON, _ := json.Marshal(includedProducts)
+		metadata["included_products"] = string(includedJSON)
+	}
+
+	if len(req.AddOnProducts) > 0 {
+		metadata["has_addon_products"] = "true"
+		addonsJSON, _ := json.Marshal(req.AddOnProducts)
+		metadata["addon_products"] = string(addonsJSON)
+	}
+
+	// Create checkout session
+	params := &stripe.CheckoutSessionParams{
+		PaymentMethodTypes:  stripe.StringSlice([]string{"card"}),
+		Mode:                stripe.String(stripe.CheckoutSessionModePayment),
+		LineItems:           lineItems,
+		SuccessURL:          stripe.String(os.Getenv("BASE_URL") + "/checkout/success?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:           stripe.String(os.Getenv("BASE_URL") + "/events/" + req.EventID),
+		Metadata:            metadata,
+		AllowPromotionCodes: stripe.Bool(true),
+	}
+
+	// Add customer email if provided
+	if email, ok := metadata["customer_email"]; ok && email != "" {
+		params.CustomerEmail = stripe.String(email)
+	}
+
+	// If there are physical products, collect shipping address
+	if hasIncludedProducts || len(req.AddOnProducts) > 0 {
+		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
+			AllowedCountries: stripe.StringSlice([]string{"US", "CA"}),
+		}
+	}
+
+	session, err := session.New(params)
+	if err != nil {
+		log.Printf("Error creating checkout session: %v", err)
+		http.Error(w, "Failed to create checkout session", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"sessionId":           session.ID,
+		"url":                 session.URL,
+		"hasIncludedProducts": hasIncludedProducts,
+		"includedProducts":    includedProducts,
 	})
 }
 

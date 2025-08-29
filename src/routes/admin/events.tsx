@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '~/components/ui/card';
@@ -113,6 +113,7 @@ interface EventCardProps {
 
 function EventCard({ event, isPast }: EventCardProps) {
 	const [showCheckIn, setShowCheckIn] = useState(false);
+	const navigate = useNavigate();
 
 	return (
 		<Card>
@@ -138,6 +139,16 @@ function EventCard({ event, isPast }: EventCardProps) {
 						</CardDescription>
 					</div>
 					<div className="flex gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => navigate({
+								to: '/admin/event-details',
+								search: { event_id: event.id }
+							})}
+						>
+							Manage Event
+						</Button>
 						{!isPast && (
 							<Button
 								onClick={() => setShowCheckIn(!showCheckIn)}

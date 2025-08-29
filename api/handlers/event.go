@@ -359,7 +359,7 @@ func StartEventUpdatesListener(eventID string) {
 	}()
 }
 
-// GetEventBySlug retrieves an event by its slug
+// GetEventBySlug retrieves an event by its slug with linked products
 func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers
 	w.Header().Set("Content-Type", "application/json")
@@ -445,6 +445,57 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fetch linked products if any
+	linkedProducts := []map[string]interface{}{}
+	if linkedProductIDs, ok := eventProduct.Metadata["linked_products"]; ok && linkedProductIDs != "" {
+		// Parse linked product IDs (comma-separated)
+		productIDs := strings.Split(linkedProductIDs, ",")
+		for _, pid := range productIDs {
+			pid = strings.TrimSpace(pid)
+			if pid == "" {
+				continue
+			}
+
+			// Fetch each linked product
+			linkedParams := &stripe.ProductParams{}
+			linkedParams.AddExpand("default_price")
+
+			linkedProduct, err := product.Get(pid, linkedParams)
+			if err != nil {
+				log.Printf("Error fetching linked product %s: %v", pid, err)
+				continue
+			}
+
+			if !linkedProduct.Active {
+				continue
+			}
+
+			// Build linked product info
+			linkedInfo := map[string]interface{}{
+				"id":          linkedProduct.ID,
+				"name":        linkedProduct.Name,
+				"description": linkedProduct.Description,
+				"images":      linkedProduct.Images,
+				"type":        linkedProduct.Metadata["type"], // e.g., "merchandise", "addon"
+			}
+
+			// Add price info if available
+			if linkedProduct.DefaultPrice != nil {
+				linkedInfo["price"] = map[string]interface{}{
+					"id":          linkedProduct.DefaultPrice.ID,
+					"unit_amount": linkedProduct.DefaultPrice.UnitAmount,
+					"currency":    linkedProduct.DefaultPrice.Currency,
+				}
+			}
+
+			linkedProducts = append(linkedProducts, linkedInfo)
+		}
+	}
+
+	if len(linkedProducts) > 0 {
+		eventResponse["linkedProducts"] = linkedProducts
+	}
+
 	// Fetch event tiers if needed
 	if eventProduct.Metadata["has_tiers"] == "true" {
 		// Fetch tier prices for this product
@@ -484,6 +535,31 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 				isMostPopular = true
 			}
 
+			// Parse included products for this tier
+			var includedProducts []map[string]interface{}
+			if includedProductsJSON, ok := p.Metadata["included_products"]; ok && includedProductsJSON != "" {
+				// Format: [{"id":"prod_xxx","quantity":1,"name":"Event T-Shirt"}]
+				if err := json.Unmarshal([]byte(includedProductsJSON), &includedProducts); err != nil {
+					log.Printf("Error parsing included products: %v", err)
+				} else {
+					// Fetch full product details for each included product
+					for i, incProduct := range includedProducts {
+						if productID, ok := incProduct["id"].(string); ok {
+							incParams := &stripe.ProductParams{}
+							incParams.AddExpand("default_price")
+
+							if incProd, err := product.Get(productID, incParams); err == nil {
+								includedProducts[i]["name"] = incProd.Name
+								includedProducts[i]["images"] = incProd.Images
+								if incProd.DefaultPrice != nil {
+									includedProducts[i]["value"] = incProd.DefaultPrice.UnitAmount
+								}
+							}
+						}
+					}
+				}
+			}
+
 			tier := map[string]interface{}{
 				"id":                        p.ID,
 				"priceId":                   p.ID,
@@ -494,6 +570,11 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 				"features":                  features,
 				"requiresVehicleSubmission": requiresVehicleSubmission,
 				"isMostPopular":             isMostPopular,
+			}
+
+			// Add included products if any
+			if len(includedProducts) > 0 {
+				tier["includedProducts"] = includedProducts
 			}
 
 			// Add max quantity if available
