@@ -7,7 +7,7 @@ import { Badge } from '~/components/ui/badge';
 import { Separator } from '~/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
-import { stripeService, TieredPrice, EventWithTiers } from '~/lib/services/stripe-service';
+import { stripeService, TieredPrice, EventWithTiers, EventProduct } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -21,7 +21,7 @@ import { MapLocation } from '~/components/ui/map-location';
 
 interface MerchandiseModalProps {
 	isOpen: boolean;
-	event: any; // Replace with your Event type
+	event: EventProduct;
 	onClose: () => void;
 	onContinue: (selectedProducts: SelectedProduct[]) => void;
 	onSkip: () => void;
@@ -391,44 +391,6 @@ function EventDetailPage() {
 
 		// Reset states
 		setPendingCheckout({ tier: null, quantity: 1 });
-
-		// Optional: Show success message or navigate to cart
-		// toast.success(`Added ${tierQuantity} ${tier.name} ticket(s) to cart`);
-	};
-
-	const proceedToCheckout = async (
-		tier: TieredPrice,
-		tierQuantity: number,
-		addons: SelectedProduct[] = []
-	) => {
-		try {
-			const response = await apiClient.post('/create-checkout-session', {
-				priceId: tier.priceId,
-				quantity: tierQuantity,
-				mode: 'payment',
-				metadata: {
-					event_id: event?.id,
-					event_name: event?.title,
-					tier_name: tier.name,
-					type: 'event_ticket',
-				},
-				addons: addons.map(item => ({
-					priceId: item.priceId,
-					quantity: item.quantity || 1
-				}))
-			});
-
-			const stripe = await stripePromise;
-
-			if (stripe && response.data.sessionId) {
-				await stripe.redirectToCheckout({ sessionId: response.data.sessionId });
-			} else if (response.data.url) {
-				window.location.href = response.data.url;
-			}
-		} catch (error) {
-			console.error('Checkout error:', error);
-			toast.error('Failed to start checkout');
-		}
 	};
 
 	// Handlers for merchandise modal
@@ -442,11 +404,11 @@ function EventDetailPage() {
 				addItem({
 					id: product.id,
 					priceId: product.priceId,
-					title: product.title,
+					title: product.name,
 					description: `${event?.title || 'Event'} Merchandise`,
 					price: (product.price?.unit_amount || 0) / 100,
 					quantity: product.quantity,
-					imageUrl: '', // Add product image if available
+					imageUrl: event?.imageUrl || '',
 					type: 'product',
 				});
 			});
@@ -510,11 +472,6 @@ function EventDetailPage() {
 			console.error('Checkout error:', error);
 			toast.error('Failed to create checkout session');
 		}
-	};
-
-	const handleTierSelection = (tier: TieredPrice) => {
-		setSelectedTier(tier);
-		setQuantity(1);
 	};
 
 	const handleAddToCart = () => {
@@ -839,6 +796,52 @@ function EventDetailPage() {
 
 					{/* Right Column - Booking */}
 					<div className="space-y-4">
+						{/*{event?.linkedProducts && event.linkedProducts.length > 0 && (
+							<div className="mt-12">
+								<h3 className="text-2xl font-bold mb-6">Event Merchandise & Add-ons</h3>
+								<div className="grid grid-cols-1 gap-6">
+									{event.linkedProducts?.map((product) => (
+										<div key={product.id} className="border rounded-lg p-4">
+											{product.imageUrl && (
+												<img
+													src={product.imageUrl}
+													alt={product.title}
+													className="w-full h-48 object-cover rounded mb-4"
+												/>
+											)}
+											<h4 className="font-semibold mb-2">{product.title}</h4>
+											<p className="text-sm text-gray-600 mb-3">{product.description}</p>
+											{product.price && (
+												<div className="flex justify-between items-center">
+													<span className="font-bold text-lg">
+														${(product.price / 100).toFixed(2)}
+													</span>
+													<Button
+														size="sm"
+														onClick={() => {
+															// Add to cart
+															addItem({
+																id: product.id,
+																priceId: product.priceId,
+																title: product.title,
+																description: product.description || '',
+																price: product.price / 100,
+																quantity: 1,
+																imageUrl: product.imageUrl || '',
+																type: 'product'
+															});
+														}}
+													>
+														Add to Cart
+													</Button>
+												</div>
+											)}
+										</div>
+									))}
+								</div>
+							</div>
+						)}*/}
+
 						{/* Tiered Pricing */}
 						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (
 							<div className="space-y-4">
@@ -849,10 +852,7 @@ function EventDetailPage() {
 									<CardContent className="pt-6">
 										<TieredPricing
 											tiers={(event as EventWithTiers).priceTiers}
-											onSelectTier={(tier, qty) => {
-												handleTierSelection(tier);
-												handleSelectTier(tier, qty);
-											}}
+											onSelectTier={(tier, qty) => handleSelectTier(tier, qty)}
 										/>
 									</CardContent>
 								</Card>
@@ -999,51 +999,6 @@ function EventDetailPage() {
 											</div>
 										</CardContent>
 									</Card>
-								</div>
-							</div>
-						)}
-						{event?.linkedProducts && event.linkedProducts.length > 0 && (
-							<div className="mt-12">
-								<h3 className="text-2xl font-bold mb-6">Event Merchandise & Add-ons</h3>
-								<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-									{event.linkedProducts.map((product) => (
-										<div key={product.id} className="border rounded-lg p-4">
-											{product.imageUrl && (
-												<img
-													src={product.imageUrl}
-													alt={product.title}
-													className="w-full h-48 object-cover rounded mb-4"
-												/>
-											)}
-											<h4 className="font-semibold mb-2">{product.title}</h4>
-											<p className="text-sm text-gray-600 mb-3">{product.description}</p>
-											{product.price && (
-												<div className="flex justify-between items-center">
-													<span className="font-bold text-lg">
-														${(product.price / 100).toFixed(2)}
-													</span>
-													<Button
-														size="sm"
-														onClick={() => {
-															// Add to cart
-															addItem({
-																id: product.id,
-																priceId: product.priceId,
-																title: product.title,
-																description: product.description || '',
-																price: product.price / 100,
-																quantity: 1,
-																imageUrl: product.imageUrl || '',
-																type: 'product'
-															});
-														}}
-													>
-														Add to Cart
-													</Button>
-												</div>
-											)}
-										</div>
-									))}
 								</div>
 							</div>
 						)}

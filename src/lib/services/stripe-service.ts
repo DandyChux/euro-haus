@@ -43,6 +43,7 @@ export interface StripeProduct {
 	} | null;
 	created: number;
 	updated: number;
+	linkedProducts?: Product[];
 }
 
 export interface Product {
@@ -280,6 +281,7 @@ export const stripeService = {
 	async transformStripeEventProduct(stripeProduct: StripeProduct): Promise<EventProduct> {
 		// Fetch external metadata if needed
 		const metadata = await fetchExternalMetadata(stripeProduct.metadata);
+		console.log('Metadata:', stripeProduct);
 
 		// Parse available spots
 		const availableSpots = metadata.available_spots
@@ -322,6 +324,7 @@ export const stripeService = {
 			sponsorTiers,
 			hasTiers: metadata.has_tiers === 'true',
 			lowestPrice: metadata.lowest_price ? parseFloat(metadata.lowest_price) : undefined,
+			linkedProducts: stripeProduct.linkedProducts || []
 		};
 	},
 
