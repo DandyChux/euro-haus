@@ -127,7 +127,7 @@ function AdminDashboardContent() {
 			title: 'Event Management',
 			description: 'Manage event tickets, schedules, and attendee information. Check in attendees and manage event tickets',
 			icon: Calendar,
-			href: '/admin/products',
+			href: '/admin/events',
 			color: 'text-purple-600',
 			bgColor: 'bg-purple-50',
 			stats: stats ? `${stats.totalEvents} events` : null,
