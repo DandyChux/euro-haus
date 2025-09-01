@@ -124,17 +124,8 @@ function AdminDashboardContent() {
 			stats: stats ? `${stats.totalProducts} products` : null,
 		},
 		{
-			title: 'Event Check-In',
-			description: 'Check in attendees and manage event tickets',
-			icon: TicketIcon,
-			href: '/admin/events',
-			color: 'text-indigo-600',
-			bgColor: 'bg-indigo-50',
-			stats: stats ? `${stats.totalEvents} events` : null,
-		},
-		{
 			title: 'Event Management',
-			description: 'Manage event tickets, schedules, and attendee information',
+			description: 'Manage event tickets, schedules, and attendee information. Check in attendees and manage event tickets',
 			icon: Calendar,
 			href: '/admin/products',
 			color: 'text-purple-600',
