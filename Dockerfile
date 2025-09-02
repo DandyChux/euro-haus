@@ -4,8 +4,11 @@ WORKDIR /app
 
 COPY package*.json ./
 
+# Install pnpm
+RUN npm install -g pnpm
+
 # Install dependencies
-RUN npm install
+RUN pnpm install
 
 # Copy source code to container image
 COPY . .
