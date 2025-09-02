@@ -13,6 +13,18 @@ RUN pnpm install
 # Copy source code to container image
 COPY . .
 
+# Accept build arguments for Vite environment variables
+ARG VITE_YOUTUBE_API_KEY
+ARG VITE_API_URL
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ARG VITE_YOUTUBE_CHANNEL_ID
+
+# Convert build args to environment variables
+ENV VITE_YOUTUBE_API_KEY=$VITE_YOUTUBE_API_KEY \
+	VITE_API_URL=$VITE_API_URL \
+	VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY \
+	VITE_YOUTUBE_CHANNEL_ID=$VITE_YOUTUBE_CHANNEL_ID
+
 # Build the app
 RUN npm run build
 
