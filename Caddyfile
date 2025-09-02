@@ -23,6 +23,11 @@
     # health check for railway
     rewrite /health /*
 
+    # Proxy API requests to backend
+    handle /api/* {
+        reverse_proxy motivated-harmony.railway.internal:8080
+    }
+
     # serve from the 'dist' folder (Vite builds into the 'dist' folder)
     root * dist
 
