@@ -68,21 +68,21 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	endpointSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 	if endpointSecret == "" {
 		log.Printf("STRIPE_WEBHOOK_SECRET environment variable not set\n")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	signatureHeader := r.Header.Get("Stripe-Signature")
 	if signatureHeader == "" {
 		log.Printf("Missing Stripe-Signature header\n")
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	event, err := webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
 	if err != nil {
 		log.Printf("Webhook signature verification failed: %v\n", err)
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
