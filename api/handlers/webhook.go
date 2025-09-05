@@ -37,30 +37,30 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 
 	// Add simple rate limiting check
-	rdb := services.GetRedisClient()
-	ctx := context.Background()
+	// rdb := services.GetRedisClient()
+	// ctx := context.Background()
 
 	// Use IP-based rate limiting
-	clientIP := r.Header.Get("X-Forwarded-For")
-	if clientIP == "" {
-		clientIP = r.RemoteAddr
-	}
+	// clientIP := r.Header.Get("X-Forwarded-For")
+	// if clientIP == "" {
+	// 	clientIP = r.RemoteAddr
+	// }
 
-	// Allow max 100 webhook calls per minute per IP
-	rateLimitKey := fmt.Sprintf("webhook:ratelimit:%s:%d", clientIP, time.Now().Unix()/60)
-	count, _ := rdb.Incr(ctx, rateLimitKey).Result()
-	rdb.Expire(ctx, rateLimitKey, 2*time.Minute)
+	// // Allow max 100 webhook calls per minute per IP
+	// rateLimitKey := fmt.Sprintf("webhook:ratelimit:%s:%d", clientIP, time.Now().Unix()/60)
+	// count, _ := rdb.Incr(ctx, rateLimitKey).Result()
+	// rdb.Expire(ctx, rateLimitKey, 2*time.Minute)
 
-	if count > 100 {
-		log.Printf("Rate limit exceeded for IP %s", clientIP)
-		w.WriteHeader(http.StatusTooManyRequests)
-		return
-	}
+	// if count > 100 {
+	// 	log.Printf("Rate limit exceeded for IP %s", clientIP)
+	// 	w.WriteHeader(http.StatusTooManyRequests)
+	// 	return
+	// }
 
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("Error reading request body: %v\n", err)
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
