@@ -131,12 +131,12 @@ export const EventCard: React.FC<EventCardProps> = ({
 	};
 
 	return (
-		<Card className={cn("overflow-hidden hover:shadow-lg transition-shadow", className)}>
-			<div className="aspect-video relative overflow-hidden">
+		<Card className={cn("group overflow-hidden hover:shadow-lg transition-shadow", className)}>
+			<div className="aspect-auto relative overflow-hidden">
 				<Image
 					src={event.imageUrl}
 					alt={event.title}
-					className="object-cover w-full h-full hover:scale-105 transition-transform duration-300"
+					className="object-contain w-full h-full"
 				/>
 				{event.status && (
 					<Badge

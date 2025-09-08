@@ -20,6 +20,7 @@ import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { submissionService } from '~/lib/services/submission-service';
 import type { SubmissionWithFiles } from '~/lib/services/submission-service';
+import { Image } from './ui/image';
 
 const formSchema = z.object({
 	participantName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -420,7 +421,7 @@ export function VehicleSubmissionForm({
 								<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
 									{imagePreviews.map((preview, index) => (
 										<div key={index} className="relative group">
-											<img
+											<Image
 												src={preview}
 												alt={`Vehicle ${index + 1}`}
 												className="w-full h-24 object-cover rounded-lg"

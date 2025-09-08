@@ -226,11 +226,7 @@ func GetEventLinkedProducts(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if linkedProduct.DefaultPrice != nil {
-				productInfo["price"] = map[string]interface{}{
-					"id":          linkedProduct.DefaultPrice.ID,
-					"unit_amount": linkedProduct.DefaultPrice.UnitAmount,
-					"currency":    linkedProduct.DefaultPrice.Currency,
-				}
+				productInfo["default_price"] = linkedProduct.DefaultPrice
 			}
 
 			linkedProducts = append(linkedProducts, productInfo)

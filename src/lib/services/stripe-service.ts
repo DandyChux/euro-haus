@@ -104,7 +104,6 @@ export interface EventProduct extends Product {
 	specialInstructions?: string;
 	startTime?: string;
 	endTime?: string;
-	linkedProducts?: Product[];
 }
 
 
@@ -170,11 +169,13 @@ export const stripeService = {
 
 	async getEventBySlug(slug: string): Promise<EventProduct | null> {
 		try {
-			const response = await apiClient.get(`/events/${slug}`);
+			const response = await apiClient.get<StripeProduct>(`/events/${slug}`);
 
 			if (!response.data || !response.data.id) {
 				return null;
 			}
+
+			console.log('Event slug response: ', response.data)
 
 			return this.transformStripeEventProduct(response.data);
 		} catch (error) {
@@ -407,11 +408,12 @@ export const stripeService = {
 	},
 
 	async getEventLinkedProducts(eventId: string): Promise<{
-		linkedProducts: any[];
+		linkedProducts: StripeProduct[];
 		tierProducts: any[];
 	}> {
 		try {
 			const response = await apiClient.get(`/admin/events/${eventId}/linked-products`);
+			console.log('Linked Products response: ', response.data);
 			return response.data;
 		} catch (error) {
 			console.error('Failed to fetch linked products:', error);

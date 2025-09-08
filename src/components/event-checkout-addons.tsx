@@ -5,6 +5,7 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Plus, Minus, Package } from 'lucide-react';
+import { Image } from './ui/image';
 
 interface LinkedProduct {
 	id: string;
@@ -142,7 +143,7 @@ export function EventCheckoutAddons({
 												>
 													<div className="flex items-start gap-3">
 														{product.images?.[0] && (
-															<img
+															<Image
 																src={product.images[0]}
 																alt={product.name}
 																className="w-16 h-16 object-cover rounded"

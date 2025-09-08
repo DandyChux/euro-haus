@@ -27,6 +27,7 @@ import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { submissionService } from '~/lib/services/submission-service';
 import type { VehicleSubmission } from '~/lib/interfaces/submission';
+import { Image } from '../ui/image';
 
 interface SubmissionReviewProps {
 	eventId: string;
@@ -166,7 +167,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 									<CardContent>
 										<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
 											{submission.images[0] ? (
-												<img
+												<Image
 													src={submission.images[0]}
 													alt={`${submission.vehicleMake} ${submission.vehicleModel}`}
 													className="object-cover w-full h-full"
@@ -226,7 +227,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 									<CardContent>
 										<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
 											{submission.images[0] ? (
-												<img
+												<Image
 													src={submission.images[0]}
 													alt={`${submission.vehicleMake} ${submission.vehicleModel}`}
 													className="object-cover w-full h-full"
@@ -281,7 +282,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 								{/* Image Gallery */}
 								<div className="space-y-4">
 									<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
-										<img
+										<Image
 											src={selectedSubmission.images[currentImageIndex]}
 											alt={`Vehicle image ${currentImageIndex + 1}`}
 											className="object-contain w-full h-full"

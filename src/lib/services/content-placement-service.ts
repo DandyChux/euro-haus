@@ -20,7 +20,7 @@ export const contentPlacementService = {
 		} catch (error) {
 			// Try to find in dynamic placements
 			try {
-				const dynamicResponse = await apiClient.get<{ placements: ContentPlacement[] }>('/content-placements/dynamic');
+				const dynamicResponse = await apiClient.get<{ placements: ContentPlacement[] }>('/content-placements');
 				const placement = dynamicResponse.data.placements?.find(p => p.id === id);
 				return placement || null;
 			} catch (dynamicError) {

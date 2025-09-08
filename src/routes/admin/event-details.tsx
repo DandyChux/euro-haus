@@ -10,6 +10,7 @@ import { ArrowLeft, Calendar, MapPin, Users, DollarSign } from 'lucide-react';
 import { format } from 'date-fns';
 import z from 'zod';
 import { apiClient } from '~/lib/api';
+import { Image } from '~/components/ui/image';
 
 export const Route = createFileRoute('/admin/event-details')({
 	validateSearch: z.object({
@@ -166,7 +167,7 @@ function EventDetailsContent() {
 										<label className="text-sm font-medium">Images</label>
 										<div className="grid grid-cols-3 gap-4 mt-2">
 											{event.images.map((img: string, idx: number) => (
-												<img
+												<Image
 													key={idx}
 													src={img}
 													alt={`Event ${idx + 1}`}

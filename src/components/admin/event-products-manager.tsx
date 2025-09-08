@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { toast } from 'sonner';
 import { apiClient } from '~/lib/api';
 import { Plus, X, Package, Shirt, Tag, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { Image } from '../ui/image';
 
 interface EventProductsManagerProps {
 	eventId: string;
@@ -242,7 +243,7 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 									<div key={product.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent/50 transition-colors">
 										<div className="flex items-center gap-3">
 											{product.images?.[0] ? (
-												<img
+												<Image
 													src={product.images[0]}
 													alt={product.name}
 													className="w-12 h-12 object-cover rounded"
@@ -410,7 +411,7 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 												className="flex-1 flex items-center gap-3 cursor-pointer"
 											>
 												{product.images?.[0] ? (
-													<img
+													<Image
 														src={product.images[0]}
 														alt={product.name}
 														className="w-10 h-10 object-cover rounded"

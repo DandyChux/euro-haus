@@ -7,6 +7,7 @@ import { Skeleton } from "~/components/ui/skeleton"
 import { Search, X, Package, Calendar } from "lucide-react"
 import { useNavigate } from "@tanstack/react-router"
 import { apiClient } from "~/lib/api"
+import { Image } from "./ui/image"
 
 interface StripeProduct {
 	id: string
@@ -212,7 +213,7 @@ export function SearchBar({ onSearch, enableProductSearch = false, placeholder =
 									>
 										<div className="flex gap-3">
 											{product.images[0] ? (
-												<img
+												<Image
 													src={product.images[0]}
 													alt={product.name}
 													className="h-16 w-16 object-cover rounded"

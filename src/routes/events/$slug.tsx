@@ -7,7 +7,7 @@ import { Badge } from '~/components/ui/badge';
 import { Separator } from '~/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
-import { stripeService, TieredPrice, EventWithTiers, EventProduct } from '~/lib/services/stripe-service';
+import { stripeService, TieredPrice, EventWithTiers, EventProduct, StripeProduct } from '~/lib/services/stripe-service';
 import { useCart } from '~/lib/contexts/cart-context';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -21,7 +21,7 @@ import { MapLocation } from '~/components/ui/map-location';
 
 interface MerchandiseModalProps {
 	isOpen: boolean;
-	event: EventProduct;
+	linkedProducts: StripeProduct[];
 	onClose: () => void;
 	onContinue: (selectedProducts: SelectedProduct[]) => void;
 	onSkip: () => void;
@@ -41,27 +41,42 @@ interface SelectedProduct {
 
 const MerchandiseModal: React.FC<MerchandiseModalProps> = ({
 	isOpen,
-	event,
+	linkedProducts,
 	onClose,
 	onContinue,
 	onSkip
 }) => {
 	const [selectedMerchandise, setSelectedMerchandise] = useState<SelectedProduct[]>([]);
+	const [hasAutoSkipped, setHasAutoSkipped] = useState(false);
 
 	// Reset selections when modal closes
 	useEffect(() => {
 		if (!isOpen) {
 			setSelectedMerchandise([]);
+			setHasAutoSkipped(false);
 		}
 	}, [isOpen]);
 
-	if (!isOpen) return null;
-
 	// Filter for merchandise and addon products
-	const merchandiseProducts = event?.linkedProducts?.filter((p: any) =>
+	const merchandiseProducts = linkedProducts?.filter((p) =>
 		p.metadata?.type === 'merchandise' ||
 		p.metadata?.type === 'addon'
 	) || [];
+
+	// Auto-skip if no merchandise available (use effect to prevent multiple calls)
+	useEffect(() => {
+		if (isOpen && merchandiseProducts.length === 0 && !hasAutoSkipped) {
+			setHasAutoSkipped(true);
+			handleSkip();
+		}
+	}, [isOpen, merchandiseProducts.length, hasAutoSkipped]);
+
+	if (!isOpen) return null;
+
+	// If no merchandise, return null (the useEffect will handle the skip)
+	if (merchandiseProducts.length === 0) {
+		return null;
+	}
 
 	const handleToggleProduct = (product: any) => {
 		const existing = selectedMerchandise.find(m => m.id === product.id);
@@ -121,12 +136,6 @@ const MerchandiseModal: React.FC<MerchandiseModalProps> = ({
 		onClose();
 	};
 
-	if (merchandiseProducts.length === 0) {
-		// If no merchandise available, skip directly
-		handleSkip();
-		return null;
-	}
-
 	return (
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
 			<div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
@@ -154,7 +163,7 @@ const MerchandiseModal: React.FC<MerchandiseModalProps> = ({
 										}`}
 								>
 									{product.images?.[0] && (
-										<img
+										<Image
 											src={product.images[0]}
 											alt={product.title}
 											className="w-full h-48 object-cover rounded mb-2"
@@ -262,9 +271,14 @@ export const Route = createFileRoute('/events/$slug')({
 		const eventWithTiers = await stripeService.getEventWithPriceTiers(params.slug);
 
 		if (eventWithTiers && eventWithTiers.priceTiers.length > 0) {
+			// Get linked products if any
+			const { linkedProducts, tierProducts } = await stripeService.getEventLinkedProducts(eventWithTiers.id);
+
 			// Event has tiers
 			return {
 				event: eventWithTiers,
+				linkedProducts,
+				tierProducts,
 				hasTiers: true,
 				singlePriceInfo: null
 			};
@@ -272,9 +286,15 @@ export const Route = createFileRoute('/events/$slug')({
 
 		// If no tiers, get the basic event and fetch single price info
 		const event = await stripeService.getEventBySlug(params.slug);
+		// console.log("Event: ", event);
 		if (!event) {
 			throw new Error('Event not found');
 		}
+
+		// Get linked products if any
+		const { linkedProducts, tierProducts } = await stripeService.getEventLinkedProducts(event.id);
+		// console.log("LINKED PRODUCTS:", linkedProducts);
+		// console.log("TIER PRODUCTS:", tierProducts);
 
 		// For single-price events, fetch the default price metadata
 		let singlePriceInfo = null;
@@ -296,6 +316,8 @@ export const Route = createFileRoute('/events/$slug')({
 
 		return {
 			event,
+			linkedProducts,
+			tierProducts,
 			hasTiers: false,
 			singlePriceInfo
 		};
@@ -306,7 +328,7 @@ export const Route = createFileRoute('/events/$slug')({
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 function EventDetailPage() {
-	const { event, hasTiers, singlePriceInfo } = Route.useLoaderData();
+	const { event, hasTiers, singlePriceInfo, linkedProducts, tierProducts } = Route.useLoaderData();
 	const { addItem } = useCart();
 	const [quantity, setQuantity] = useState(1);
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
@@ -355,11 +377,19 @@ function EventDetailPage() {
 		// Check if this tier has included products
 		const hasIncludedProducts = tier.includedProducts;
 
-		// If tier doesn't include products and there are linked products, show merchandise modal
-		if (!hasIncludedProducts && event.linkedProducts && event.linkedProducts.length > 0) {
+		// Filter for actual merchandise/addon products
+		const merchandiseProducts = linkedProducts?.filter((p) =>
+			p.metadata?.type === 'merchandise' ||
+			p.metadata?.type === 'addon'
+		) || [];
+
+		// Only show merchandise modal if:
+		// 1. Tier doesn't already include products
+		// 2. There are actual merchandise/addon products available
+		if (!hasIncludedProducts && merchandiseProducts.length > 0) {
 			setShowMerchandiseModal(true);
 		} else {
-			// Add to cart instead of going to checkout
+			// Add to cart directly - no merchandise available or tier already includes products
 			addTierToCart(tier, tierQuantity);
 		}
 	};
@@ -566,12 +596,12 @@ function EventDetailPage() {
 			{/* Hero Section with Enhanced Visuals */}
 			<div className="relative overflow-hidden">
 				<div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-secondary/10 to-accent/15 animate-pulse" />
-				<div className="w-full h-[650px] relative">
+				<div className="w-full h-[750px] relative">
 					<div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-background/60 z-10" />
 					<Image
 						src={event.imageUrl}
 						alt={event.title}
-						className="w-full h-full object-cover"
+						className="w-full h-full object-contain"
 					/>
 					{/* Decorative elements */}
 					<div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-primary/30 to-transparent rounded-full blur-3xl" />
@@ -607,7 +637,7 @@ function EventDetailPage() {
 			</div>
 
 			{/* Main Content */}
-			<div className="max-w-[1750px] mx-auto px-4 py-12">
+			<div className="container mx-auto px-4 py-12">
 				{/* Sponsors Section */}
 				{sponsorTiers.length > 0 && (
 					<section className="relative py-8 mb-12 rounded-3xl overflow-hidden">
@@ -626,9 +656,8 @@ function EventDetailPage() {
 						</div>
 					</section>
 				)}
-				<div className="grid lg:grid-cols-3 gap-10 mb-12">
-					{/* Left Column - Main Info */}
-					<div className="lg:col-span-2 space-y-8">
+				<div className="flex flex-col space-y-4 mb-12">
+					<div className="space-y-8">
 						{/* Event Details */}
 						<div className="relative group">
 							<div className="absolute -inset-0.5 bg-gradient-to-r from-primary via-secondary to-accent rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
@@ -794,27 +823,26 @@ function EventDetailPage() {
 						)}
 					</div>
 
-					{/* Right Column - Booking */}
 					<div className="space-y-4">
-						{/*{event?.linkedProducts && event.linkedProducts.length > 0 && (
+						{linkedProducts && linkedProducts.length > 0 && (
 							<div className="mt-12">
 								<h3 className="text-2xl font-bold mb-6">Event Merchandise & Add-ons</h3>
 								<div className="grid grid-cols-1 gap-6">
-									{event.linkedProducts?.map((product) => (
+									{linkedProducts?.map((product) => (
 										<div key={product.id} className="border rounded-lg p-4">
-											{product.imageUrl && (
-												<img
-													src={product.imageUrl}
-													alt={product.title}
+											{product.images && (
+												<Image
+													src={product.images[0]}
+													alt={product.name}
 													className="w-full h-48 object-cover rounded mb-4"
 												/>
 											)}
-											<h4 className="font-semibold mb-2">{product.title}</h4>
+											<h4 className="font-semibold mb-2">{product.name}</h4>
 											<p className="text-sm text-gray-600 mb-3">{product.description}</p>
-											{product.price && (
+											{product.default_price && (
 												<div className="flex justify-between items-center">
 													<span className="font-bold text-lg">
-														${(product.price / 100).toFixed(2)}
+														${(product.default_price.unit_amount / 100).toFixed(2)}
 													</span>
 													<Button
 														size="sm"
@@ -822,12 +850,12 @@ function EventDetailPage() {
 															// Add to cart
 															addItem({
 																id: product.id,
-																priceId: product.priceId,
-																title: product.title,
+																priceId: product.default_price?.id,
+																title: product.name,
 																description: product.description || '',
-																price: product.price / 100,
+																price: (product.default_price?.unit_amount || 0) / 100,
 																quantity: 1,
-																imageUrl: product.imageUrl || '',
+																imageUrl: product.images[0] || '',
 																type: 'product'
 															});
 														}}
@@ -840,7 +868,7 @@ function EventDetailPage() {
 									))}
 								</div>
 							</div>
-						)}*/}
+						)}
 
 						{/* Tiered Pricing */}
 						{hasTiers && (event as EventWithTiers).priceTiers && (event as EventWithTiers).priceTiers.length > 0 ? (

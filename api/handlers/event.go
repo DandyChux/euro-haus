@@ -39,6 +39,10 @@ type TicketInfo struct {
 	TicketCode    string `json:"ticketCode"`
 }
 
+// type StripeResponse struct {
+
+// }
+
 // ValidateTicket checks if a ticket token is valid
 func ValidateTicket(w http.ResponseWriter, r *http.Request) {
 	var req ValidateTicketRequest
