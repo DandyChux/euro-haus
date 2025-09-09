@@ -1053,7 +1053,7 @@ function EventDetailPage() {
 			{/* Merchandise Modal */}
 			<MerchandiseModal
 				isOpen={showMerchandiseModal}
-				event={event}
+				linkedProducts={linkedProducts}
 				onClose={() => setShowMerchandiseModal(false)}
 				onContinue={handleMerchandiseContinue}
 				onSkip={handleMerchandiseSkip}

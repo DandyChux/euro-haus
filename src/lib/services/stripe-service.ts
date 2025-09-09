@@ -325,7 +325,7 @@ export const stripeService = {
 			sponsorTiers,
 			hasTiers: metadata.has_tiers === 'true',
 			lowestPrice: metadata.lowest_price ? parseFloat(metadata.lowest_price) : undefined,
-			linkedProducts: stripeProduct.linkedProducts || []
+			// linkedProducts: stripeProduct.linkedProducts || []
 		};
 	},
 
