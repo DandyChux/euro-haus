@@ -412,7 +412,7 @@ export const stripeService = {
 		tierProducts: any[];
 	}> {
 		try {
-			const response = await apiClient.get(`/admin/events/${eventId}/linked-products`);
+			const response = await apiClient.get(`/events/${eventId}/linked-products`);
 			console.log('Linked Products response: ', response.data);
 			return response.data;
 		} catch (error) {

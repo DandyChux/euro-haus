@@ -103,6 +103,7 @@ func main() {
 	api.HandleFunc("/events/updates", handlers.HandleEventUpdates)
 	api.HandleFunc("/events/{eventId}/tickets", handlers.GetEventTickets).Methods("GET", "OPTIONS")
 	api.HandleFunc("/events/{slug}", handlers.GetEventBySlug).Methods("GET", "OPTIONS")
+	api.HandleFunc("/events/{eventId}/linked-products", handlers.GetEventLinkedProducts).Methods("GET", "OPTIONS")
 
 	// Vehicle submission endpoints
 	api.HandleFunc("/submissions", handlers.CreateSubmission).Methods("POST", "OPTIONS")
@@ -167,7 +168,6 @@ func main() {
 	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/link-products", middleware.RequireAuth(http.HandlerFunc(handlers.LinkProductsToEvent))).Methods("POST", "OPTIONS")
-	api.Handle("/admin/events/{eventId}/linked-products", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventLinkedProducts))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/products/{productId}", middleware.RequireAuth(http.HandlerFunc(handlers.RemoveProductFromEvent))).Methods("DELETE", "OPTIONS")
 	api.Handle("/admin/tiers/add-products", middleware.RequireAuth(http.HandlerFunc(handlers.AddProductsToTier))).Methods("POST", "OPTIONS")
 
