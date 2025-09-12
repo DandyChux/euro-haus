@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"euro-haus-api/services"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
@@ -61,7 +65,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process metadata to handle large fields
-	processedMetadata, err := ProcessLargeMetadata(req.Metadata)
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata, nil)
 	if err != nil {
 		log.Printf("Warning: Error processing metadata: %v", err)
 		// Continue with original metadata if processing fails
@@ -301,11 +305,16 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if product exists
-	_, err := product.Get(productID, nil)
+	existingProduct, err := product.Get(productID, nil)
 	if err != nil {
 		log.Printf("Product not found: %v", err)
 		http.Error(w, "Product not found", http.StatusNotFound)
 		return
+	}
+
+	// Clean up external metadata before deleting
+	if existingProduct.Metadata != nil {
+		CleanupExternalMetadata(existingProduct.Metadata)
 	}
 
 	// Archive all prices associated with this product first
@@ -666,69 +675,81 @@ func ProcessLargeMetadata(metadata map[string]string, existingMetadata map[strin
 
 		// If it's a large field and exceeds 400 chars (leaving buffer), store externally
 		if isLargeField && len(value) > 400 {
-			// Check if this field already has an external URL
+			// Check if this field already has an external URL in existing metadata
 			existingURL := ""
+			existingFilename := ""
 			if existingMetadata != nil {
 				if url, exists := existingMetadata[key+"_url"]; exists {
 					existingURL = url
+					// Extract filename from URL
+					urlParts := strings.Split(url, "/")
+					if len(urlParts) > 0 {
+						existingFilename = strings.TrimSuffix(urlParts[len(urlParts)-1], ".json")
+					}
 				}
 			}
 
-			// If we have an existing URL, update that file instead of creating a new one
-			if existingURL != "" {
-				// Extract the key from the existing URL
-				// URL format: https://bucket.endpoint/folder/filename.json
-				urlParts := strings.Split(existingURL, "/")
-				if len(urlParts) > 0 {
-					filename := urlParts[len(urlParts)-1]
-					folder := "product-metadata"
-					if len(urlParts) > 1 {
-						folder = urlParts[len(urlParts)-2]
-					}
+			// Parse the JSON value
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
+				// If it's not JSON, store as-is
+				jsonData = value
+			}
 
-					// Parse and re-upload to the same location
-					var jsonData interface{}
-					if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
-						jsonData = value
-					}
+			var jsonURL string
+			var uploadErr error
 
-					// Upload to the same filename
-					jsonURL, err := services.UploadJSON(jsonData, strings.TrimSuffix(filename, ".json"), folder)
-					if err != nil {
-						log.Printf("Warning: Failed to update external metadata field %s: %v", key, err)
-						processedMetadata[key] = value
-					} else {
-						processedMetadata[key+"_url"] = jsonURL
-						processedMetadata[key+"_external"] = "true"
-						if len(value) > 100 {
-							processedMetadata[key+"_preview"] = value[:100] + "..."
-						}
-					}
+			if existingFilename != "" {
+				// We have an existing file, update it
+				jsonURL, uploadErr = services.UploadJSON(jsonData, existingFilename, "product-metadata")
+				if uploadErr != nil {
+					// If updating existing file fails, try creating a new one
+					log.Printf("Failed to update existing file %s, creating new one: %v", existingFilename, uploadErr)
+					metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+					jsonURL, uploadErr = services.UploadJSON(jsonData, metadataID, "product-metadata")
 				}
 			} else {
-				// No existing URL, create a new one
+				// No existing file, create a new one
 				metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+				jsonURL, uploadErr = services.UploadJSON(jsonData, metadataID, "product-metadata")
+			}
 
-				var jsonData interface{}
-				if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
-					jsonData = value
-				}
-
-				jsonURL, err := services.UploadJSON(jsonData, metadataID, "product-metadata")
-				if err != nil {
-					log.Printf("Warning: Failed to upload large metadata field %s: %v", key, err)
-					processedMetadata[key] = value
+			if uploadErr != nil {
+				log.Printf("Warning: Failed to upload large metadata field %s: %v", key, uploadErr)
+				// Fall back to truncating the data
+				if len(value) > 490 {
+					processedMetadata[key] = value[:490] + "..."
 				} else {
-					processedMetadata[key+"_url"] = jsonURL
-					processedMetadata[key+"_external"] = "true"
-					if len(value) > 100 {
-						processedMetadata[key+"_preview"] = value[:100] + "..."
-					}
+					processedMetadata[key] = value
+				}
+				processedMetadata[key+"_truncated"] = "true"
+			} else {
+				// Store the URL reference instead
+				processedMetadata[key+"_url"] = jsonURL
+				// Store a flag indicating this field is stored externally
+				processedMetadata[key+"_external"] = "true"
+				// Optionally store a preview/summary
+				if len(value) > 100 {
+					processedMetadata[key+"_preview"] = value[:100] + "..."
 				}
 			}
 		} else {
 			// Small enough to store directly
 			processedMetadata[key] = value
+		}
+	}
+
+	// Preserve any existing external references that weren't updated
+	if existingMetadata != nil {
+		for key, value := range existingMetadata {
+			// If this is an external reference and we haven't processed the base field
+			if strings.HasSuffix(key, "_url") || strings.HasSuffix(key, "_external") || strings.HasSuffix(key, "_preview") {
+				baseKey := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(key, "_url"), "_external"), "_preview")
+				// If we didn't process this field (maybe it was deleted or not sent), preserve the reference
+				if _, processed := metadata[baseKey]; !processed {
+					processedMetadata[key] = value
+				}
+			}
 		}
 	}
 
@@ -755,4 +776,33 @@ func RetrieveLargeMetadata(metadata map[string]string) map[string]string {
 	}
 
 	return processedMetadata
+}
+
+// CleanupExternalMetadata removes external files when they're no longer needed
+func CleanupExternalMetadata(metadata map[string]string) error {
+	for key, value := range metadata {
+		if strings.HasSuffix(key, "_url") {
+			// Extract the key from the URL to delete from Spaces
+			urlParts := strings.Split(value, "/")
+			if len(urlParts) > 0 {
+				filename := urlParts[len(urlParts)-1]
+				folder := "product-metadata"
+				if len(urlParts) > 1 {
+					folder = urlParts[len(urlParts)-2]
+				}
+
+				// Delete from Spaces
+				key := fmt.Sprintf("%s/%s", folder, filename)
+				_, err := services.S3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+					Bucket: aws.String(os.Getenv("SPACES_BUCKET")),
+					Key:    aws.String(key),
+				})
+
+				if err != nil {
+					log.Printf("Warning: Failed to delete external metadata file %s: %v", key, err)
+				}
+			}
+		}
+	}
+	return nil
 }
