@@ -62,6 +62,7 @@ function SubmissionIssuesPage() {
 
 function SubmissionIssuesContent() {
 	const { submissions, events } = Route.useLoaderData();
+	console.log("Submission Issues: ", submissions)
 	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(false);
 

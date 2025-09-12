@@ -901,7 +901,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For debugging, let's log how many submissions we found
-	log.Printf("Found %d submission keys in Redis", len(submissionKeys))
+	fmt.Printf("Found %d submission keys in Redis", len(submissionKeys))
 
 	var issueSubmissions []map[string]interface{}
 
@@ -916,7 +916,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		status := data["status"]
 
 		// Log the submission we're processing for debugging
-		log.Printf("Processing submission %s with status %s", submissionID, status)
+		fmt.Printf("Processing submission %s with status %s", submissionID, status)
 
 		// Check for issues
 		hasIssue := false

@@ -177,13 +177,13 @@ func main() {
 
 	// Admin submission endpoints (requires authentication)
 	api.Handle("/admin/submissions/pending-count", middleware.RequireAuth(http.HandlerFunc(handlers.GetPendingSubmissionsCount))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/submissions/issues", middleware.RequireAuth(http.HandlerFunc(handlers.GetAllSubmissionsWithIssues))).Methods("GET", "OPTIONS") // MOVED UP
 	api.Handle("/admin/submissions/{eventId}", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventSubmissions))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/approve", middleware.RequireAuth(http.HandlerFunc(handlers.ApproveSubmission))).Methods("PUT", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/deny", middleware.RequireAuth(http.HandlerFunc(handlers.DenySubmission))).Methods("PUT", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/payment-status", middleware.RequireAuth(http.HandlerFunc(handlers.GetSubmissionPaymentStatus))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/create-payment", middleware.RequireAuth(http.HandlerFunc(handlers.CreateSubmissionPayment))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/resend-email", middleware.RequireAuth(http.HandlerFunc(handlers.ResendApprovalEmail))).Methods("POST", "OPTIONS")
-	api.Handle("/admin/submissions/issues", middleware.RequireAuth(http.HandlerFunc(handlers.GetAllSubmissionsWithIssues))).Methods("GET", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

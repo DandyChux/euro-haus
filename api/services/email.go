@@ -2,16 +2,16 @@ package services
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"html/template"
 	"log"
-	"net/smtp"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/resend/resend-go/v2"
 )
 
 var (
@@ -40,20 +40,222 @@ type EmailMessage struct {
 }
 
 // SendEmail sends an email message
+// func SendEmail(msg *EmailMessage) error {
+// 	// Get email configuration from environment
+// 	smtpHost := os.Getenv("MAIL_HOST")
+// 	smtpPort := os.Getenv("MAIL_PORT")
+// 	smtpUser := os.Getenv("MAIL_USERNAME")
+// 	smtpPass := os.Getenv("MAIL_PASSWORD")
+// 	fromEmail := os.Getenv("MAIL_FROM_ADDRESS")
+
+// 	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" || fromEmail == "" {
+// 		return fmt.Errorf("missing email configuration")
+// 	}
+
+// 	// Determine the body based on the inputs
+// 	var body string
+// 	if msg.TemplateID != "" {
+// 		// Load and parse templates if not done already
+// 		emailTemplatesOnce.Do(func() {
+// 			loadEmailTemplates()
+// 		})
+
+// 		// Get template
+// 		tmpl, ok := emailTemplates[msg.TemplateID]
+// 		if ok {
+// 			// Execute template
+// 			var renderedHTML bytes.Buffer
+// 			if err := tmpl.Execute(&renderedHTML, msg.TemplateData); err != nil {
+// 				return fmt.Errorf("failed to render email template: %w", err)
+// 			}
+// 			msg.BodyHTML = renderedHTML.String()
+// 		}
+
+// 		// Execute template
+// 		var renderedHTML bytes.Buffer
+// 		if err := tmpl.Execute(&renderedHTML, msg.TemplateData); err != nil {
+// 			return fmt.Errorf("failed to render email template: %w", err)
+// 		}
+
+// 		msg.BodyHTML = renderedHTML.String()
+// 	}
+
+// 	if msg.BodyHTML != "" {
+// 		body = msg.BodyHTML
+// 	} else if msg.BodyText != "" {
+// 		body = msg.BodyText
+// 	} else {
+// 		return fmt.Errorf("no email body provided")
+// 	}
+
+// 	// Set up email headers
+// 	from := fromEmail
+
+// 	// Create the message headers
+// 	headers := make(map[string]string)
+// 	headers["From"] = from
+// 	headers["To"] = strings.Join(msg.To, ", ")
+// 	if len(msg.Cc) > 0 {
+// 		headers["Cc"] = strings.Join(msg.Cc, ", ")
+// 	}
+// 	headers["Subject"] = msg.Subject
+// 	headers["MIME-Version"] = "1.0"
+
+// 	// Determine if this is a multipart message
+// 	isMultipart := len(msg.Attachments) > 0 || (msg.BodyHTML != "" && msg.BodyText != "")
+
+// 	// Create the email message
+// 	var messageBuffer bytes.Buffer
+// 	boundary := "eurohaus-email-boundary"
+
+// 	// Add headers
+// 	for k, v := range headers {
+// 		messageBuffer.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+// 	}
+
+// 	// If multipart, set content type accordingly
+// 	if isMultipart {
+// 		messageBuffer.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=%s\r\n", boundary))
+// 		messageBuffer.WriteString("\r\n")
+// 	} else if msg.BodyHTML != "" {
+// 		// Single part HTML
+// 		messageBuffer.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+// 		messageBuffer.WriteString("\r\n")
+// 	} else {
+// 		// Single part text
+// 		messageBuffer.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+// 		messageBuffer.WriteString("\r\n")
+// 	}
+
+// 	// Add message body
+// 	if isMultipart {
+// 		// HTML part
+// 		if msg.BodyHTML != "" {
+// 			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
+// 			messageBuffer.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
+// 			messageBuffer.WriteString("\r\n")
+// 			messageBuffer.WriteString(msg.BodyHTML)
+// 		}
+
+// 		// Text part
+// 		if msg.BodyText != "" {
+// 			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
+// 			messageBuffer.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
+// 			messageBuffer.WriteString("\r\n")
+// 			messageBuffer.WriteString(msg.BodyText)
+// 		}
+
+// 		// Attachments
+// 		for _, att := range msg.Attachments {
+// 			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
+// 			messageBuffer.WriteString(fmt.Sprintf("Content-Type: %s\r\n", att.ContentType))
+// 			messageBuffer.WriteString("Content-Transfer-Encoding: base64\r\n")
+// 			messageBuffer.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=%s\r\n", att.Filename))
+// 			messageBuffer.WriteString("\r\n")
+
+// 			encoded := base64.StdEncoding.EncodeToString(att.Data)
+// 			// Add line breaks to the base64 encoded attachment
+// 			for i := 0; i < len(encoded); i += 76 {
+// 				end := i + 76
+// 				if end > len(encoded) {
+// 					end = len(encoded)
+// 				}
+// 				messageBuffer.WriteString(encoded[i:end])
+// 				messageBuffer.WriteString("\r\n")
+// 			}
+// 		}
+
+// 		// Close the boundary
+// 		messageBuffer.WriteString(fmt.Sprintf("\r\n--%s--\r\n", boundary))
+// 	} else {
+// 		// Single part message
+// 		messageBuffer.WriteString(body)
+// 	}
+
+// 	// Connect to SMTP server
+// 	// auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+// 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+
+// 	// Combine recipients for SMTP
+// 	recipients := append([]string{}, msg.To...)
+// 	recipients = append(recipients, msg.Cc...)
+// 	recipients = append(recipients, msg.Bcc...)
+
+// 	// Create a new TLS configuration
+// 	tlsConfig := &tls.Config{
+// 		ServerName: smtpHost,
+// 	}
+
+// 	// Connect to the server
+// 	client, err := smtp.Dial(addr)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+// 	}
+// 	defer client.Close()
+
+// 	// Start TLS connection
+// 	if err = client.StartTLS(tlsConfig); err != nil {
+// 		return fmt.Errorf("failed to start TLS: %w", err)
+// 	}
+
+// 	// Authenticate
+// 	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+// 	if err = client.Auth(auth); err != nil {
+// 		return fmt.Errorf("authentication failed: %w", err)
+// 	}
+
+// 	// Set the sender and recipients
+// 	if err = client.Mail(fromEmail); err != nil {
+// 		return fmt.Errorf("failed to set sender: %w", err)
+// 	}
+
+// 	for _, recipient := range recipients {
+// 		if err = client.Rcpt(recipient); err != nil {
+// 			return fmt.Errorf("failed to add recipient %s: %w", recipient, err)
+// 		}
+// 	}
+
+// 	// Send the email
+// 	w, err := client.Data()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to open data connection: %w", err)
+// 	}
+
+// 	_, err = w.Write(messageBuffer.Bytes())
+// 	if err != nil {
+// 		return fmt.Errorf("failed to write email data: %w", err)
+// 	}
+
+// 	err = w.Close()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to close data connection: %w", err)
+// 	}
+
+// 	// Close the connection
+// 	client.Quit()
+
+//		fmt.Printf("Email sent to %v with subject: %s", msg.To, msg.Subject)
+//		return nil
+//	}
+
+// SendEmail sends an email message using Resend API
 func SendEmail(msg *EmailMessage) error {
 	// Get email configuration from environment
-	smtpHost := os.Getenv("MAIL_HOST")
-	smtpPort := os.Getenv("MAIL_PORT")
-	smtpUser := os.Getenv("MAIL_USERNAME")
-	smtpPass := os.Getenv("MAIL_PASSWORD")
+	apiKey := os.Getenv("RESEND_API_KEY")
 	fromEmail := os.Getenv("MAIL_FROM_ADDRESS")
+	fromName := os.Getenv("MAIL_FROM_NAME")
 
-	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" || fromEmail == "" {
-		return fmt.Errorf("missing email configuration")
+	if apiKey == "" || fromEmail == "" {
+		return fmt.Errorf("missing email configuration: RESEND_API_KEY and MAIL_FROM_ADDRESS are required")
 	}
 
+	// Initialize Resend client
+	client := resend.NewClient(apiKey)
+
 	// Determine the body based on the inputs
-	var body string
+	var bodyHTML string
+	var bodyText string
+
 	if msg.TemplateID != "" {
 		// Load and parse templates if not done already
 		emailTemplatesOnce.Do(func() {
@@ -68,173 +270,76 @@ func SendEmail(msg *EmailMessage) error {
 			if err := tmpl.Execute(&renderedHTML, msg.TemplateData); err != nil {
 				return fmt.Errorf("failed to render email template: %w", err)
 			}
-			msg.BodyHTML = renderedHTML.String()
+			bodyHTML = renderedHTML.String()
+		} else {
+			return fmt.Errorf("template %s not found", msg.TemplateID)
 		}
-
-		// Execute template
-		var renderedHTML bytes.Buffer
-		if err := tmpl.Execute(&renderedHTML, msg.TemplateData); err != nil {
-			return fmt.Errorf("failed to render email template: %w", err)
-		}
-
-		msg.BodyHTML = renderedHTML.String()
+	} else {
+		bodyHTML = msg.BodyHTML
+		bodyText = msg.BodyText
 	}
 
-	if msg.BodyHTML != "" {
-		body = msg.BodyHTML
-	} else if msg.BodyText != "" {
-		body = msg.BodyText
-	} else {
+	// Ensure we have at least one body
+	if bodyHTML == "" && bodyText == "" {
 		return fmt.Errorf("no email body provided")
 	}
 
-	// Set up email headers
-	from := fromEmail
-
-	// Create the message headers
-	headers := make(map[string]string)
-	headers["From"] = from
-	headers["To"] = strings.Join(msg.To, ", ")
-	if len(msg.Cc) > 0 {
-		headers["Cc"] = strings.Join(msg.Cc, ", ")
-	}
-	headers["Subject"] = msg.Subject
-	headers["MIME-Version"] = "1.0"
-
-	// Determine if this is a multipart message
-	isMultipart := len(msg.Attachments) > 0 || (msg.BodyHTML != "" && msg.BodyText != "")
-
-	// Create the email message
-	var messageBuffer bytes.Buffer
-	boundary := "eurohaus-email-boundary"
-
-	// Add headers
-	for k, v := range headers {
-		messageBuffer.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
-	}
-
-	// If multipart, set content type accordingly
-	if isMultipart {
-		messageBuffer.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=%s\r\n", boundary))
-		messageBuffer.WriteString("\r\n")
-	} else if msg.BodyHTML != "" {
-		// Single part HTML
-		messageBuffer.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-		messageBuffer.WriteString("\r\n")
+	// Format the "From" field
+	var from string
+	if fromName != "" {
+		from = fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	} else {
-		// Single part text
-		messageBuffer.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-		messageBuffer.WriteString("\r\n")
+		from = fromEmail
 	}
 
-	// Add message body
-	if isMultipart {
-		// HTML part
-		if msg.BodyHTML != "" {
-			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
-			messageBuffer.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-			messageBuffer.WriteString("\r\n")
-			messageBuffer.WriteString(msg.BodyHTML)
-		}
+	// Prepare Resend email parameters
+	params := &resend.SendEmailRequest{
+		From:    from,
+		To:      msg.To,
+		Subject: msg.Subject,
+	}
 
-		// Text part
-		if msg.BodyText != "" {
-			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
-			messageBuffer.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-			messageBuffer.WriteString("\r\n")
-			messageBuffer.WriteString(msg.BodyText)
-		}
+	// Add optional fields
+	if len(msg.Cc) > 0 {
+		params.Cc = msg.Cc
+	}
 
-		// Attachments
-		for _, att := range msg.Attachments {
-			messageBuffer.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
-			messageBuffer.WriteString(fmt.Sprintf("Content-Type: %s\r\n", att.ContentType))
-			messageBuffer.WriteString("Content-Transfer-Encoding: base64\r\n")
-			messageBuffer.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=%s\r\n", att.Filename))
-			messageBuffer.WriteString("\r\n")
+	if len(msg.Bcc) > 0 {
+		params.Bcc = msg.Bcc
+	}
 
-			encoded := base64.StdEncoding.EncodeToString(att.Data)
-			// Add line breaks to the base64 encoded attachment
-			for i := 0; i < len(encoded); i += 76 {
-				end := i + 76
-				if end > len(encoded) {
-					end = len(encoded)
-				}
-				messageBuffer.WriteString(encoded[i:end])
-				messageBuffer.WriteString("\r\n")
+	// Set body content
+	if bodyHTML != "" {
+		params.Html = bodyHTML
+	}
+	if bodyText != "" {
+		params.Text = bodyText
+	}
+
+	// Handle attachments if present
+	if len(msg.Attachments) > 0 {
+		attachments := make([]*resend.Attachment, len(msg.Attachments))
+		for i, att := range msg.Attachments {
+			// Encode attachment data to base64
+			encodedContent := base64.StdEncoding.EncodeToString(att.Data)
+
+			attachments[i] = &resend.Attachment{
+				Filename: att.Filename,
+				Content:  []byte(encodedContent),
 			}
 		}
-
-		// Close the boundary
-		messageBuffer.WriteString(fmt.Sprintf("\r\n--%s--\r\n", boundary))
-	} else {
-		// Single part message
-		messageBuffer.WriteString(body)
-	}
-
-	// Connect to SMTP server
-	// auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
-	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-
-	// Combine recipients for SMTP
-	recipients := append([]string{}, msg.To...)
-	recipients = append(recipients, msg.Cc...)
-	recipients = append(recipients, msg.Bcc...)
-
-	// Create a new TLS configuration
-	tlsConfig := &tls.Config{
-		ServerName: smtpHost,
-	}
-
-	// Connect to the server
-	client, err := smtp.Dial(addr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
-	}
-	defer client.Close()
-
-	// Start TLS connection
-	if err = client.StartTLS(tlsConfig); err != nil {
-		return fmt.Errorf("failed to start TLS: %w", err)
-	}
-
-	// Authenticate
-	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
-	if err = client.Auth(auth); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
-	// Set the sender and recipients
-	if err = client.Mail(fromEmail); err != nil {
-		return fmt.Errorf("failed to set sender: %w", err)
-	}
-
-	for _, recipient := range recipients {
-		if err = client.Rcpt(recipient); err != nil {
-			return fmt.Errorf("failed to add recipient %s: %w", recipient, err)
-		}
+		params.Attachments = attachments
 	}
 
 	// Send the email
-	w, err := client.Data()
+	sent, err := client.Emails.Send(params)
 	if err != nil {
-		return fmt.Errorf("failed to open data connection: %w", err)
+		return fmt.Errorf("failed to send email via Resend: %w", err)
 	}
 
-	_, err = w.Write(messageBuffer.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to write email data: %w", err)
-	}
+	// Log success
+	fmt.Printf("Email sent successfully via Resend. ID: %s, To: %v, Subject: %s", sent.Id, msg.To, msg.Subject)
 
-	err = w.Close()
-	if err != nil {
-		return fmt.Errorf("failed to close data connection: %w", err)
-	}
-
-	// Close the connection
-	client.Quit()
-
-	fmt.Printf("Email sent to %v with subject: %s", msg.To, msg.Subject)
 	return nil
 }
 
