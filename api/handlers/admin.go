@@ -676,11 +676,9 @@ func ProcessLargeMetadata(metadata map[string]string, existingMetadata map[strin
 		// If it's a large field and exceeds 400 chars (leaving buffer), store externally
 		if isLargeField && len(value) > 400 {
 			// Check if this field already has an external URL in existing metadata
-			existingURL := ""
 			existingFilename := ""
 			if existingMetadata != nil {
 				if url, exists := existingMetadata[key+"_url"]; exists {
-					existingURL = url
 					// Extract filename from URL
 					urlParts := strings.Split(url, "/")
 					if len(urlParts) > 0 {
