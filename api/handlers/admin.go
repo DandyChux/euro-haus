@@ -186,7 +186,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process metadata to handle large fields
-	processedMetadata, err := ProcessLargeMetadata(req.Metadata)
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata, existingProduct.Metadata)
 	if err != nil {
 		log.Printf("Warning: Error processing metadata: %v", err)
 		// Continue with original metadata if processing fails
@@ -648,7 +648,7 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 }
 
 // ProcessLargeMetadata handles metadata fields that might exceed Stripe's limits
-func ProcessLargeMetadata(metadata map[string]string) (map[string]string, error) {
+func ProcessLargeMetadata(metadata map[string]string, existingMetadata map[string]string) (map[string]string, error) {
 	processedMetadata := make(map[string]string)
 
 	// List of fields that might be large and should be stored externally
@@ -666,35 +666,64 @@ func ProcessLargeMetadata(metadata map[string]string) (map[string]string, error)
 
 		// If it's a large field and exceeds 400 chars (leaving buffer), store externally
 		if isLargeField && len(value) > 400 {
-			// Generate a unique identifier for this metadata
-			metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
-
-			// Parse the JSON value
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
-				// If it's not JSON, store as-is
-				jsonData = value
+			// Check if this field already has an external URL
+			existingURL := ""
+			if existingMetadata != nil {
+				if url, exists := existingMetadata[key+"_url"]; exists {
+					existingURL = url
+				}
 			}
 
-			// Upload to Spaces
-			jsonURL, err := services.UploadJSON(jsonData, metadataID, "product-metadata")
-			if err != nil {
-				log.Printf("Warning: Failed to upload large metadata field %s: %v", key, err)
-				// Fall back to truncating the data
-				if len(value) > 490 {
-					processedMetadata[key] = value[:490] + "..."
-				} else {
-					processedMetadata[key] = value
+			// If we have an existing URL, update that file instead of creating a new one
+			if existingURL != "" {
+				// Extract the key from the existing URL
+				// URL format: https://bucket.endpoint/folder/filename.json
+				urlParts := strings.Split(existingURL, "/")
+				if len(urlParts) > 0 {
+					filename := urlParts[len(urlParts)-1]
+					folder := "product-metadata"
+					if len(urlParts) > 1 {
+						folder = urlParts[len(urlParts)-2]
+					}
+
+					// Parse and re-upload to the same location
+					var jsonData interface{}
+					if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
+						jsonData = value
+					}
+
+					// Upload to the same filename
+					jsonURL, err := services.UploadJSON(jsonData, strings.TrimSuffix(filename, ".json"), folder)
+					if err != nil {
+						log.Printf("Warning: Failed to update external metadata field %s: %v", key, err)
+						processedMetadata[key] = value
+					} else {
+						processedMetadata[key+"_url"] = jsonURL
+						processedMetadata[key+"_external"] = "true"
+						if len(value) > 100 {
+							processedMetadata[key+"_preview"] = value[:100] + "..."
+						}
+					}
 				}
-				processedMetadata[key+"_truncated"] = "true"
 			} else {
-				// Store the URL reference instead
-				processedMetadata[key+"_url"] = jsonURL
-				// Store a flag indicating this field is stored externally
-				processedMetadata[key+"_external"] = "true"
-				// Optionally store a preview/summary
-				if len(value) > 100 {
-					processedMetadata[key+"_preview"] = value[:100] + "..."
+				// No existing URL, create a new one
+				metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+
+				var jsonData interface{}
+				if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
+					jsonData = value
+				}
+
+				jsonURL, err := services.UploadJSON(jsonData, metadataID, "product-metadata")
+				if err != nil {
+					log.Printf("Warning: Failed to upload large metadata field %s: %v", key, err)
+					processedMetadata[key] = value
+				} else {
+					processedMetadata[key+"_url"] = jsonURL
+					processedMetadata[key+"_external"] = "true"
+					if len(value) > 100 {
+						processedMetadata[key+"_preview"] = value[:100] + "..."
+					}
 				}
 			}
 		} else {

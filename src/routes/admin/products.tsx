@@ -68,6 +68,7 @@ import {
 import { ProductFormSection } from '~/components/admin/product-form-section';
 import { EventFormSection } from '~/components/admin/event-form-section';
 import { Image } from '~/components/ui/image';
+import { fetchExternalMetadata } from '~/lib/utils';
 
 // Stripe Product interface
 interface StripeProduct {
@@ -201,11 +202,10 @@ function AdminProductsContent() {
 	};
 
 	// Load product for editing
-	const loadProductForEdit = (product: StripeProduct) => {
+	const loadProductForEdit = async (product: StripeProduct) => {
 		setEditingProduct(product);
 		const isEvent = product.metadata.type === 'event';
 		setProductType(isEvent ? 'event' : 'product');
-		console.log('Editing product:', product);
 
 		form.clearErrors();
 
@@ -215,6 +215,23 @@ function AdminProductsContent() {
 			: '0.00';
 
 		if (isEvent) {
+			// Fetch external metadata if needed
+			let processedMetadata = { ...product.metadata };
+
+			// Check if any fields are stored externally
+			const hasExternalData = ['sponsor_tiers', 'sponsors', 'agenda', 'includes'].some(
+				field => product.metadata[`${field}_external`] === 'true'
+			);
+
+			if (hasExternalData) {
+				try {
+					processedMetadata = await fetchExternalMetadata(product.metadata);
+				} catch (error) {
+					console.error('Error fetching external metadata:', error);
+					toast.error('Warning: Some event data could not be loaded from external storage');
+				}
+			}
+
 			// Event-specific data
 			const eventDate = product.metadata.event_date ? new Date(product.metadata.event_date) : new Date();
 			const eventFormData: EventFormData = {
@@ -222,18 +239,18 @@ function AdminProductsContent() {
 				name: product.name,
 				description: product.description || '',
 				imageUrl: product.images[0] || '',
-				featured: product.metadata.featured === 'true',
-				slug: product.metadata.slug || '',
+				featured: processedMetadata.featured === 'true',
+				slug: processedMetadata.slug || '',
 				eventDate: eventDate.toISOString().split('T')[0],
 				eventTime: eventDate.toTimeString().slice(0, 5),
-				location: product.metadata.location || 'Euro Haus Headquarters, Tampa',
-				capacity: product.metadata.capacity || '100',
-				availableSpots: product.metadata.available_spots || product.metadata.capacity || '100',
-				organizer: product.metadata.organizer || 'Euro Haus Events Team',
-				status: (product.metadata.status as EventFormData['status']) || 'upcoming',
-				hasTiers: product.metadata.has_tiers === 'true',
+				location: processedMetadata.location || 'Euro Haus Headquarters, Tampa',
+				capacity: processedMetadata.capacity || '100',
+				availableSpots: processedMetadata.available_spots || processedMetadata.capacity || '100',
+				organizer: processedMetadata.organizer || 'Euro Haus Events Team',
+				status: (processedMetadata.status as EventFormData['status']) || 'upcoming',
+				hasTiers: processedMetadata.has_tiers === 'true',
 				price: price,
-				maxQuantity: product.metadata.max_quantity || '10',
+				maxQuantity: processedMetadata.max_quantity || '10',
 				priceTiers: [],
 				tags: [],
 				agenda: [],
@@ -244,48 +261,76 @@ function AdminProductsContent() {
 
 			// Parse arrays from JSON strings
 			try {
-				// Tags - convert from string array to object array
-				const tagStrings = JSON.parse(product.metadata.tags || '[]');
-				eventFormData.tags = Array.isArray(tagStrings)
-					? tagStrings.map((tag: string) => ({ value: tag }))
-					: [];
+				// Tags
+				const tagData = processedMetadata.tags;
+				if (typeof tagData === 'string') {
+					const tagStrings = JSON.parse(tagData || '[]');
+					eventFormData.tags = Array.isArray(tagStrings)
+						? tagStrings.map((tag: string) => ({ value: tag }))
+						: [];
+				} else if (Array.isArray(tagData)) {
+					eventFormData.tags = tagData.map((tag: string) => ({ value: tag }));
+				}
 
-				// Agenda - should already be in correct format
-				const agendaData = JSON.parse(product.metadata.agenda || '[]');
-				eventFormData.agenda = Array.isArray(agendaData) ? agendaData : [];
+				// Agenda
+				const agendaData = processedMetadata.agenda;
+				if (typeof agendaData === 'string') {
+					eventFormData.agenda = JSON.parse(agendaData || '[]');
+				} else if (Array.isArray(agendaData)) {
+					eventFormData.agenda = agendaData;
+				}
 
-				// Includes - convert from string array to object array
-				const includesStrings = JSON.parse(product.metadata.includes || '[]');
-				eventFormData.includes = Array.isArray(includesStrings)
-					? includesStrings.map((item: string) => ({ value: item }))
-					: [];
+				// Includes
+				const includesData = processedMetadata.includes;
+				if (typeof includesData === 'string') {
+					const includesStrings = JSON.parse(includesData || '[]');
+					eventFormData.includes = Array.isArray(includesStrings)
+						? includesStrings.map((item: string) => ({ value: item }))
+						: [];
+				} else if (Array.isArray(includesData)) {
+					eventFormData.includes = includesData.map((item: string) => ({ value: item }));
+				}
 
-				// Sponsors - check for new tiered format first
-				const sponsorTiersData = product.metadata.sponsor_tiers ? JSON.parse(product.metadata.sponsor_tiers) : null;
-
-				if (sponsorTiersData && Array.isArray(sponsorTiersData)) {
-					// New tiered format - ensure displayOrder is a number
-					eventFormData.sponsorTiers = sponsorTiersData.map((tier: { tierName: string; displayOrder?: number; sponsors: Array<{ name: string; logoUrl: string; link?: string }> }) => ({
-						tierName: tier.tierName,
-						displayOrder: tier.displayOrder ?? 0,
-						sponsors: tier.sponsors
-					}));
-					eventFormData.sponsors = [];
-				} else {
-					// Legacy format - convert to single tier
-					const sponsorsData = JSON.parse(product.metadata.sponsors || '[]');
-					if (Array.isArray(sponsorsData) && sponsorsData.length > 0) {
-						eventFormData.sponsorTiers = [{
-							tierName: 'Sponsors',
-							displayOrder: 0,
-							sponsors: sponsorsData
-						}];
+				// Sponsor Tiers - handle both string and object formats
+				const sponsorTiersData = processedMetadata.sponsor_tiers;
+				if (sponsorTiersData) {
+					let parsedTiers;
+					if (typeof sponsorTiersData === 'string') {
+						parsedTiers = JSON.parse(sponsorTiersData);
+					} else {
+						parsedTiers = sponsorTiersData;
 					}
-					eventFormData.sponsors = [];
+
+					if (Array.isArray(parsedTiers) && parsedTiers.length > 0) {
+						eventFormData.sponsorTiers = parsedTiers.map((tier: any) => ({
+							tierName: tier.tierName,
+							displayOrder: tier.displayOrder ?? 0,
+							sponsors: tier.sponsors || []
+						}));
+					}
+				} else {
+					// Legacy sponsors format
+					const sponsorsData = processedMetadata.sponsors;
+					if (sponsorsData) {
+						let parsedSponsors;
+						if (typeof sponsorsData === 'string') {
+							parsedSponsors = JSON.parse(sponsorsData || '[]');
+						} else {
+							parsedSponsors = sponsorsData;
+						}
+
+						if (Array.isArray(parsedSponsors) && parsedSponsors.length > 0) {
+							eventFormData.sponsorTiers = [{
+								tierName: 'Sponsors',
+								displayOrder: 0,
+								sponsors: parsedSponsors
+							}];
+						}
+					}
 				}
 			} catch (error) {
 				console.error('Error parsing event metadata:', error);
-				// Keep the default empty arrays if parsing fails
+				toast.error('Warning: Some event data could not be parsed');
 			}
 
 			// Explicitly set type first
