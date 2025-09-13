@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vehicle Approved + Your Ticket - Euro Haus</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #28a745 0%, #007bff 100%); color: white; padding: 30px 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .checkmark { font-size: 48px; margin-bottom: 10px; }
+        .content { padding: 20px; background-color: #ffffff; }
+        .approval-section { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; }
+        .ticket-section { border: 2px dashed #007bff; border-radius: 10px; padding: 20px; margin: 25px 0; background-color: #f0f8ff; }
+        .ticket-code { background-color: white; padding: 15px; border-radius: 5px; text-align: center; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .review-notes { background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffc107; }
+        .info-box { background-color: #e8f4f8; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .participant-badge { display: inline-block; background-color: #007bff; color: white; padding: 5px 15px; border-radius: 20px; font-size: 14px; font-weight: bold; margin: 10px 0; }
+        .important-list { background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .important-list ul { margin: 10px 0; padding-left: 20px; }
+        .important-list li { margin: 8px 0; }
+        .next-steps { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .next-steps ol { margin: 10px 0; padding-left: 20px; }
+        .next-steps li { margin: 8px 0; }
+        .footer { text-align: center; font-size: 12px; color: #777; margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6; }
+        .highlight { color: #007bff; font-weight: bold; }
+        table.details-table { width: 100%; margin: 10px 0; }
+        table.details-table td { padding: 8px 0; }
+        table.details-table td:first-child { font-weight: bold; width: 30%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="checkmark">✓</div>
+            <h1 style="margin: 0;">Vehicle Approved & Ticket Issued!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">Your payment has been processed successfully</p>
+        </div>
+
+        <div class="content">
+            <p>Dear {{.ParticipantName}},</p>
+
+            <p style="font-size: 18px; color: #28a745; font-weight: bold;">
+                Excellent news! Your vehicle submission has been approved and your payment has been processed successfully.
+            </p>
+
+            <div class="approval-section">
+                <h2 style="margin-top: 0; color: #28a745;">✓ Approval Confirmed</h2>
+                <table class="details-table">
+                    <tr>
+                        <td>Vehicle:</td>
+                        <td style="font-size: 16px; color: #333;"><strong>{{.VehicleDetails}}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>Event ID:</td>
+                        <td>{{.EventID}}</td>
+                    </tr>
+                    <tr>
+                        <td>Status:</td>
+                        <td><span class="participant-badge">APPROVED PARTICIPANT</span></td>
+                    </tr>
+                </table>
+            </div>
+
+            {{if .ReviewNotes}}
+            <div class="review-notes">
+                <h3 style="margin-top: 0; color: #856404;">📝 Review Notes from Our Team</h3>
+                <p style="margin: 0;">{{.ReviewNotes}}</p>
+            </div>
+            {{end}}
+
+            <div class="ticket-section">
+                <h2 style="text-align: center; color: #007bff; margin-top: 0;">🎫 Your Event Ticket</h2>
+
+                <p style="text-align: center; margin: 15px 0;">
+                    Your ticket has been generated and your vehicle is confirmed for the event!
+                </p>
+
+                <div class="ticket-code">
+                    <p style="margin: 5px 0; color: #666; font-size: 14px;">Your Ticket Code:</p>
+                    <p style="margin: 10px 0; font-size: 24px; font-family: 'Courier New', monospace; font-weight: bold; color: #007bff; letter-spacing: 2px;">
+                        {{.TicketCode}}
+                    </p>
+                    <p style="margin: 5px 0; color: #666; font-size: 12px;">Keep this code safe - you'll need it for check-in</p>
+                </div>
+
+                <p style="text-align: center; color: #666; font-style: italic; margin-top: 15px;">
+                    📧 A separate email with your QR code and complete ticket details will arrive shortly.
+                </p>
+            </div>
+
+            <div class="info-box">
+                <h3 style="margin-top: 0; color: #0056b3;">📋 Important Information for Participants</h3>
+                <div class="important-list">
+                    <ul>
+                        <li><strong>Arrival Time:</strong> Please arrive at least 30 minutes before the event start time</li>
+                        <li><strong>Vehicle Preparation:</strong> Ensure your vehicle is clean and ready for display</li>
+                        <li><strong>Check-in:</strong> Have your ticket code ready (printed or on your phone)</li>
+                        <li><strong>Positioning:</strong> Be prepared to position your vehicle as directed by event coordinators</li>
+                        <li><strong>Guidelines:</strong> Follow all event guidelines and instructions from staff</li>
+                        <li><strong>Display Items:</strong> Consider bringing a sign with your vehicle's details/story</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="next-steps">
+                <h3 style="margin-top: 0;">✅ What's Next?</h3>
+                <ol>
+                    <li>Check your email for your event ticket with QR code (arriving separately)</li>
+                    <li>Save the ticket to your phone or print it out</li>
+                    <li>Prepare your vehicle for the show - detail and clean as needed</li>
+                    <li>Plan to arrive early on event day for participant check-in</li>
+                    <li>Join our participant WhatsApp/Discord group if available (check your ticket email)</li>
+                </ol>
+            </div>
+
+            <div style="background-color: #d4edda; padding: 15px; border-radius: 8px; margin: 25px 0; text-align: center;">
+                <p style="margin: 0; font-size: 16px; color: #155724;">
+                    <strong>🎉 Congratulations on being selected!</strong><br>
+                    We're thrilled to have you and your vehicle as part of our event.
+                </p>
+            </div>
+
+            <p>If you have any questions or need to make changes to your registration, please contact us immediately at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a> with your ticket code: <strong>{{.TicketCode}}</strong></p>
+
+            <p style="margin-top: 30px;">We look forward to seeing you and your amazing vehicle at the event!</p>
+
+            <p>Best regards,<br>
+            <strong>The Euro Haus Events Team</strong></p>
+        </div>
+
+        <div class="footer">
+            <p><strong>Euro Haus Events</strong><br>
+            Premium Automotive Experiences</p>
+            <p>&copy; Euro Haus. All rights reserved.</p>
+            <p style="margin-top: 15px; font-style: italic;">
+                This email confirms your approved participation status and successful payment processing.<br>
+                Please retain this email and your ticket code for your records.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
