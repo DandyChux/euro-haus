@@ -19,6 +19,9 @@ export interface VehicleSubmission {
 	checkoutSessionId?: string;
 	paymentIntentId?: string;
 	ticketId?: string;
+	ticketTier?: string;
+	ticketPrice?: number;
+	ticketQuantity?: number;
 }
 
 export interface SubmissionCreateRequest {
@@ -31,5 +34,8 @@ export interface SubmissionCreateRequest {
 	vehicleMake: string;
 	vehicleModel: string;
 	vehicleDescription?: string;
-	vehicleModifications?: string;
+	vehicleModifications?: string[];
+	ticketTier?: string;
+	ticketPrice?: number;
+	ticketQuantity?: number;
 }

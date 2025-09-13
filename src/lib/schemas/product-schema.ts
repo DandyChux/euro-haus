@@ -9,6 +9,7 @@ export const priceTierSchema = z.object({
 	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
 	requiresVehicleSubmission: z.boolean().optional(),
+	requiresApproval: z.boolean().optional(),
 	isMostPopular: z.boolean().optional()
 });
 

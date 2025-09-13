@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '~/components/ui/breadcrumb'
 import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
-import { ChevronDown, Filter, SlidersHorizontal, X } from 'lucide-react';
+import { Filter, X } from 'lucide-react';
 import { Separator } from '~/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '~/components/ui/accordion';
 import { Checkbox } from '~/components/ui/checkbox';
@@ -11,98 +11,38 @@ import { Label } from '~/components/ui/label';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '~/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { ProductCard } from '~/components/product-card';
-import { apiClient } from '~/lib/api';
 import { Loader2 } from 'lucide-react';
+import { Product, stripeService } from '~/lib/services/stripe-service';
 
 export const Route = createFileRoute('/catalog/')({
 	component: RouteComponent,
+	loader: async () => {
+		const products = await stripeService.getAllProducts()
+
+		if (!products) {
+			throw new Error('Failed to load products. Please try again later.')
+		}
+
+		return products
+	},
+	pendingComponent: () => (
+		<div className="min-h-screen flex items-center justify-center">
+			<Loader2 className="h-8 w-8 animate-spin" />
+		</div>
+	),
+	errorComponent: ({ error, reset }) => (
+		<div className="min-h-screen flex items-center justify-center">
+			<div className="text-center">
+				<p className="text-destructive mb-4">{error.message}</p>
+				<Button onClick={() => reset()}>Retry</Button>
+			</div>
+		</div>
+	)
 })
 
-// Stripe product interface
-interface StripeProduct {
-	id: string
-	name: string
-	description: string | null
-	images: string[]
-	metadata: Record<string, string>
-	active: boolean
-	default_price: {
-		id: string
-		unit_amount: number
-		currency: string
-	} | null
-	created: number
-	updated: number
-}
-
-// UI Product interface
-interface Product {
-	id: string
-	title: string
-	description: string
-	price: number
-	compareAtPrice?: number
-	imageUrl: string
-	category: string
-	subcategory: string
-	tags: string[]
-	isNew: boolean
-	isFeatured: boolean
-	inStock: boolean
-}
-
-// Transform Stripe product to UI product
-function transformStripeProduct(stripeProduct: StripeProduct): Product | null {
-	// Skip products without prices
-	if (!stripeProduct.default_price) {
-		return null;
-	}
-
-	// Parse tags from metadata
-	let tags: string[] = [];
-	if (stripeProduct.metadata.tags) {
-		try {
-			tags = JSON.parse(stripeProduct.metadata.tags);
-		} catch (e) {
-			// If not JSON, treat as comma-separated string
-			tags = stripeProduct.metadata.tags.split(',').map(t => t.trim()).filter(Boolean);
-		}
-	}
-
-	// Determine category and subcategory
-	const type = stripeProduct.metadata.type || 'product';
-	const category = type === 'event' ? 'Events' :
-		stripeProduct.metadata.category === 'apparel' ? 'Apparel' :
-			stripeProduct.metadata.category === 'accessories' ? 'Accessories' :
-				stripeProduct.metadata.category === 'parts' ? 'Parts' :
-					'Merchandise';
-
-	const subcategory = type === 'event' ? 'Tickets' :
-		stripeProduct.metadata.category || 'General';
-
-	return {
-		id: stripeProduct.id,
-		title: stripeProduct.name,
-		description: stripeProduct.description || '',
-		price: stripeProduct.default_price.unit_amount / 100, // Convert from cents
-		compareAtPrice: stripeProduct.metadata.compare_at_price ?
-			parseFloat(stripeProduct.metadata.compare_at_price) : undefined,
-		imageUrl: stripeProduct.images.length > 0 ?
-			stripeProduct.images[0] : '/placeholder.svg?height=400&width=400',
-		category: category,
-		subcategory: subcategory,
-		tags: tags,
-		isNew: stripeProduct.metadata.is_new === 'true',
-		isFeatured: stripeProduct.metadata.featured === 'true',
-		inStock: stripeProduct.metadata.in_stock !== 'false', // Default to true
-	};
-}
-
 function RouteComponent() {
-	const [products, setProducts] = useState<Product[]>([])
+	const products = Route.useLoaderData()
 	const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
-	const [isLoading, setIsLoading] = useState(true)
-	const [error, setError] = useState<string | null>(null)
 	const [activeCategory, setActiveCategory] = useState<string>("all")
 	const [activeFilters, setActiveFilters] = useState<{
 		categories: string[]
@@ -120,40 +60,10 @@ function RouteComponent() {
 	const [sortOption, setSortOption] = useState<string>("featured")
 	const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
 
-	// Fetch products from Stripe API
-	useEffect(() => {
-		const fetchProducts = async () => {
-			setIsLoading(true)
-			setError(null)
-
-			try {
-				const response = await apiClient.get('/products')
-				const stripeProducts: StripeProduct[] = response.data.products || []
-
-				// Transform Stripe products to UI products
-				const transformedProducts = stripeProducts
-					.map(transformStripeProduct)
-					.filter((product): product is Product => product !== null)
-
-				setProducts(transformedProducts)
-				setFilteredProducts(transformedProducts)
-			} catch (error) {
-				console.error('Error fetching products:', error)
-				setError('Failed to load products. Please try again later.')
-				setProducts([])
-				setFilteredProducts([])
-			} finally {
-				setIsLoading(false)
-			}
-		}
-
-		fetchProducts()
-	}, [])
-
 	// Get unique categories, subcategories, and tags
-	const categories = [...new Set(products.map(p => p.category))].sort()
-	const subcategories = [...new Set(products.map(p => p.subcategory))].sort()
-	const allTags = [...new Set(products.flatMap(p => p.tags))].sort()
+	const categories = [...new Set(products.map(p => p.category).filter((c): c is string => c !== undefined))].sort()
+	const subcategories = [...new Set(products.map(p => p.subcategory).filter((s): s is string => s !== undefined))].sort()
+	const allTags = [...new Set(products.flatMap(p => p.tags || []))].sort()
 
 	// Price range
 	const priceRange = products.length > 0 ? {
@@ -167,21 +77,21 @@ function RouteComponent() {
 
 		// Category filter from tabs
 		if (activeCategory !== "all") {
-			filtered = filtered.filter(p => p.category.toLowerCase() === activeCategory.toLowerCase())
+			filtered = filtered.filter(p => p.category?.toLowerCase() === activeCategory.toLowerCase())
 		}
 
 		// Advanced filters
 		if (activeFilters.categories.length > 0) {
-			filtered = filtered.filter(p => activeFilters.categories.includes(p.category))
+			filtered = filtered.filter(p => activeFilters.categories.includes(p.category || ''))
 		}
 
 		if (activeFilters.subcategories.length > 0) {
-			filtered = filtered.filter(p => activeFilters.subcategories.includes(p.subcategory))
+			filtered = filtered.filter(p => activeFilters.subcategories.includes(p.subcategory || ''))
 		}
 
 		if (activeFilters.tags.length > 0) {
 			filtered = filtered.filter(p =>
-				p.tags.some(tag => activeFilters.tags.includes(tag))
+				p.tags?.some(tag => activeFilters.tags.includes(tag))
 			)
 		}
 
@@ -201,8 +111,8 @@ function RouteComponent() {
 		switch (sortOption) {
 			case "featured":
 				filtered.sort((a, b) => {
-					if (a.isFeatured && !b.isFeatured) return -1
-					if (!a.isFeatured && b.isFeatured) return 1
+					if (a.featured && !b.featured) return -1
+					if (!a.featured && b.featured) return 1
 					return 0
 				})
 				break
@@ -465,25 +375,6 @@ function RouteComponent() {
 						/>
 					</Badge>
 				)}
-			</div>
-		)
-	}
-
-	if (isLoading) {
-		return (
-			<div className="min-h-screen flex items-center justify-center">
-				<Loader2 className="h-8 w-8 animate-spin" />
-			</div>
-		)
-	}
-
-	if (error) {
-		return (
-			<div className="min-h-screen flex items-center justify-center">
-				<div className="text-center">
-					<p className="text-destructive mb-4">{error}</p>
-					<Button onClick={() => window.location.reload()}>Retry</Button>
-				</div>
 			</div>
 		)
 	}

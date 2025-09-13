@@ -164,10 +164,10 @@ function HomePage() {
 								<iframe
 									src={`https://www.youtube.com/embed/${latestVideo.id}?rel=0&modestbranding=1`}
 									title={latestVideo.title}
-									frameBorder='0'
 									allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
 									allowFullScreen
 									className='absolute inset-0 w-full h-full'
+									loading='lazy'
 								/>
 							) : (
 								<div className='w-full h-full flex items-center justify-center bg-muted'>

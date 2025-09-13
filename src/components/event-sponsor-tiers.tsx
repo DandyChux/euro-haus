@@ -10,7 +10,6 @@ export function EventSponsorTiers({ sponsorTiers }: EventSponsorTiersProps) {
 	const sortedTiers = [...sponsorTiers].sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
 
 	if (sortedTiers.length === 0) return null;
-	console.log(sortedTiers)
 
 	return (
 		<div className="space-y-12">

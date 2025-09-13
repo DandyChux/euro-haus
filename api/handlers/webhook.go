@@ -13,13 +13,22 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/skip2/go-qrcode"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/webhook"
+)
+
+// Constants for recovery limits and timeframes
+const (
+	MaxRecoveryAttempts = 2
+	MaxSubmissionAge    = 7 * 24 * time.Hour // 7 days
+	MinRecoveryInterval = 1 * time.Hour      // Minimum time between recovery attempts
 )
 
 // HandleWebhook processes Stripe webhook events
@@ -27,10 +36,31 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	const MaxBodyBytes = int64(65536)
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 
+	// Add simple rate limiting check
+	// rdb := services.GetRedisClient()
+	// ctx := context.Background()
+
+	// Use IP-based rate limiting
+	// clientIP := r.Header.Get("X-Forwarded-For")
+	// if clientIP == "" {
+	// 	clientIP = r.RemoteAddr
+	// }
+
+	// // Allow max 100 webhook calls per minute per IP
+	// rateLimitKey := fmt.Sprintf("webhook:ratelimit:%s:%d", clientIP, time.Now().Unix()/60)
+	// count, _ := rdb.Incr(ctx, rateLimitKey).Result()
+	// rdb.Expire(ctx, rateLimitKey, 2*time.Minute)
+
+	// if count > 100 {
+	// 	log.Printf("Rate limit exceeded for IP %s", clientIP)
+	// 	w.WriteHeader(http.StatusTooManyRequests)
+	// 	return
+	// }
+
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("Error reading request body: %v\n", err)
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -38,23 +68,25 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	endpointSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 	if endpointSecret == "" {
 		log.Printf("STRIPE_WEBHOOK_SECRET environment variable not set\n")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	signatureHeader := r.Header.Get("Stripe-Signature")
 	if signatureHeader == "" {
 		log.Printf("Missing Stripe-Signature header\n")
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	event, err := webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
 	if err != nil {
 		log.Printf("Webhook signature verification failed: %v\n", err)
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
+
+	fmt.Printf("Webhook event type: %s\n", event.Type)
 
 	// Handle the event
 	switch event.Type {
@@ -105,9 +137,54 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// isSubmissionEligibleForRecovery checks if a submission should have a recovery session created
+func isSubmissionEligibleForRecovery(submissionData map[string]string) (bool, string) {
+	// Check if payment was already completed
+	if submissionData["payment_completed"] == "true" {
+		return false, "Payment already completed"
+	}
+
+	// Check if ticket was already created
+	if submissionData["ticket_id"] != "" {
+		return false, "Ticket already exists"
+	}
+
+	// Check submission age
+	if createdAt, ok := submissionData["created_at"]; ok {
+		if created, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			if time.Since(created) > MaxSubmissionAge {
+				return false, "Submission too old"
+			}
+		}
+	}
+
+	// Check recovery attempts
+	if recoveryCount, ok := submissionData["checkout_recovery_count"]; ok {
+		if count, err := strconv.Atoi(recoveryCount); err == nil && count >= MaxRecoveryAttempts {
+			return false, fmt.Sprintf("Maximum recovery attempts (%d) reached", MaxRecoveryAttempts)
+		}
+	}
+
+	// Check last recovery attempt time (prevent rapid retries)
+	if lastRecovery, ok := submissionData["last_recovery_attempt_at"]; ok {
+		if lastTime, err := time.Parse(time.RFC3339, lastRecovery); err == nil {
+			if time.Since(lastTime) < MinRecoveryInterval {
+				return false, "Too soon since last recovery attempt"
+			}
+		}
+	}
+
+	// Check if submission was cancelled or rejected
+	if status := submissionData["status"]; status == "cancelled" || status == "rejected" {
+		return false, fmt.Sprintf("Submission status is %s", status)
+	}
+
+	return true, ""
+}
+
 func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	// Handle successful payment
-	log.Printf("PaymentIntent succeeded: %s, Amount: %d %s\n",
+	fmt.Printf("PaymentIntent succeeded: %s, Amount: %d %s\n",
 		pi.ID, pi.Amount, pi.Currency)
 
 	// Check if this is a participant payment
@@ -117,17 +194,16 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	}
 
 	// Get customer details from metadata
-	customerEmail := pi.Customer.Email
-	customerName := pi.Customer.Name
+	var customerEmail, customerName string
 	if metadata, ok := pi.Metadata["customer_name"]; ok {
 		customerName = metadata
 	}
 
-	// If receipt email not available, try to get from metadata
-	if customerEmail == "" {
-		if email, ok := pi.Metadata["customer_email"]; ok {
-			customerEmail = email
-		}
+	// Get receipt email from metadata or receipt email field
+	if pi.ReceiptEmail != "" {
+		customerEmail = pi.ReceiptEmail
+	} else if email, ok := pi.Metadata["customer_email"]; ok {
+		customerEmail = email
 	}
 
 	// Don't send email if we don't have an address
@@ -167,7 +243,7 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 	}
 }
 
-// New function to handle participant payment success
+// handleParticipantPaymentSucceeded handles payment success for participant submissions
 func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID string) {
 	log.Printf("Handling participant payment for submission: %s\n", submissionID)
 
@@ -183,6 +259,31 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		return
 	}
 
+	// CRITICAL: Check if submission is approved before creating ticket
+	if submissionData["status"] != "approved" {
+		log.Printf("WARNING: Payment succeeded for unapproved submission %s (status: %s). Not creating ticket.",
+			submissionID, submissionData["status"])
+
+		// Update submission to note this unusual state
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"payment_succeeded_before_approval": "true",
+			"payment_intent_id":                 pi.ID,
+			"payment_succeeded_at":              time.Now().Format(time.RFC3339),
+		})
+
+		// Don't create ticket - wait for approval
+		return
+	}
+
+	// Check if ticket was already created (prevent duplicates)
+	if existingTicketID := submissionData["ticket_id"]; existingTicketID != "" {
+		log.Printf("Ticket already exists for submission %s: %s", submissionID, existingTicketID)
+		return
+	}
+
+	// Check if approval email was already sent
+	approvalEmailSent := submissionData["approval_email_sent"] == "true"
+
 	// Create and store ticket
 	ticketToken := generateUniqueToken()
 	ticketKey := "ticket:" + ticketToken
@@ -192,18 +293,28 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		eventName = "Euro Haus Event"
 	}
 
+	// Get ticket tier information
+	ticketTier := submissionData["ticket_tier"]
+	if ticketTier == "" {
+		ticketTier = "Participant"
+	}
+
 	ticketData := map[string]interface{}{
 		"customer_name":     submissionData["participant_name"],
 		"customer_email":    submissionData["participant_email"],
 		"event_name":        eventName,
 		"stripe_product_id": submissionData["event_id"],
-		"quantity":          "1",
-		"ticket_type":       "Participant",
+		"quantity":          submissionData["ticket_quantity"],
+		"ticket_type":       ticketTier,
 		"purchased_at":      time.Now().Format(time.RFC3339),
 		"checked_in":        "false",
 		"submission_id":     submissionID,
-		"vehicle_details":   fmt.Sprintf("%s %s %s", submissionData["vehicle_year"], submissionData["vehicle_make"], submissionData["vehicle_model"]),
-		"payment_intent_id": pi.ID,
+		"vehicle_details": fmt.Sprintf("%s %s %s",
+			submissionData["vehicle_year"],
+			submissionData["vehicle_make"],
+			submissionData["vehicle_model"]),
+		"payment_intent_id":    pi.ID,
+		"approved_participant": "true",
 	}
 
 	// Store ticket in Redis
@@ -213,7 +324,12 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 	}
 
 	// Update submission with ticket ID
-	rdb.HSet(ctx, submissionKey, "ticket_id", ticketToken)
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"ticket_id":            ticketToken,
+		"payment_completed":    "true",
+		"payment_completed_at": time.Now().Format(time.RFC3339),
+		"ticket_created_at":    time.Now().Format(time.RFC3339),
+	})
 
 	// Add to event attendees
 	eventAttendeesKey := fmt.Sprintf("event:%s:attendees", submissionData["event_id"])
@@ -221,19 +337,100 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 
 	// Send participant ticket email
 	sendParticipantTicketEmail(submissionData, ticketToken, eventName)
+
+	// Mark that ticket email was sent
+	rdb.HSet(ctx, submissionKey, map[string]interface{}{
+		"ticket_email_sent":    "true",
+		"ticket_email_sent_at": time.Now().Format(time.RFC3339),
+	})
+
+	log.Printf("Successfully created and sent ticket %s for approved participant submission %s",
+		ticketToken, submissionID)
+
+	// If approval email wasn't sent earlier, send a combined approval + ticket email
+	if !approvalEmailSent {
+		vehicleDetails := fmt.Sprintf("%s %s %s",
+			submissionData["vehicle_year"],
+			submissionData["vehicle_make"],
+			submissionData["vehicle_model"])
+
+		emailData := map[string]interface{}{
+			"ParticipantName": submissionData["participant_name"],
+			"VehicleDetails":  vehicleDetails,
+			"EventID":         submissionData["event_id"],
+			"TicketCode":      ticketToken,
+			"ReviewNotes":     submissionData["review_notes"],
+		}
+
+		msg := &services.EmailMessage{
+			To:           []string{submissionData["participant_email"]},
+			Subject:      "Your Vehicle Submission Has Been Approved + Ticket - Euro Haus",
+			TemplateID:   "submission-approved-with-ticket",
+			TemplateData: emailData,
+			BodyHTML:     generateApprovalWithTicketEmailHTML(emailData),
+		}
+
+		if err := services.SendEmail(msg); err != nil {
+			log.Printf("Error sending approval email: %v", err)
+		} else {
+			// Update email sent status
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	}
 }
 
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	// Handle completed checkout session
-	log.Printf("Checkout session completed: %s\n", checkoutSession.ID)
+	fmt.Printf("Checkout session completed: %s\n", checkoutSession.ID)
 
 	// Check if this is a participant submission checkout
 	if submissionID, ok := checkoutSession.Metadata["submission_id"]; ok && submissionID != "" {
-		handleParticipantCheckout(checkoutSession, submissionID)
-		return
+		// This is a participant submission
+		isParticipant := checkoutSession.Metadata["participant"] == "true"
+
+		if isParticipant {
+			// Check if this requires approval (has manual capture)
+			if checkoutSession.PaymentIntent != nil {
+				// Get the payment intent to check capture method
+				pi, err := paymentintent.Get(checkoutSession.PaymentIntent.ID, nil)
+				if err == nil && pi.CaptureMethod == "manual" {
+					// This needs approval - DON'T create ticket yet
+					fmt.Printf("Participant checkout pending approval for submission: %s\n", submissionID)
+
+					// Just update the submission with checkout details
+					rdb := services.GetRedisClient()
+					ctx := context.Background()
+					submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+					updates := map[string]interface{}{
+						"checkout_session_id":   checkoutSession.ID,
+						"payment_intent_id":     checkoutSession.PaymentIntent.ID,
+						"checkout_completed":    "true",
+						"awaiting_approval":     "true",
+						"checkout_completed_at": time.Now().Format(time.RFC3339),
+					}
+
+					if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+						log.Printf("Error updating submission with checkout details: %v", err)
+					}
+
+					// Don't create ticket - wait for approval and payment capture
+					log.Printf("Submission %s checkout completed, awaiting approval before ticket creation", submissionID)
+					return
+				}
+			}
+
+			// If we get here, it's auto-approved or payment doesn't require manual capture
+			// This would happen for auto-approved tiers
+			handleParticipantCheckout(checkoutSession, submissionID)
+			return
+		}
 	}
 
-	// Expand the session to get line items
+	// Expand the session to get line items for regular (non-participant) purchases
 	params := &stripe.CheckoutSessionParams{}
 	params.AddExpand("line_items.data.price.product")
 
@@ -272,13 +469,45 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		if lineItem.Price.Product.Metadata["type"] == "event" {
 			hasEventTickets = true
 			updateEventInventory(lineItem.Price.Product.ID, lineItem.Quantity)
-			// Store ticket purchase information and send ticket email
-			storeTicketPurchase(*fullSession, *lineItem)
+
+			// CRITICAL FIX: Only create tickets for non-participant purchases
+			// Check if this specific checkout is for a participant
+			isParticipantCheckout := fullSession.Metadata["participant"] == "true"
+
+			if !isParticipantCheckout {
+				// Regular attendee - create ticket immediately
+				storeTicketPurchase(*fullSession, *lineItem)
+			} else {
+				log.Printf("Skipping immediate ticket creation for participant checkout %s", fullSession.ID)
+			}
 		}
 
 		// Check for physical products
 		if lineItem.Price.Product.Metadata["type"] != "event" {
 			hasPhysicalProducts = true
+		}
+	}
+
+	// Process any bundled products if this was an event with add-ons
+	if fullSession.Metadata != nil {
+		// Check if this checkout included add-ons or tier bundles
+		if fullSession.Metadata["has_addons"] == "true" || fullSession.Metadata["has_bundled_products"] == "true" {
+			customerEmail := fullSession.CustomerEmail
+			if customerEmail == "" && fullSession.Customer != nil {
+				// Get customer email from customer object if needed
+				customerEmail = fullSession.Customer.Email
+			}
+
+			customerName := fullSession.CustomerDetails.Name
+			if customerName == "" && fullSession.Metadata["customer_name"] != "" {
+				customerName = fullSession.Metadata["customer_name"]
+			}
+
+			// Process bundled products
+			if err := ProcessBundledProducts(fullSession.ID, customerEmail, customerName); err != nil {
+				log.Printf("Error processing bundled products for session %s: %v", fullSession.ID, err)
+				// Don't fail the webhook, just log the error
+			}
 		}
 	}
 
@@ -319,12 +548,12 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		log.Printf("Error sending order confirmation email: %v", err)
 	}
 
-	log.Printf("Order fulfilled for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
+	fmt.Printf("Order processed for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
 }
 
 // handleParticipantCheckout handles checkout completion for approved vehicle submissions
 func handleParticipantCheckout(checkoutSession stripe.CheckoutSession, submissionID string) {
-	log.Printf("Handling participant checkout for submission: %s\n", submissionID)
+	fmt.Printf("Handling participant checkout for submission: %s\n", submissionID)
 
 	// Get Redis client
 	rdb := services.GetRedisClient()
@@ -392,14 +621,12 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 	// Handle failed payment
 	log.Printf("PaymentIntent failed: %s, Reason: %s\n", pi.ID, pi.LastPaymentError.Msg)
 
-	// Get customer details
-	customerEmail := pi.Customer.Email
-
-	// If receipt email not available, try to get from metadata
-	if customerEmail == "" {
-		if email, ok := pi.Metadata["customer_email"]; ok {
-			customerEmail = email
-		}
+	// Get customer details from metadata or receipt email
+	var customerEmail string
+	if pi.ReceiptEmail != "" {
+		customerEmail = pi.ReceiptEmail
+	} else if email, ok := pi.Metadata["customer_email"]; ok {
+		customerEmail = email
 	}
 
 	// Don't send email if we don't have an address
@@ -426,7 +653,7 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 		"ErrorMessage":  errorMessage,
 		"PaymentDate":   time.Now().Format(time.RFC1123),
 		"PaymentStatus": "Failed",
-		"RecoveryURL":   os.Getenv("WEBSITE_URL") + "/checkout/recover?session=" + pi.ID,
+		"RecoveryURL":   os.Getenv("BASE_URL") + "/checkout/recover?session=" + pi.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -445,20 +672,211 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 
 func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 	// Handle expired checkout session
-	log.Printf("Checkout session expired: %s\n", checkoutSession.ID)
+	fmt.Printf("Checkout session expired: %s\n", checkoutSession.ID)
 
-	// Get customer email if available
+	// Get Redis client for tracking
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Check if we've already processed this expired session (idempotency)
+	processedKey := fmt.Sprintf("processed:expired:%s", checkoutSession.ID)
+	if exists, _ := rdb.Exists(ctx, processedKey).Result(); exists > 0 {
+		log.Printf("Already processed expired session %s, skipping", checkoutSession.ID)
+		return
+	}
+
+	// Mark this session as processed (with 7-day TTL)
+	rdb.SetEx(ctx, processedKey, "true", 7*24*time.Hour)
+
+	// Check if this is a participant submission checkout
+	submissionID := ""
+	isParticipant := false
+
+	if checkoutSession.Metadata != nil {
+		if sid, ok := checkoutSession.Metadata["submission_id"]; ok && sid != "" {
+			submissionID = sid
+		}
+		if participant, ok := checkoutSession.Metadata["participant"]; ok && participant == "true" {
+			isParticipant = true
+		}
+	}
+
+	// Get customer email
 	customerEmail := checkoutSession.CustomerEmail
+	if customerEmail == "" && checkoutSession.CustomerDetails != nil {
+		customerEmail = checkoutSession.CustomerDetails.Email
+	}
+
 	if customerEmail == "" {
 		log.Printf("No email address available for expired checkout session %s", checkoutSession.ID)
 		return
 	}
 
-	// Send abandoned cart email
+	// Handle based on type
+	if submissionID != "" && isParticipant {
+		handleExpiredParticipantCheckout(checkoutSession, submissionID, customerEmail)
+	} else {
+		// Handle regular abandoned cart (only send email, don't create new session)
+		handleRegularAbandonedCart(checkoutSession, customerEmail)
+	}
+}
+
+func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, submissionID string, customerEmail string) {
+	fmt.Printf("Handling expired participant checkout for submission: %s\n", submissionID)
+
+	// Get Redis client
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Get submission data
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+	submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+	if err != nil {
+		log.Printf("Failed to get submission %s: %v", submissionID, err)
+		return
+	}
+
+	// Check if submission exists and has data
+	if len(submissionData) == 0 {
+		log.Printf("Submission %s not found or empty", submissionID)
+		return
+	}
+
+	// Check if submission is eligible for recovery
+	eligible, reason := isSubmissionEligibleForRecovery(submissionData)
+	if !eligible {
+		log.Printf("Submission %s not eligible for recovery: %s", submissionID, reason)
+
+		// Update submission to mark as abandoned if max attempts reached
+		if strings.Contains(reason, "Maximum recovery attempts") {
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"status":           "abandoned",
+				"abandoned_at":     time.Now().Format(time.RFC3339),
+				"abandoned_reason": reason,
+			})
+
+			// Send final abandonment notification
+			sendFinalAbandonmentEmail(customerEmail, submissionData)
+		}
+		return
+	}
+
+	// Get current recovery count
+	currentCount := 0
+	if countStr, ok := submissionData["checkout_recovery_count"]; ok {
+		currentCount, _ = strconv.Atoi(countStr)
+	}
+
+	// Instead of creating a new session automatically, just send a recovery email
+	// with instructions for the user to manually restart the process
+
+	// Update submission recovery tracking
+	updates := map[string]interface{}{
+		"last_expired_session_id":  expiredSession.ID,
+		"last_recovery_attempt_at": time.Now().Format(time.RFC3339),
+		"checkout_recovery_count":  strconv.Itoa(currentCount + 1),
+		"awaiting_customer_action": "true",
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		log.Printf("Failed to update submission %s recovery tracking: %v", submissionID, err)
+	}
+
+	// Send recovery email with manual action required
+	sendManualRecoveryEmail(customerEmail, submissionData, submissionID, currentCount+1)
+
+	log.Printf("Sent recovery email for submission %s (attempt %d of %d)",
+		submissionID, currentCount+1, MaxRecoveryAttempts)
+}
+
+// sendManualRecoveryEmail sends an email asking the user to manually restart checkout
+func sendManualRecoveryEmail(customerEmail string, submissionData map[string]string, submissionID string, attemptNumber int) {
+	participantName := submissionData["participant_name"]
+	vehicleDetails := fmt.Sprintf("%s %s %s",
+		submissionData["vehicle_year"],
+		submissionData["vehicle_make"],
+		submissionData["vehicle_model"])
+	eventName := submissionData["event_name"]
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	baseURL := os.Getenv("BASE_URL")
+
+	// Create a recovery link that goes to your frontend to restart the process
+	recoveryLink := fmt.Sprintf("%s/submissions/recover?id=%s&email=%s",
+		baseURL, submissionID, customerEmail)
+
+	isLastAttempt := attemptNumber >= MaxRecoveryAttempts
+
+	emailData := map[string]interface{}{
+		"ParticipantName": participantName,
+		"VehicleDetails":  vehicleDetails,
+		"EventName":       eventName,
+		"RecoveryLink":    recoveryLink,
+		"SubmissionID":    submissionID,
+		"AttemptNumber":   attemptNumber,
+		"MaxAttempts":     MaxRecoveryAttempts,
+		"IsLastAttempt":   isLastAttempt,
+		"BaseURL":         baseURL,
+	}
+
+	subject := "Action Required: Complete Your Euro Haus Registration"
+	if isLastAttempt {
+		subject = "Final Reminder: Complete Your Euro Haus Registration"
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      subject,
+		TemplateID:   "participant-manual-recovery",
+		TemplateData: emailData,
+		BodyHTML:     generateManualRecoveryHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending manual recovery email for submission %s: %v", submissionID, err)
+	}
+}
+
+// sendFinalAbandonmentEmail sends a final email when max recovery attempts are reached
+func sendFinalAbandonmentEmail(customerEmail string, submissionData map[string]string) {
+	participantName := submissionData["participant_name"]
+	vehicleDetails := fmt.Sprintf("%s %s %s",
+		submissionData["vehicle_year"],
+		submissionData["vehicle_make"],
+		submissionData["vehicle_model"])
+
+	baseURL := os.Getenv("BASE_URL")
+	resubmitLink := fmt.Sprintf("%s/events/submit", baseURL)
+
+	emailData := map[string]interface{}{
+		"ParticipantName": participantName,
+		"VehicleDetails":  vehicleDetails,
+		"ResubmitLink":    resubmitLink,
+		"ContactEmail":    "info@theeurohaus.com",
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      "Registration Expired - Euro Haus",
+		TemplateID:   "submission-abandoned",
+		TemplateData: emailData,
+		BodyHTML:     generateAbandonmentHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending abandonment email: %v", err)
+	}
+}
+
+// handleRegularAbandonedCart handles regular abandoned cart (non-participant)
+func handleRegularAbandonedCart(checkoutSession stripe.CheckoutSession, customerEmail string) {
+	// Send standard abandoned cart email
 	emailData := map[string]interface{}{
 		"SessionID":      checkoutSession.ID,
 		"ExpirationTime": time.Now().Format(time.RFC1123),
-		"RecoveryURL":    os.Getenv("WEBSITE_URL") + "/checkout/recover?session=" + checkoutSession.ID,
+		"RecoveryURL":    os.Getenv("BASE_URL") + "/checkout/recover?session=" + checkoutSession.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -466,8 +884,7 @@ func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 		Subject:      "Complete Your Euro Haus Purchase",
 		TemplateID:   "checkout-abandoned",
 		TemplateData: emailData,
-		// Fallback if template not found
-		BodyHTML: generateAbandonedCartHTML(emailData),
+		BodyHTML:     generateAbandonedCartHTML(emailData),
 	}
 
 	if err := services.SendEmail(msg); err != nil {
@@ -477,11 +894,16 @@ func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 
 // formatShippingAddress formats the shipping address from checkout session
 func formatShippingAddress(session *stripe.CheckoutSession) string {
-	if session.Customer == nil || session.Customer.Address == nil {
+	// Use ShippingDetails if available, otherwise check CustomerDetails
+	var address *stripe.Address
+
+	if session.Customer.Shipping != nil && session.Customer.Shipping.Address != nil {
+		address = session.Customer.Shipping.Address
+	} else if session.CustomerDetails != nil && session.CustomerDetails.Address != nil {
+		address = session.CustomerDetails.Address
+	} else {
 		return "No shipping address provided"
 	}
-
-	address := session.Customer.Address
 
 	formatted := ""
 	if address.Line1 != "" {
@@ -512,7 +934,6 @@ func formatShippingAddress(session *stripe.CheckoutSession) string {
 }
 
 // Generate HTML fallback templates for when email templates aren't available
-
 func generateOrderConfirmationHTML(data map[string]interface{}) string {
 	customerName, _ := data["CustomerName"].(string)
 	orderId, _ := data["OrderID"].(string)
@@ -749,6 +1170,76 @@ func generateAbandonedCartHTML(data map[string]interface{}) string {
 	return html
 }
 
+// generateParticipantRecoveryHTML generates the HTML for participant checkout recovery emails
+func generateParticipantRecoveryHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventName, _ := data["EventName"].(string)
+	paymentLink, _ := data["PaymentLink"].(string)
+	expirationTime, _ := data["ExpirationTime"].(string)
+	submissionID, _ := data["SubmissionID"].(string)
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Complete Your Registration - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1 style="color: #e74c3c;">⚠️ Your Payment Session Expired</h1>
+			</div>
+
+			<p>Hello %s,</p>
+
+			<p>Your payment session for the vehicle registration has expired. Don't worry - your submission is still pending approval, and we've created a new payment link for you.</p>
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0;">Registration Details</h2>
+				<p><strong>Event:</strong> %s</p>
+				<p><strong>Vehicle:</strong> %s</p>
+				<p><strong>Submission ID:</strong> %s</p>
+			</div>
+
+			<div style="background-color: #fff3cd; padding: 20px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffc107;">
+				<h3 style="margin-top: 0; color: #856404;">Important Information</h3>
+				<ul style="margin: 10px 0;">
+					<li>Your vehicle submission is still pending admin approval</li>
+					<li>Payment will only be captured after your submission is approved</li>
+					<li>This new payment link will expire in 24 hours (%s)</li>
+					<li>You will receive a confirmation email once approved</li>
+				</ul>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; font-size: 16px; font-weight: bold;">Complete Registration</a>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<h3>What happens next?</h3>
+				<ol>
+					<li>Click the button above to complete your payment information</li>
+					<li>Your card will be authorized but not charged immediately</li>
+					<li>Our team will review your submission</li>
+					<li>Once approved, your payment will be processed and you'll receive your event ticket</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>If you have any questions or continue to experience issues, please contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a> with your submission ID: %s</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, eventName, vehicleDetails, submissionID, expirationTime, paymentLink, submissionID, time.Now().Year())
+
+	return html
+}
+
 func updateEventInventory(productID string, quantitySold int64) {
 	// Get current product
 	p, err := product.Get(productID, nil)
@@ -813,6 +1304,39 @@ func generateQRCode(token string) (string, error) {
 
 // storeTicketPurchase stores ticket info in Redis after purchase
 func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineItem) {
+	// SAFETY CHECK: Don't create tickets for unapproved participant submissions
+	if session.Metadata != nil {
+		if submissionID, ok := session.Metadata["submission_id"]; ok && submissionID != "" {
+			if session.Metadata["participant"] == "true" {
+				// This is a participant checkout - verify approval status
+				rdb := services.GetRedisClient()
+				ctx := context.Background()
+
+				submissionKey := fmt.Sprintf("submission:%s", submissionID)
+				submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+
+				if err != nil {
+					log.Printf("ERROR: Could not verify submission status for %s: %v", submissionID, err)
+					return
+				}
+
+				if submissionData["status"] != "approved" {
+					log.Printf("WARNING: Attempted to create ticket for unapproved participant submission %s (status: %s). Blocking ticket creation.",
+						submissionID, submissionData["status"])
+					return
+				}
+
+				// Check if ticket already exists
+				if existingTicket := submissionData["ticket_id"]; existingTicket != "" {
+					log.Printf("Ticket already exists for submission %s: %s", submissionID, existingTicket)
+					return
+				}
+
+				fmt.Printf("Participant submission %s is approved, proceeding with ticket creation", submissionID)
+			}
+		}
+	}
+
 	// Generate unique token for this ticket
 	token := generateUniqueToken()
 	productID := lineItem.Price.Product.ID
@@ -830,16 +1354,52 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 		"stripe_checkout_session_id": session.ID,
 		"stripe_payment_intent_id":   session.PaymentIntent.ID,
 		"stripe_product_id":          productID,
-		"customer_email":             session.CustomerDetails.Email,
-		"customer_name":              session.CustomerDetails.Name,
+		"customer_email":             customerEmail,
+		"customer_name":              customerName,
 		"quantity":                   lineItem.Quantity,
 		"purchase_date":              time.Now().Format(time.RFC3339),
 		"checked_in":                 "false",
 		"event_name":                 lineItem.Price.Product.Name,
+		"ticket_type":                "General Admission", // Default for non-participants
+	}
+
+	// Add submission info if this is a participant
+	if submissionID, ok := session.Metadata["submission_id"]; ok && submissionID != "" {
+		ticketData["submission_id"] = submissionID
+		ticketData["ticket_type"] = "Participant"
+	}
+
+	// Check if this cvstomer already has a valid ticket for this event
+	eventAttendeesKey := fmt.Sprintf("event:%s:attendees", productID)
+	existingTokens, _ := rdb.SMembers(ctx, eventAttendeesKey).Result()
+
+	for _, token := range existingTokens {
+		ticketKey := fmt.Sprintf("ticket:%s", token)
+		existingTicket, _ := rdb.HGetAll(ctx, ticketKey).Result()
+
+		// Check if it's the same customer
+		if existingTicket["customer_email"] == customerEmail {
+			// Check if this is a valid/completed purchase
+			if existingTicket["stripe_payment_intent_id"] != "" {
+				fmt.Printf("Customer already has a valid ticket for event %s", productID)
+
+				// Update the session ID if it's different (recovery scenario)
+				if existingTicket["stripe_checkout_session_id"] != session.ID {
+					rdb.HSet(ctx, ticketKey, "stripe_checkout_session_id", session.ID)
+					fmt.Printf("Updated checkout session ID for existing ticket")
+				}
+				return // Don't create a new ticket (duplicate)
+			} else {
+				// Found an incomplete ticket - we should clean it up and create a new one
+				log.Printf("Found incomplete ticket %s for customer %s, removing it", token, customerEmail)
+				rdb.Del(ctx, ticketKey)
+				rdb.SRem(ctx, eventAttendeesKey, token)
+			}
+		}
 	}
 
 	// Store the ticket data
-	ticketKey := "ticket:" + token
+	ticketKey := fmt.Sprintf("ticket:%s", token)
 	if err := rdb.HSet(ctx, ticketKey, ticketData).Err(); err != nil {
 		log.Printf("Error storing ticket in Redis: %v", err)
 		return
@@ -858,7 +1418,6 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	rdb.ExpireAt(ctx, ticketKey, eventDate)
 
 	// Add ticket to the event's attendee set with same TTL
-	eventAttendeesKey := "event:" + productID + ":attendees"
 	if err := rdb.SAdd(ctx, eventAttendeesKey, token).Err(); err != nil {
 		log.Printf("Error adding ticket to event attendees: %v", err)
 	}
@@ -886,6 +1445,8 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	if err != nil {
 		log.Printf("Error sending ticket email: %v", err)
 	}
+
+	fmt.Printf("Successfully created ticket %s for customer %s", token, customerEmail)
 }
 
 // sendParticipantTicketEmail sends a special ticket email for approved vehicle participants
@@ -909,7 +1470,7 @@ func sendParticipantTicketEmail(submissionData map[string]string, ticketToken st
 		"QRCodeURL":      qrCodeURL,
 		"VehicleDetails": vehicleDetails,
 		"TicketType":     "Event Participant",
-		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("WEBSITE_URL"), ticketToken),
+		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
 	}
 
 	// Generate ticket HTML
@@ -960,4 +1521,313 @@ func sendParticipantTicketEmail(submissionData map[string]string, ticketToken st
 	if err := services.SendEmail(msg); err != nil {
 		log.Printf("Error sending participant ticket email: %v", err)
 	}
+}
+
+func sendGenericRecoveryEmail(customerEmail string, submissionID string) {
+	baseUrl := os.Getenv("BASE_URL")
+
+	// Create a recovery URL that leads to a page where they can re-initiate checkout
+	recoveryURL := fmt.Sprintf("%s/checkout/recover?submission=%s", baseUrl, submissionID)
+
+	emailData := map[string]interface{}{
+		"SessionID":      submissionID, // Using submission ID as reference
+		"ExpirationTime": "Your payment session has expired",
+		"RecoveryURL":    recoveryURL,
+		"SubmissionID":   submissionID,
+		"IsSubmission":   true, // Flag to indicate this is for a submission recovery
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      "Complete Your Euro Haus Registration",
+		TemplateID:   "checkout-recovery",
+		TemplateData: emailData,
+		// Use modified abandoned cart HTML for consistency
+		BodyHTML: generateSubmissionRecoveryHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending recovery email for submission %s: %v", submissionID, err)
+	}
+}
+
+// generateSubmissionRecoveryHTML generates recovery email HTML similar to abandoned cart
+func generateSubmissionRecoveryHTML(data map[string]interface{}) string {
+	submissionID, _ := data["SubmissionID"].(string)
+	recoveryURL, _ := data["RecoveryURL"].(string)
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Complete Your Registration - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1>Complete Your Registration!</h1>
+			</div>
+
+			<p>We noticed that your payment session expired before you could complete your vehicle registration.</p>
+			<p>Don't worry - your submission is still saved and waiting for you!</p>
+
+			<div style="margin-top: 20px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px;">Complete Your Registration</a>
+			</div>
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<p><strong>Submission Reference:</strong> %s</p>
+				<p><strong>Status:</strong> Payment session expired - awaiting new payment</p>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<h3>What happens next?</h3>
+				<ol style="line-height: 1.8;">
+					<li>Click the button above to restart your checkout</li>
+					<li>Your vehicle submission details are saved</li>
+					<li>Complete the payment process</li>
+					<li>Wait for admin approval of your submission</li>
+					<li>Once approved, your payment will be processed</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>If you continue to experience issues, please try again later or use a different browser.</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+				<p>If you believe you received this email by mistake, please disregard it.</p>
+			</div>
+		</body>
+		</html>
+	`, recoveryURL, submissionID, time.Now().Year())
+
+	return html
+}
+
+// generateApprovalWithTicketEmailHTML generates email HTML for approved participants with ticket
+func generateApprovalWithTicketEmailHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventID, _ := data["EventID"].(string)
+	ticketCode, _ := data["TicketCode"].(string)
+	reviewNotes, _ := data["ReviewNotes"].(string)
+
+	reviewNotesHTML := ""
+	if reviewNotes != "" {
+		reviewNotesHTML = fmt.Sprintf(`
+			<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffc107;">
+				<h3 style="margin-top: 0; color: #856404;">Review Notes from Our Team</h3>
+				<p style="margin: 0;">%s</p>
+			</div>
+		`, reviewNotes)
+	}
+
+	return fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Vehicle Approved + Your Ticket - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1 style="color: #28a745;">✓ Vehicle Approved & Ticket Issued!</h1>
+			</div>
+
+			<p>Dear %s,</p>
+
+			<p>Excellent news! Your vehicle submission has been approved and your payment has been processed successfully:</p>
+
+			<div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0; color: #007bff;">Vehicle Details</h2>
+				<p style="font-size: 18px; font-weight: bold; margin: 10px 0;">%s</p>
+				<p><strong>Event ID:</strong> %s</p>
+			</div>
+
+			%s
+
+			<div style="background-color: #d4edda; padding: 20px; border-radius: 5px; margin: 20px 0; border: 2px solid #28a745;">
+				<h2 style="margin-top: 0; color: #155724;">Your Event Ticket</h2>
+				<p style="margin: 10px 0;">Your ticket has been generated and your vehicle is confirmed for the event!</p>
+				<p style="font-size: 20px; font-family: monospace; background-color: white; padding: 10px; border-radius: 5px; text-align: center;">
+					<strong>Ticket Code:</strong> %s
+				</p>
+				<p style="font-size: 14px; color: #666; text-align: center;">
+					A separate email with your QR code and full ticket details has been sent.
+				</p>
+			</div>
+
+			<div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h3 style="margin-top: 0;">Important Information for Participants</h3>
+				<ul style="margin: 10px 0; padding-left: 20px;">
+					<li>Please arrive at least 30 minutes before the event start time</li>
+					<li>Have your vehicle clean and ready for display</li>
+					<li>Bring your ticket (printed or on your phone) for check-in</li>
+					<li>Follow all event guidelines and instructions from staff</li>
+					<li>Be prepared to position your vehicle as directed by event coordinators</li>
+				</ul>
+			</div>
+
+			<div style="margin-top: 30px; padding: 20px; background-color: #e8f4f8; border-radius: 5px;">
+				<h3 style="margin-top: 0;">What's Next?</h3>
+				<ol style="margin: 10px 0; padding-left: 20px;">
+					<li>Check your email for your event ticket with QR code</li>
+					<li>Save the ticket to your phone or print it out</li>
+					<li>Prepare your vehicle for the show</li>
+					<li>Arrive early on event day for participant check-in</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>We're thrilled to have you and your vehicle as part of our event! If you have any questions, please don't hesitate to contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a>.</p>
+			</div>
+
+			<div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #dee2e6; text-align: center; font-size: 12px; color: #6c757d;">
+				<p><strong>Euro Haus Events</strong><br>
+				Premium Automotive Experiences</p>
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+				<p style="margin-top: 10px;">
+					<em>This email confirms your approved participation status and successful payment processing.</em>
+				</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, vehicleDetails, eventID, reviewNotesHTML, ticketCode, time.Now().Year())
+}
+
+// generateManualRecoveryHTML generates HTML for manual recovery emails
+func generateManualRecoveryHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventName, _ := data["EventName"].(string)
+	recoveryLink, _ := data["RecoveryLink"].(string)
+	submissionID, _ := data["SubmissionID"].(string)
+	attemptNumber, _ := data["AttemptNumber"].(int)
+	maxAttempts, _ := data["MaxAttempts"].(int)
+	isLastAttempt, _ := data["IsLastAttempt"].(bool)
+
+	urgencyHTML := ""
+	if isLastAttempt {
+		urgencyHTML = `
+			<div style="background-color: #f8d7da; padding: 15px; border-radius: 5px; margin: 20px 0; border: 1px solid #f5c6cb;">
+				<h3 style="margin-top: 0; color: #721c24;">⚠️ Final Reminder</h3>
+				<p style="margin: 0; color: #721c24;">This is your last opportunity to complete your registration.
+				After this, you will need to submit a new application.</p>
+			</div>
+		`
+	}
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Complete Your Registration - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1>Complete Your Vehicle Registration</h1>
+			</div>
+
+			<p>Hello %s,</p>
+
+			<p>Your payment session for the vehicle registration has expired. We're holding your spot, but you need to complete the payment process.</p>
+
+			%s
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0;">Registration Details</h2>
+				<p><strong>Event:</strong> %s</p>
+				<p><strong>Vehicle:</strong> %s</p>
+				<p><strong>Submission ID:</strong> %s</p>
+				<p><strong>Recovery Attempt:</strong> %d of %d</p>
+			</div>
+
+			<div style="margin: 30px 0; padding: 20px; background-color: #e8f4f8; border-radius: 5px;">
+				<h3 style="margin-top: 0;">How to Complete Your Registration:</h3>
+				<ol>
+					<li>Click the button below when you're ready to complete payment</li>
+					<li>You'll be taken to a secure checkout page</li>
+					<li>Complete your payment information</li>
+					<li>Your registration will be finalized pending approval</li>
+				</ol>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; font-size: 16px; font-weight: bold;">Complete Registration Now</a>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p style="color: #666;">If the button doesn't work, copy and paste this link into your browser:</p>
+				<p style="word-break: break-all; color: #007bff;">%s</p>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>Need help? Contact us at <a href="mailto:info@theeurohaus.com">info@theeurohaus.com</a> with your submission ID: %s</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, urgencyHTML, eventName, vehicleDetails, submissionID, attemptNumber, maxAttempts,
+		recoveryLink, recoveryLink, submissionID, time.Now().Year())
+
+	return html
+}
+
+// generateAbandonmentHTML generates HTML for final abandonment emails
+func generateAbandonmentHTML(data map[string]interface{}) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	resubmitLink, _ := data["ResubmitLink"].(string)
+	contactEmail, _ := data["ContactEmail"].(string)
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Registration Expired - Euro Haus</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+			<div style="text-align: center; margin-bottom: 30px;">
+				<h1>Registration Expired</h1>
+			</div>
+
+			<p>Hello %s,</p>
+
+			<p>Unfortunately, your vehicle registration has expired after multiple payment attempts.</p>
+
+			<div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
+				<h2 style="margin-top: 0;">Expired Registration</h2>
+				<p><strong>Vehicle:</strong> %s</p>
+				<p><strong>Status:</strong> Expired</p>
+			</div>
+
+			<div style="margin: 30px 0; padding: 20px; background-color: #fff3cd; border-radius: 5px; border: 1px solid #ffc107;">
+				<h3 style="margin-top: 0; color: #856404;">What Now?</h3>
+				<p>If you're still interested in participating in our events, you'll need to submit a new application.</p>
+				<p>Your previous submission details have been archived and cannot be recovered.</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center;">
+				<a href="%s" style="display: inline-block; background-color: #007bff; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px;">Submit New Application</a>
+			</div>
+
+			<div style="margin-top: 30px;">
+				<p>If you have questions or believe this is an error, please contact us at <a href="mailto:%s">%s</a>.</p>
+			</div>
+
+			<div style="margin-top: 30px; text-align: center; font-size: 12px; color: #777;">
+				<p>&copy; %d Euro Haus. All rights reserved.</p>
+			</div>
+		</body>
+		</html>
+	`, participantName, vehicleDetails, resubmitLink, contactEmail, contactEmail, time.Now().Year())
+
+	return html
 }

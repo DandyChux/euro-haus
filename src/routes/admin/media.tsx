@@ -850,7 +850,7 @@ function AdminMediaContent() {
 						</DialogHeader>
 						<div className="mt-4">
 							{selectedFile?.type === 'image' ? (
-								<img
+								<Image
 									src={selectedFile.url}
 									alt={selectedFile.key}
 									className="w-full rounded-lg"

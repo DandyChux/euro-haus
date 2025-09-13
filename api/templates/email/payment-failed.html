@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Failed</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #dc3545; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background-color: #f8f9fa; margin: 20px 0; }
+        .cta-button { display: inline-block; background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; font-size: 12px; color: #777; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Payment Failed</h1>
+        </div>
+
+        <div class="content">
+            <p>We were unable to process your payment.</p>
+
+            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                <p><strong>Payment Amount:</strong> {{.PaymentAmount}}</p>
+                <p><strong>Payment ID:</strong> {{.PaymentID}}</p>
+                <p><strong>Date:</strong> {{.PaymentDate}}</p>
+                {{if .ErrorMessage}}
+                <p><strong>Error:</strong> {{.ErrorMessage}}</p>
+                {{end}}
+            </div>
+
+            <p>Don't worry! Your items are still available. You can try again with a different payment method.</p>
+
+            <div style="text-align: center;">
+                <a href="{{.RecoveryURL}}" class="cta-button">Try Again</a>
+            </div>
+
+            <p>If you continue to experience issues, please contact our support team.</p>
+        </div>
+
+        <div class="footer">
+            <p>Need help? Contact us at info@theeurohaus.com</p>
+            <p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
+        </div>
+    </div>
+</body>
+</html>

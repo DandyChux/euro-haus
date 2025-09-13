@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { SubmissionReview } from '~/components/admin/submission-review';
 import { stripeService } from '~/lib/services/stripe-service';
 import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Card, CardContent } from '~/components/ui/card';
 import { Calendar } from 'lucide-react';
 
 export const Route = createFileRoute('/admin/submissions')({

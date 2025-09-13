@@ -23,7 +23,7 @@ bin
 *.njsproj
 *.sln
 *.sw?
-
+*__debug*
 
 # Env
 .env*

@@ -93,24 +93,19 @@ function CartPage() {
 				metadata: {
 					cart_items: JSON.stringify(items.map(item => ({
 						id: item.id,
+						title: item.title,
 						quantity: item.quantity,
 						type: item.type,
 					}))),
 				},
 			});
 
-			const { session_id: sessionId } = response.data;
-
-			// Redirect to Stripe Checkout
-			const stripe = await stripePromise;
-			if (!stripe) {
-				throw new Error('Stripe failed to load');
-			}
-
-			const { error } = await stripe.redirectToCheckout({ sessionId: sessionId });
-
-			if (error) {
-				throw error;
+			// Redirect to Stripe checkout
+			if (response.data.url) {
+				window.location.href = response.data.url;
+			} else if (response.data.session_id && window.Stripe) {
+				const stripe = await stripePromise;
+				await stripe?.redirectToCheckout({ sessionId: response.data.session_id });
 			}
 		} catch (error) {
 			console.error('Checkout error:', error);

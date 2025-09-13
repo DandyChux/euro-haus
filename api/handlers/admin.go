@@ -1,18 +1,26 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"euro-haus-api/services"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 )
 
+// CreateProductRequest represents the request body for creating a product
 type CreateProductRequest struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
@@ -22,6 +30,7 @@ type CreateProductRequest struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
+// CreateProductResponse represents the response body for creating a product
 type CreateProductResponse struct {
 	Success   bool   `json:"success"`
 	ProductID string `json:"product_id"`
@@ -41,27 +50,6 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simple auth check
-	adminPassword := os.Getenv("ADMIN_PASSWORD")
-	if adminPassword == "" {
-		adminPassword = "eurohaus2024"
-	}
-
-	// Check authorization header
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Parse request
 	var req CreateProductRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,11 +64,19 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Process metadata to handle large fields
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata, nil)
+	if err != nil {
+		log.Printf("Warning: Error processing metadata: %v", err)
+		// Continue with original metadata if processing fails
+		processedMetadata = req.Metadata
+	}
+
 	// Create product in Stripe
 	productParams := &stripe.ProductParams{
 		Name:     stripe.String(req.Name),
 		Active:   stripe.Bool(true),
-		Metadata: req.Metadata,
+		Metadata: processedMetadata,
 	}
 
 	if req.Description != "" {
@@ -126,6 +122,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Warning: Failed to set default price for product %s: %v", newProduct.ID, err)
 		// Continue anyway, the product and price were created successfully
+		updatedProduct = newProduct
 	}
 
 	log.Printf("Successfully created product %s with price %s", newProduct.ID, newPrice.ID)
@@ -168,21 +165,6 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get product ID from URL
 	vars := mux.Vars(r)
 	productID := vars["id"]
@@ -207,10 +189,18 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Process metadata to handle large fields
+	processedMetadata, err := ProcessLargeMetadata(req.Metadata, existingProduct.Metadata)
+	if err != nil {
+		log.Printf("Warning: Error processing metadata: %v", err)
+		// Continue with original metadata if processing fails
+		processedMetadata = req.Metadata
+	}
+
 	// Update product in Stripe
 	productParams := &stripe.ProductParams{
 		Name:     stripe.String(req.Name),
-		Metadata: req.Metadata,
+		Metadata: processedMetadata,
 	}
 
 	if req.Description != "" {
@@ -306,21 +296,6 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get product ID from URL
 	vars := mux.Vars(r)
 	productID := vars["id"]
@@ -330,11 +305,16 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if product exists
-	_, err := product.Get(productID, nil)
+	existingProduct, err := product.Get(productID, nil)
 	if err != nil {
 		log.Printf("Product not found: %v", err)
 		http.Error(w, "Product not found", http.StatusNotFound)
 		return
+	}
+
+	// Clean up external metadata before deleting
+	if existingProduct.Metadata != nil {
+		CleanupExternalMetadata(existingProduct.Metadata)
 	}
 
 	// Archive all prices associated with this product first
@@ -400,21 +380,6 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		log.Printf("Missing or invalid authorization header")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		log.Printf("Invalid token: %s", token)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	var req struct {
 		Product    string            `json:"product"`
 		UnitAmount int64             `json:"unit_amount"`
@@ -436,7 +401,7 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure boolean values are stored as strings
 	for k, v := range req.Metadata {
-		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+		if k == "requires_vehicle_submission" || k == "is_most_popular" || k == "requires_approval" {
 			// Convert any value to proper "true" or "false" string
 			boolValue, err := strconv.ParseBool(v)
 			if err == nil {
@@ -446,9 +411,15 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 					finalMetadata[k] = "false"
 				}
 			} else {
-				// If we can't parse it as a boolean, default to "false"
-				finalMetadata[k] = "false"
+				// Default values
+				if k == "requires_approval" {
+					finalMetadata[k] = "true" // Default to requiring approval
+				} else {
+					finalMetadata[k] = "false"
+				}
 			}
+		} else {
+			finalMetadata[k] = v
 		}
 	}
 
@@ -491,25 +462,14 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
+	// Get price ID from URL
 	vars := mux.Vars(r)
 	priceID := vars["id"]
 
 	var req struct {
 		Nickname string            `json:"nickname"`
 		Metadata map[string]string `json:"metadata"`
+		Active   *bool             `json:"active"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -532,9 +492,9 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 		finalMetadata = make(map[string]string)
 	}
 
+	// Ensure boolean values are stored as strings
 	for k, v := range req.Metadata {
-		// Ensure boolean values are stored as strings
-		if k == "requires_vehicle_submission" || k == "is_most_popular" {
+		if k == "requires_vehicle_submission" || k == "is_most_popular" || k == "requires_approval" {
 			// Convert any value to proper "true" or "false" string
 			boolValue, err := strconv.ParseBool(v)
 			if err == nil {
@@ -544,8 +504,12 @@ func UpdatePrice(w http.ResponseWriter, r *http.Request) {
 					finalMetadata[k] = "false"
 				}
 			} else {
-				// If we can't parse it as a boolean, default to "false"
-				finalMetadata[k] = "false"
+				// Default values
+				if k == "requires_approval" {
+					finalMetadata[k] = "true" // Default to requiring approval
+				} else {
+					finalMetadata[k] = "false"
+				}
 			}
 		} else {
 			finalMetadata[k] = v
@@ -587,19 +551,6 @@ func ArchivePrice(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -655,19 +606,6 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check authorization
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || len(authHeader) < 7 || authHeader[:7] != "Bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	token := authHeader[7:]
-	if !VerifyAuth(token) {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	vars := mux.Vars(r)
 	productID := vars["id"]
 
@@ -716,4 +654,153 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		"success":      true,
 		"defaultPrice": updatedProduct.DefaultPrice.ID,
 	})
+}
+
+// ProcessLargeMetadata handles metadata fields that might exceed Stripe's limits
+func ProcessLargeMetadata(metadata map[string]string, existingMetadata map[string]string) (map[string]string, error) {
+	processedMetadata := make(map[string]string)
+
+	// List of fields that might be large and should be stored externally
+	largeFields := []string{"sponsors", "sponsor_tiers", "agenda", "includes"}
+
+	for key, value := range metadata {
+		// Check if this is a potentially large field
+		isLargeField := false
+		for _, field := range largeFields {
+			if key == field {
+				isLargeField = true
+				break
+			}
+		}
+
+		// If it's a large field and exceeds 400 chars (leaving buffer), store externally
+		if isLargeField && len(value) > 400 {
+			// Check if this field already has an external URL in existing metadata
+			existingFilename := ""
+			if existingMetadata != nil {
+				if url, exists := existingMetadata[key+"_url"]; exists {
+					// Extract filename from URL
+					urlParts := strings.Split(url, "/")
+					if len(urlParts) > 0 {
+						existingFilename = strings.TrimSuffix(urlParts[len(urlParts)-1], ".json")
+					}
+				}
+			}
+
+			// Parse the JSON value
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(value), &jsonData); err != nil {
+				// If it's not JSON, store as-is
+				jsonData = value
+			}
+
+			var jsonURL string
+			var uploadErr error
+
+			if existingFilename != "" {
+				// We have an existing file, update it
+				jsonURL, uploadErr = services.UploadJSON(jsonData, existingFilename, "product-metadata")
+				if uploadErr != nil {
+					// If updating existing file fails, try creating a new one
+					log.Printf("Failed to update existing file %s, creating new one: %v", existingFilename, uploadErr)
+					metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+					jsonURL, uploadErr = services.UploadJSON(jsonData, metadataID, "product-metadata")
+				}
+			} else {
+				// No existing file, create a new one
+				metadataID := fmt.Sprintf("%s-%s", key, uuid.New().String()[:8])
+				jsonURL, uploadErr = services.UploadJSON(jsonData, metadataID, "product-metadata")
+			}
+
+			if uploadErr != nil {
+				log.Printf("Warning: Failed to upload large metadata field %s: %v", key, uploadErr)
+				// Fall back to truncating the data
+				if len(value) > 490 {
+					processedMetadata[key] = value[:490] + "..."
+				} else {
+					processedMetadata[key] = value
+				}
+				processedMetadata[key+"_truncated"] = "true"
+			} else {
+				// Store the URL reference instead
+				processedMetadata[key+"_url"] = jsonURL
+				// Store a flag indicating this field is stored externally
+				processedMetadata[key+"_external"] = "true"
+				// Optionally store a preview/summary
+				if len(value) > 100 {
+					processedMetadata[key+"_preview"] = value[:100] + "..."
+				}
+			}
+		} else {
+			// Small enough to store directly
+			processedMetadata[key] = value
+		}
+	}
+
+	// Preserve any existing external references that weren't updated
+	if existingMetadata != nil {
+		for key, value := range existingMetadata {
+			// If this is an external reference and we haven't processed the base field
+			if strings.HasSuffix(key, "_url") || strings.HasSuffix(key, "_external") || strings.HasSuffix(key, "_preview") {
+				baseKey := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(key, "_url"), "_external"), "_preview")
+				// If we didn't process this field (maybe it was deleted or not sent), preserve the reference
+				if _, processed := metadata[baseKey]; !processed {
+					processedMetadata[key] = value
+				}
+			}
+		}
+	}
+
+	return processedMetadata, nil
+}
+
+// RetrieveLargeMetadata fetches externally stored metadata fields
+func RetrieveLargeMetadata(metadata map[string]string) map[string]string {
+	processedMetadata := make(map[string]string)
+
+	for key, value := range metadata {
+		// Check if this field is stored externally
+		if strings.HasSuffix(key, "_external") && value == "true" {
+			fieldName := strings.TrimSuffix(key, "_external")
+			if urlKey := fieldName + "_url"; metadata[urlKey] != "" {
+				// For now, just pass the URL through - the client can fetch it
+				// In a production system, you might want to fetch and cache the data
+				processedMetadata[fieldName] = metadata[urlKey]
+			}
+		} else if !strings.HasSuffix(key, "_url") && !strings.HasSuffix(key, "_preview") && !strings.HasSuffix(key, "_external") && !strings.HasSuffix(key, "_truncated") {
+			// Regular metadata field
+			processedMetadata[key] = value
+		}
+	}
+
+	return processedMetadata
+}
+
+// CleanupExternalMetadata removes external files when they're no longer needed
+func CleanupExternalMetadata(metadata map[string]string) error {
+	for key, value := range metadata {
+		if strings.HasSuffix(key, "_url") {
+			// Extract the key from the URL to delete from Spaces
+			urlParts := strings.Split(value, "/")
+			if len(urlParts) > 0 {
+				filename := urlParts[len(urlParts)-1]
+				folder := "product-metadata"
+				if len(urlParts) > 1 {
+					folder = urlParts[len(urlParts)-2]
+				}
+
+				// Delete from Spaces
+				key := fmt.Sprintf("%s/%s", folder, filename)
+				_, err := services.S3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+					Bucket: aws.String(os.Getenv("SPACES_BUCKET")),
+					Key:    aws.String(key),
+				})
+
+				if err != nil {
+					log.Printf("Warning: Failed to delete external metadata file %s: %v", key, err)
+				}
+			}
+		}
+	}
+	return nil
 }

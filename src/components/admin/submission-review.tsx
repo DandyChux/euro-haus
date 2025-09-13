@@ -14,6 +14,8 @@ import {
 	ChevronRight,
 	Loader2,
 	AlertCircle,
+	Ticket,
+	DollarSign,
 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -25,6 +27,7 @@ import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { submissionService } from '~/lib/services/submission-service';
 import type { VehicleSubmission } from '~/lib/interfaces/submission';
+import { Image } from '../ui/image';
 
 interface SubmissionReviewProps {
 	eventId: string;
@@ -164,7 +167,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 									<CardContent>
 										<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
 											{submission.images[0] ? (
-												<img
+												<Image
 													src={submission.images[0]}
 													alt={`${submission.vehicleMake} ${submission.vehicleModel}`}
 													className="object-cover w-full h-full"
@@ -175,9 +178,17 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 												</div>
 											)}
 										</div>
-										<div className="mt-4 flex items-center text-sm text-muted-foreground">
-											<Calendar className="w-4 h-4 mr-1" />
-											{format(new Date(submission.submittedAt), 'MMM dd, yyyy')}
+										<div className="mt-4 space-y-1">
+											<div className="flex items-center text-sm text-muted-foreground">
+												<Calendar className="w-4 h-4 mr-1" />
+												{format(new Date(submission.submittedAt), 'MMM dd, yyyy')}
+											</div>
+											{submission.ticketTier && (
+												<div className="flex items-center text-sm font-medium">
+													<Ticket className="w-4 h-4 mr-1 text-primary" />
+													{submission.ticketTier}
+												</div>
+											)}
 										</div>
 									</CardContent>
 								</Card>
@@ -216,7 +227,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 									<CardContent>
 										<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
 											{submission.images[0] ? (
-												<img
+												<Image
 													src={submission.images[0]}
 													alt={`${submission.vehicleMake} ${submission.vehicleModel}`}
 													className="object-cover w-full h-full"
@@ -236,6 +247,12 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 												<div className="flex items-center text-sm text-muted-foreground">
 													<Clock className="w-4 h-4 mr-1" />
 													Reviewed: {format(new Date(submission.reviewedAt), 'MMM dd, yyyy')}
+												</div>
+											)}
+											{submission.ticketTier && (
+												<div className="flex items-center text-sm font-medium">
+													<Ticket className="w-4 h-4 mr-1 text-primary" />
+													{submission.ticketTier}
 												</div>
 											)}
 										</div>
@@ -265,7 +282,7 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 								{/* Image Gallery */}
 								<div className="space-y-4">
 									<div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
-										<img
+										<Image
 											src={selectedSubmission.images[currentImageIndex]}
 											alt={`Vehicle image ${currentImageIndex + 1}`}
 											className="object-contain w-full h-full"
@@ -314,6 +331,41 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 										</div>
 									)}
 								</div>
+
+								{/* Ticket Information */}
+								{(selectedSubmission.ticketTier || selectedSubmission.ticketPrice) && (
+									<Card className="bg-primary/5 border-primary/20">
+										<CardHeader>
+											<CardTitle className="text-lg flex items-center gap-2">
+												<Ticket className="w-5 h-5" />
+												Ticket Information
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+											{selectedSubmission.ticketTier && (
+												<div>
+													<p className="text-sm text-muted-foreground">Ticket Tier</p>
+													<p className="font-semibold">{selectedSubmission.ticketTier}</p>
+												</div>
+											)}
+											{selectedSubmission.ticketPrice && (
+												<div>
+													<p className="text-sm text-muted-foreground">Price per Ticket</p>
+													<p className="font-semibold flex items-center">
+														<DollarSign className="w-4 h-4" />
+														{selectedSubmission.ticketPrice.toFixed(2)}
+													</p>
+												</div>
+											)}
+											{selectedSubmission.ticketQuantity && (
+												<div>
+													<p className="text-sm text-muted-foreground">Quantity</p>
+													<p className="font-semibold">{selectedSubmission.ticketQuantity} ticket{selectedSubmission.ticketQuantity > 1 ? 's' : ''}</p>
+												</div>
+											)}
+										</CardContent>
+									</Card>
+								)}
 
 								{/* Participant Details */}
 								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -367,7 +419,11 @@ export function SubmissionReview({ eventId, eventName }: SubmissionReviewProps) 
 								{selectedSubmission.vehicleModifications && (
 									<div className="space-y-2">
 										<h3 className="font-semibold">Modifications</h3>
-										<p className="text-sm text-muted-foreground">{selectedSubmission.vehicleModifications}</p>
+										<ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+											{selectedSubmission.vehicleModifications.split('\n').map((mod, index) => (
+												<li key={index}>{mod.trim()}</li>
+											))}
+										</ul>
 									</div>
 								)}
 

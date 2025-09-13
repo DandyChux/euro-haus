@@ -30,11 +30,18 @@ type TicketInfo struct {
 	CustomerName  string `json:"customerName"`
 	CustomerEmail string `json:"customerEmail"`
 	EventName     string `json:"eventName"`
+	EventID       string `json:"eventId"`
 	ProductID     string `json:"productId"`
 	Quantity      int    `json:"quantity"`
 	CheckedIn     bool   `json:"checkedIn"`
 	CheckedInAt   string `json:"checkedInAt,omitempty"`
+	TicketType    string `json:"ticketType"`
+	TicketCode    string `json:"ticketCode"`
 }
+
+// type StripeResponse struct {
+
+// }
 
 // ValidateTicket checks if a ticket token is valid
 func ValidateTicket(w http.ResponseWriter, r *http.Request) {
@@ -72,21 +79,31 @@ func ValidateTicket(w http.ResponseWriter, r *http.Request) {
 	// Parse checked-in status
 	checkedIn := ticketData["checked_in"] == "true"
 
-	// Format response
-	response := map[string]interface{}{
-		"valid":         true,
-		"customerName":  ticketData["customer_name"],
-		"customerEmail": ticketData["customer_email"],
-		"eventName":     ticketData["event_name"],
-		"productId":     ticketData["stripe_product_id"],
-		"quantity":      quantity,
-		"checkedIn":     checkedIn,
+	// Get ticket type
+	ticketType := ticketData["ticket_type"]
+	if ticketType == "" {
+		ticketType = "General"
+	}
+
+	// Format response with all necessary fields
+	response := TicketInfo{
+		Valid:         true,
+		CustomerName:  ticketData["customer_name"],
+		CustomerEmail: ticketData["customer_email"],
+		EventName:     ticketData["event_name"],
+		EventID:       ticketData["stripe_product_id"],
+		ProductID:     ticketData["stripe_product_id"],
+		Quantity:      quantity,
+		CheckedIn:     checkedIn,
+		TicketType:    ticketType,
+		TicketCode:    req.Token,
 	}
 
 	if checkedIn {
-		response["checkedInAt"] = ticketData["checked_in_at"]
+		response.CheckedInAt = ticketData["checked_in_at"]
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -106,19 +123,38 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 	ticketKey := "ticket:" + req.Token
 	exists, err := rdb.Exists(ctx, ticketKey).Result()
 	if err != nil || exists == 0 {
-		http.Error(w, "Ticket not found", http.StatusBadRequest)
+		http.Error(w, "Ticket not found", http.StatusNotFound)
 		return
 	}
 
-	// Get current check-in status
-	checkedIn, err := rdb.HGet(ctx, ticketKey, "checked_in").Result()
+	// Get ticket data
+	ticketData, err := rdb.HGetAll(ctx, ticketKey).Result()
 	if err != nil {
 		http.Error(w, "Error retrieving ticket data", http.StatusInternalServerError)
 		return
 	}
 
-	if checkedIn == "true" {
-		http.Error(w, "Ticket already checked in", http.StatusBadRequest)
+	// Check if already checked in
+	if ticketData["checked_in"] == "true" {
+		// Return the ticket info with already checked in status
+		quantity, _ := strconv.Atoi(ticketData["quantity"])
+
+		response := TicketInfo{
+			Valid:         true,
+			CustomerName:  ticketData["customer_name"],
+			CustomerEmail: ticketData["customer_email"],
+			EventName:     ticketData["event_name"],
+			EventID:       ticketData["stripe_product_id"],
+			ProductID:     ticketData["stripe_product_id"],
+			Quantity:      quantity,
+			CheckedIn:     true,
+			CheckedInAt:   ticketData["checked_in_at"],
+			TicketType:    ticketData["ticket_type"],
+			TicketCode:    req.Token,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -135,8 +171,8 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get product ID and customer name for the ticket
-	productID, _ := rdb.HGet(ctx, ticketKey, "stripe_product_id").Result()
-	customerName, _ := rdb.HGet(ctx, ticketKey, "customer_name").Result()
+	productID := ticketData["stripe_product_id"]
+	customerName := ticketData["customer_name"]
 
 	if productID != "" {
 		// Add to checked-in set
@@ -151,10 +187,29 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 		}
 		updateJSON, _ := json.Marshal(updateMsg)
 		rdb.Publish(ctx, "event:"+productID+":updates", string(updateJSON))
+
+		log.Printf("Ticket %s checked in for event %s by %s", req.Token, productID, customerName)
 	}
 
 	// Return updated ticket info
-	ValidateTicket(w, r)
+	quantity, _ := strconv.Atoi(ticketData["quantity"])
+
+	response := TicketInfo{
+		Valid:         true,
+		CustomerName:  customerName,
+		CustomerEmail: ticketData["customer_email"],
+		EventName:     ticketData["event_name"],
+		EventID:       productID,
+		ProductID:     productID,
+		Quantity:      quantity,
+		CheckedIn:     true,
+		CheckedInAt:   now,
+		TicketType:    ticketData["ticket_type"],
+		TicketCode:    req.Token,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // GetEventAttendees retrieves all attendees for a specific event
@@ -308,7 +363,7 @@ func StartEventUpdatesListener(eventID string) {
 	}()
 }
 
-// GetEventBySlug retrieves an event by its slug
+// GetEventBySlug retrieves an event by its slug with linked products
 func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers
 	w.Header().Set("Content-Type", "application/json")
@@ -394,6 +449,57 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fetch linked products if any
+	linkedProducts := []map[string]interface{}{}
+	if linkedProductIDs, ok := eventProduct.Metadata["linked_products"]; ok && linkedProductIDs != "" {
+		// Parse linked product IDs (comma-separated)
+		productIDs := strings.Split(linkedProductIDs, ",")
+		for _, pid := range productIDs {
+			pid = strings.TrimSpace(pid)
+			if pid == "" {
+				continue
+			}
+
+			// Fetch each linked product
+			linkedParams := &stripe.ProductParams{}
+			linkedParams.AddExpand("default_price")
+
+			linkedProduct, err := product.Get(pid, linkedParams)
+			if err != nil {
+				log.Printf("Error fetching linked product %s: %v", pid, err)
+				continue
+			}
+
+			if !linkedProduct.Active {
+				continue
+			}
+
+			// Build linked product info
+			linkedInfo := map[string]interface{}{
+				"id":          linkedProduct.ID,
+				"name":        linkedProduct.Name,
+				"description": linkedProduct.Description,
+				"images":      linkedProduct.Images,
+				"type":        linkedProduct.Metadata["type"], // e.g., "merchandise", "addon"
+			}
+
+			// Add price info if available
+			if linkedProduct.DefaultPrice != nil {
+				linkedInfo["price"] = map[string]interface{}{
+					"id":          linkedProduct.DefaultPrice.ID,
+					"unit_amount": linkedProduct.DefaultPrice.UnitAmount,
+					"currency":    linkedProduct.DefaultPrice.Currency,
+				}
+			}
+
+			linkedProducts = append(linkedProducts, linkedInfo)
+		}
+	}
+
+	if len(linkedProducts) > 0 {
+		eventResponse["linkedProducts"] = linkedProducts
+	}
+
 	// Fetch event tiers if needed
 	if eventProduct.Metadata["has_tiers"] == "true" {
 		// Fetch tier prices for this product
@@ -433,6 +539,31 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 				isMostPopular = true
 			}
 
+			// Parse included products for this tier
+			var includedProducts []map[string]interface{}
+			if includedProductsJSON, ok := p.Metadata["included_products"]; ok && includedProductsJSON != "" {
+				// Format: [{"id":"prod_xxx","quantity":1,"name":"Event T-Shirt"}]
+				if err := json.Unmarshal([]byte(includedProductsJSON), &includedProducts); err != nil {
+					log.Printf("Error parsing included products: %v", err)
+				} else {
+					// Fetch full product details for each included product
+					for i, incProduct := range includedProducts {
+						if productID, ok := incProduct["id"].(string); ok {
+							incParams := &stripe.ProductParams{}
+							incParams.AddExpand("default_price")
+
+							if incProd, err := product.Get(productID, incParams); err == nil {
+								includedProducts[i]["name"] = incProd.Name
+								includedProducts[i]["images"] = incProd.Images
+								if incProd.DefaultPrice != nil {
+									includedProducts[i]["value"] = incProd.DefaultPrice.UnitAmount
+								}
+							}
+						}
+					}
+				}
+			}
+
 			tier := map[string]interface{}{
 				"id":                        p.ID,
 				"priceId":                   p.ID,
@@ -443,6 +574,11 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 				"features":                  features,
 				"requiresVehicleSubmission": requiresVehicleSubmission,
 				"isMostPopular":             isMostPopular,
+			}
+
+			// Add included products if any
+			if len(includedProducts) > 0 {
+				tier["includedProducts"] = includedProducts
 			}
 
 			// Add max quantity if available

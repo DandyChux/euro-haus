@@ -20,15 +20,19 @@ import { Route as CatalogIndexImport } from './routes/catalog/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
 import { Route as EventsSlugImport } from './routes/events/$slug'
 import { Route as CheckoutSuccessImport } from './routes/checkout/success'
+import { Route as CheckoutRecoverImport } from './routes/checkout/recover'
 import { Route as CheckoutPendingImport } from './routes/checkout/pending'
 import { Route as CheckoutCancelImport } from './routes/checkout/cancel'
 import { Route as CatalogIdImport } from './routes/catalog/$id'
 import { Route as AuthRegisterImport } from './routes/auth/register'
 import { Route as AdminSubmissionsImport } from './routes/admin/submissions'
+import { Route as AdminSubmissionIssuesImport } from './routes/admin/submission-issues'
 import { Route as AdminProductsImport } from './routes/admin/products'
 import { Route as AdminMediaImport } from './routes/admin/media'
 import { Route as AdminLoginImport } from './routes/admin/login'
-import { Route as EventsSlugCheckinImport } from './routes/events/$slug_.checkin'
+import { Route as AdminEventsImport } from './routes/admin/events'
+import { Route as AdminEventDetailsImport } from './routes/admin/event-details'
+import { Route as AdminCouponsImport } from './routes/admin/coupons'
 
 // Create/Update Routes
 
@@ -86,6 +90,12 @@ const CheckoutSuccessRoute = CheckoutSuccessImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const CheckoutRecoverRoute = CheckoutRecoverImport.update({
+  id: '/checkout/recover',
+  path: '/checkout/recover',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const CheckoutPendingRoute = CheckoutPendingImport.update({
   id: '/checkout/pending',
   path: '/checkout/pending',
@@ -116,6 +126,12 @@ const AdminSubmissionsRoute = AdminSubmissionsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const AdminSubmissionIssuesRoute = AdminSubmissionIssuesImport.update({
+  id: '/admin/submission-issues',
+  path: '/admin/submission-issues',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const AdminProductsRoute = AdminProductsImport.update({
   id: '/admin/products',
   path: '/admin/products',
@@ -134,9 +150,21 @@ const AdminLoginRoute = AdminLoginImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const EventsSlugCheckinRoute = EventsSlugCheckinImport.update({
-  id: '/events/$slug_/checkin',
-  path: '/events/$slug/checkin',
+const AdminEventsRoute = AdminEventsImport.update({
+  id: '/admin/events',
+  path: '/admin/events',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminEventDetailsRoute = AdminEventDetailsImport.update({
+  id: '/admin/event-details',
+  path: '/admin/event-details',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AdminCouponsRoute = AdminCouponsImport.update({
+  id: '/admin/coupons',
+  path: '/admin/coupons',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -172,6 +200,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PaymentImport
       parentRoute: typeof rootRoute
     }
+    '/admin/coupons': {
+      id: '/admin/coupons'
+      path: '/admin/coupons'
+      fullPath: '/admin/coupons'
+      preLoaderRoute: typeof AdminCouponsImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/event-details': {
+      id: '/admin/event-details'
+      path: '/admin/event-details'
+      fullPath: '/admin/event-details'
+      preLoaderRoute: typeof AdminEventDetailsImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/events': {
+      id: '/admin/events'
+      path: '/admin/events'
+      fullPath: '/admin/events'
+      preLoaderRoute: typeof AdminEventsImport
+      parentRoute: typeof rootRoute
+    }
     '/admin/login': {
       id: '/admin/login'
       path: '/admin/login'
@@ -191,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/products'
       fullPath: '/admin/products'
       preLoaderRoute: typeof AdminProductsImport
+      parentRoute: typeof rootRoute
+    }
+    '/admin/submission-issues': {
+      id: '/admin/submission-issues'
+      path: '/admin/submission-issues'
+      fullPath: '/admin/submission-issues'
+      preLoaderRoute: typeof AdminSubmissionIssuesImport
       parentRoute: typeof rootRoute
     }
     '/admin/submissions': {
@@ -228,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutPendingImport
       parentRoute: typeof rootRoute
     }
+    '/checkout/recover': {
+      id: '/checkout/recover'
+      path: '/checkout/recover'
+      fullPath: '/checkout/recover'
+      preLoaderRoute: typeof CheckoutRecoverImport
+      parentRoute: typeof rootRoute
+    }
     '/checkout/success': {
       id: '/checkout/success'
       path: '/checkout/success'
@@ -263,13 +326,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsIndexImport
       parentRoute: typeof rootRoute
     }
-    '/events/$slug_/checkin': {
-      id: '/events/$slug_/checkin'
-      path: '/events/$slug/checkin'
-      fullPath: '/events/$slug/checkin'
-      preLoaderRoute: typeof EventsSlugCheckinImport
-      parentRoute: typeof rootRoute
-    }
   }
 }
 
@@ -280,20 +336,24 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
-  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesByTo {
@@ -301,20 +361,24 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
-  '/events/$slug/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRoutesById {
@@ -323,20 +387,24 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/cart': typeof CartRoute
   '/payment': typeof PaymentRoute
+  '/admin/coupons': typeof AdminCouponsRoute
+  '/admin/event-details': typeof AdminEventDetailsRoute
+  '/admin/events': typeof AdminEventsRoute
   '/admin/login': typeof AdminLoginRoute
   '/admin/media': typeof AdminMediaRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/submission-issues': typeof AdminSubmissionIssuesRoute
   '/admin/submissions': typeof AdminSubmissionsRoute
   '/auth/register': typeof AuthRegisterRoute
   '/catalog/$id': typeof CatalogIdRoute
   '/checkout/cancel': typeof CheckoutCancelRoute
   '/checkout/pending': typeof CheckoutPendingRoute
+  '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
-  '/events/$slug_/checkin': typeof EventsSlugCheckinRoute
 }
 
 export interface FileRouteTypes {
@@ -346,60 +414,72 @@ export interface FileRouteTypes {
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
+    | '/admin/event-details'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
     | '/catalog'
     | '/events'
-    | '/events/$slug/checkin'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
+    | '/admin/event-details'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin'
     | '/catalog'
     | '/events'
-    | '/events/$slug/checkin'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/cart'
     | '/payment'
+    | '/admin/coupons'
+    | '/admin/event-details'
+    | '/admin/events'
     | '/admin/login'
     | '/admin/media'
     | '/admin/products'
+    | '/admin/submission-issues'
     | '/admin/submissions'
     | '/auth/register'
     | '/catalog/$id'
     | '/checkout/cancel'
     | '/checkout/pending'
+    | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
     | '/admin/'
     | '/catalog/'
     | '/events/'
-    | '/events/$slug_/checkin'
   fileRoutesById: FileRoutesById
 }
 
@@ -408,20 +488,24 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   CartRoute: typeof CartRoute
   PaymentRoute: typeof PaymentRoute
+  AdminCouponsRoute: typeof AdminCouponsRoute
+  AdminEventDetailsRoute: typeof AdminEventDetailsRoute
+  AdminEventsRoute: typeof AdminEventsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   AdminMediaRoute: typeof AdminMediaRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminSubmissionIssuesRoute: typeof AdminSubmissionIssuesRoute
   AdminSubmissionsRoute: typeof AdminSubmissionsRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
   CatalogIdRoute: typeof CatalogIdRoute
   CheckoutCancelRoute: typeof CheckoutCancelRoute
   CheckoutPendingRoute: typeof CheckoutPendingRoute
+  CheckoutRecoverRoute: typeof CheckoutRecoverRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   EventsSlugRoute: typeof EventsSlugRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
-  EventsSlugCheckinRoute: typeof EventsSlugCheckinRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -429,20 +513,24 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   CartRoute: CartRoute,
   PaymentRoute: PaymentRoute,
+  AdminCouponsRoute: AdminCouponsRoute,
+  AdminEventDetailsRoute: AdminEventDetailsRoute,
+  AdminEventsRoute: AdminEventsRoute,
   AdminLoginRoute: AdminLoginRoute,
   AdminMediaRoute: AdminMediaRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminSubmissionIssuesRoute: AdminSubmissionIssuesRoute,
   AdminSubmissionsRoute: AdminSubmissionsRoute,
   AuthRegisterRoute: AuthRegisterRoute,
   CatalogIdRoute: CatalogIdRoute,
   CheckoutCancelRoute: CheckoutCancelRoute,
   CheckoutPendingRoute: CheckoutPendingRoute,
+  CheckoutRecoverRoute: CheckoutRecoverRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   EventsSlugRoute: EventsSlugRoute,
   AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
-  EventsSlugCheckinRoute: EventsSlugCheckinRoute,
 }
 
 export const routeTree = rootRoute
@@ -459,20 +547,24 @@ export const routeTree = rootRoute
         "/about",
         "/cart",
         "/payment",
+        "/admin/coupons",
+        "/admin/event-details",
+        "/admin/events",
         "/admin/login",
         "/admin/media",
         "/admin/products",
+        "/admin/submission-issues",
         "/admin/submissions",
         "/auth/register",
         "/catalog/$id",
         "/checkout/cancel",
         "/checkout/pending",
+        "/checkout/recover",
         "/checkout/success",
         "/events/$slug",
         "/admin/",
         "/catalog/",
-        "/events/",
-        "/events/$slug_/checkin"
+        "/events/"
       ]
     },
     "/": {
@@ -487,6 +579,15 @@ export const routeTree = rootRoute
     "/payment": {
       "filePath": "payment.tsx"
     },
+    "/admin/coupons": {
+      "filePath": "admin/coupons.tsx"
+    },
+    "/admin/event-details": {
+      "filePath": "admin/event-details.tsx"
+    },
+    "/admin/events": {
+      "filePath": "admin/events.tsx"
+    },
     "/admin/login": {
       "filePath": "admin/login.tsx"
     },
@@ -495,6 +596,9 @@ export const routeTree = rootRoute
     },
     "/admin/products": {
       "filePath": "admin/products.tsx"
+    },
+    "/admin/submission-issues": {
+      "filePath": "admin/submission-issues.tsx"
     },
     "/admin/submissions": {
       "filePath": "admin/submissions.tsx"
@@ -511,6 +615,9 @@ export const routeTree = rootRoute
     "/checkout/pending": {
       "filePath": "checkout/pending.tsx"
     },
+    "/checkout/recover": {
+      "filePath": "checkout/recover.tsx"
+    },
     "/checkout/success": {
       "filePath": "checkout/success.tsx"
     },
@@ -525,9 +632,6 @@ export const routeTree = rootRoute
     },
     "/events/": {
       "filePath": "events/index.tsx"
-    },
-    "/events/$slug_/checkin": {
-      "filePath": "events/$slug_.checkin.tsx"
     }
   }
 }

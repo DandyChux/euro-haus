@@ -110,7 +110,7 @@ export function ContentPlacementProvider({ children }: { children: React.ReactNo
 
 	// Load saved placements from backend on mount
 	useEffect(() => {
-		apiClient.get('/content-placements/dynamic')
+		apiClient.get('/content-placements')
 			.then(response => {
 				const map = new Map<string, DynamicPlacement>();
 				response.data.placements?.forEach((p: {

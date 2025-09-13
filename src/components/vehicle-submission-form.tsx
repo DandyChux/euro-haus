@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Upload, X, Car, AlertCircle } from 'lucide-react';
+import { Upload, X, Car, AlertCircle, Ticket, DollarSign, Plus, Trash2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -17,8 +17,10 @@ import {
 	FormMessage,
 } from '~/components/ui/form';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { submissionService } from '~/lib/services/submission-service';
 import type { SubmissionWithFiles } from '~/lib/services/submission-service';
+import { Image } from './ui/image';
 
 const formSchema = z.object({
 	participantName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -28,7 +30,7 @@ const formSchema = z.object({
 	vehicleMake: z.string().min(2, 'Make is required'),
 	vehicleModel: z.string().min(2, 'Model is required'),
 	vehicleDescription: z.string().optional(),
-	vehicleModifications: z.string().optional(),
+	vehicleModifications: z.array(z.object({ value: z.string() })).optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -37,6 +39,9 @@ interface VehicleSubmissionFormProps {
 	eventId: string;
 	eventSlug: string;
 	eventName: string;
+	ticketTier?: string;
+	ticketPrice?: number;
+	ticketQuantity?: number;
 	onSuccess: (submissionId: string) => void;
 	onCancel: () => void;
 }
@@ -45,6 +50,9 @@ export function VehicleSubmissionForm({
 	eventId,
 	eventSlug,
 	eventName,
+	ticketTier,
+	ticketPrice,
+	ticketQuantity,
 	onSuccess,
 	onCancel,
 }: VehicleSubmissionFormProps) {
@@ -63,9 +71,19 @@ export function VehicleSubmissionForm({
 			vehicleMake: '',
 			vehicleModel: '',
 			vehicleDescription: '',
-			vehicleModifications: '',
+			vehicleModifications: []
 		},
 	});
+
+	const {
+		fields: vehicleModifications,
+		append: appendModification,
+		remove: removeModification,
+		update: updateModification
+	} = useFieldArray({
+		control: form.control,
+		name: "vehicleModifications"
+	})
 
 	const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(e.target.files || []);
@@ -113,12 +131,22 @@ export function VehicleSubmissionForm({
 		setUploading(true);
 		setError(null);
 
+		// Transform the modifications from an object array to string array and filter empty values
+		const vehicleModifications = data.vehicleModifications
+			?.filter(mod => mod.value.trim() !== '')
+			.map(mod => mod.value.trim());
+
+
 		try {
 			const submissionData: SubmissionWithFiles = {
 				...data,
 				eventId,
 				eventSlug,
 				images,
+				ticketTier,
+				ticketPrice,
+				ticketQuantity,
+				vehicleModifications
 			};
 
 			const submission = await submissionService.createSubmission(submissionData);
@@ -139,6 +167,50 @@ export function VehicleSubmissionForm({
 					Please provide details about the vehicle you wish to enter in this event.
 				</p>
 			</div>
+
+			{/* Ticket Information */}
+			{ticketTier && (
+				<Card className="bg-primary/5 border-primary/20">
+					<CardHeader className="pb-3">
+						<CardTitle className="text-lg flex items-center gap-2">
+							<Ticket className="w-5 h-5" />
+							Selected Ticket
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="flex flex-wrap gap-4 items-center">
+							<div>
+								<p className="text-sm text-muted-foreground">Tier</p>
+								<p className="font-semibold">{ticketTier}</p>
+							</div>
+							{ticketPrice && (
+								<div>
+									<p className="text-sm text-muted-foreground">Price</p>
+									<p className="font-semibold flex items-center">
+										<DollarSign className="w-4 h-4" />
+										{ticketPrice.toFixed(2)}
+									</p>
+								</div>
+							)}
+							{ticketQuantity && (
+								<div>
+									<p className="text-sm text-muted-foreground">Quantity</p>
+									<p className="font-semibold">{ticketQuantity} ticket{ticketQuantity > 1 ? 's' : ''}</p>
+								</div>
+							)}
+							{ticketPrice && ticketQuantity && (
+								<div className="ml-auto">
+									<p className="text-sm text-muted-foreground">Total</p>
+									<p className="font-semibold flex items-center">
+										<DollarSign className="w-4 h-4" />
+										{(ticketPrice * ticketQuantity).toFixed(2)}
+									</p>
+								</div>
+							)}
+						</div>
+					</CardContent>
+				</Card>
+			)}
 
 			{error && (
 				<Alert variant="destructive">
@@ -267,23 +339,52 @@ export function VehicleSubmissionForm({
 							)}
 						/>
 
-						<FormField
-							control={form.control}
-							name="vehicleModifications"
-							render={({ field }) => (
-								<FormItem>
-									<FormLabel>Modifications (Optional)</FormLabel>
-									<FormControl>
-										<Textarea
-											{...field}
-											placeholder="List any modifications or upgrades"
-											rows={3}
-										/>
-									</FormControl>
-									<FormMessage />
-								</FormItem>
+						{/* Vehicle Modifications */}
+						<div className='bg-muted/50 p-4 rounded-md'>
+							<div className='flex justify-between items-center mb-3'>
+								<h3 className='text-lg font-medium'>Vehicle Modifications</h3>
+								<Button
+									type='button'
+									size='sm'
+									onClick={() => appendModification({ value: '' })}
+								>
+									<Plus className="h-4 w-4 mr-1" /> Add Modification
+								</Button>
+							</div>
+
+							{vehicleModifications.length === 0 ? (
+								<div className="text-center py-4 text-muted-foreground">
+									No tags added yet. Add tags to help categorize your event.
+								</div>
+							) : (
+								<div className="space-y-2">
+									{vehicleModifications.map((field, index) => (
+										<div key={field.id} className="flex items-end gap-2">
+											<FormField
+												control={form.control}
+												name={`vehicleModifications.${index}.value`}
+												render={({ field }) => (
+													<FormItem className="flex-1">
+														<FormControl>
+															<Input {...field} placeholder="e.g., Turbocharged, Modified Suspension" />
+														</FormControl>
+														<FormMessage />
+													</FormItem>
+												)}
+											/>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon"
+												onClick={() => removeModification(index)}
+											>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										</div>
+									))}
+								</div>
 							)}
-						/>
+						</div>
 					</div>
 
 					{/* Image Upload */}
@@ -320,7 +421,7 @@ export function VehicleSubmissionForm({
 								<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
 									{imagePreviews.map((preview, index) => (
 										<div key={index} className="relative group">
-											<img
+											<Image
 												src={preview}
 												alt={`Vehicle ${index + 1}`}
 												className="w-full h-24 object-cover rounded-lg"

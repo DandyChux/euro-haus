@@ -19,8 +19,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 interface TieredPricingProps {
 	tiers: TieredPrice[];
 	onSelectTier: (tier: TieredPrice, quantity: number) => void;
-	showFullDescriptions?: boolean; // New prop to control description display
-	maxDescriptionLength?: number; // New prop to control truncation
+	showFullDescriptions?: boolean;
+	maxDescriptionLength?: number;
 }
 
 export function TieredPricing({

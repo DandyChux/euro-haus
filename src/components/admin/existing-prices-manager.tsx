@@ -103,6 +103,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 					nickname: price.nickname || '',
 					description: price.metadata?.description || '',
 					requiresVehicleSubmission: price.metadata?.requires_vehicle_submission === 'true',
+					requiresApproval: price.metadata?.requires_approval !== 'false', // Default to true if not set
 					isMostPopular: price.metadata?.is_most_popular === 'true',
 					features: features
 				}
@@ -164,6 +165,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 				...currentPrice?.metadata,
 				description: values.description || '',
 				requires_vehicle_submission: String(values.requiresVehicleSubmission),
+				requires_approval: String(values.requiresApproval ?? true),
 				is_most_popular: String(values.isMostPopular),
 				features: JSON.stringify(features),
 				updated_at: new Date().toISOString(),
@@ -347,13 +349,30 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 													checked={editValues[price.id]?.requiresVehicleSubmission}
 													onCheckedChange={(checked) => setEditValues({
 														...editValues,
-														[price.id]: { ...editValues[price.id], requiresVehicleSubmission: checked }
+														[price.id]: { ...editValues[price.id], requiresVehicleSubmission: checked, requiresApproval: checked ? editValues[price.id]?.requiresApproval : false }
 													})}
 												/>
 												<Label htmlFor={`requires-vehicle-${price.id}`}>
 													Requires Vehicle Submission?
 												</Label>
 											</div>
+
+											{editValues[price.id]?.requiresVehicleSubmission && (
+												<div className="flex items-center space-x-2 ml-8">
+													<Switch
+														id={`requires-approval-${price.id}`}
+														checked={editValues[price.id]?.requiresApproval}
+														onCheckedChange={(checked) => setEditValues({
+															...editValues,
+															[price.id]: { ...editValues[price.id], requiresApproval: checked }
+														})}
+													/>
+													<Label htmlFor={`requires-approval-${price.id}`}>
+														Requires Approval?
+													</Label>
+												</div>
+											)}
+
 											<div className="flex items-center space-x-2">
 												<Switch
 													id={`is-popular-${price.id}`}
@@ -408,6 +427,12 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 															</TooltipTrigger>
 															<TooltipContent>
 																<p>Requires vehicle submission</p>
+																{price.metadata?.requires_approval !== 'false' && (
+																	<p className="text-xs text-muted-foreground">Manual approval required</p>
+																)}
+																{price.metadata?.requires_approval === 'false' && (
+																	<p className="text-xs text-green-500">Auto-approved</p>
+																)}
 															</TooltipContent>
 														</Tooltip>
 													</TooltipProvider>
