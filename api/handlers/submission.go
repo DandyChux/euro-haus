@@ -161,17 +161,6 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	// Check if this tier requires approval
 	requiresApproval := checkIfTierRequiresApproval(priceID)
 
-	if !requiresApproval {
-		// Auto-approve the submission
-		submission.Status = "approved"
-		submission.ReviewedAt = time.Now().Format(time.RFC3339)
-		submission.ReviewedBy = "system-auto-approved"
-		submission.ReviewNotes = "Automatically approved - tier does not require manual approval"
-
-		fmt.Printf("Auto-approving submission %s for tier that doesn't require approval", submission.ID)
-	}
-
-	// Store submission in Redis
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
 
@@ -215,29 +204,47 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to add submission to event set: %v", err)
 	}
 
-	// Send appropriate email
+	// Handle auto-approved submissions
 	if !requiresApproval {
-		// Generate payment link for auto-approved submission
-		paymentLink, err := createSubmissionPaymentLink(submission)
-		if err != nil {
-			log.Printf("Error creating payment link for auto-approved submission: %v", err)
-			// Use fallback link if payment link generation fails
-			baseUrl := os.Getenv("BASE_URL")
-			if baseUrl == "" {
-				baseUrl = "https://eurohaus.shop"
+		// For auto-approved, check if payment already exists and capture it
+		if submission.CheckoutSessionID != "" {
+			// Payment was collected before submission - capture it now
+			paymentCaptured, paymentProcessing, captureErr := captureSubmissionPayment(submission.ID)
+
+			if captureErr != nil {
+				log.Printf("Could not capture payment for auto-approved submission %s: %v", submission.ID, captureErr)
 			}
-			paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+
+			if paymentCaptured || paymentProcessing {
+				fmt.Printf("Auto-approved submission %s with payment captured/processing. Webhook will handle the rest.\n", submission.ID)
+			}
+		} else if priceID != "" {
+			// No payment yet - create checkout session for auto-approved submission
+			paymentLink, err := createSubmissionPaymentLink(submission)
+			if err != nil {
+				log.Printf("Error creating payment link for auto-approved submission: %v", err)
+				// Use fallback
+				baseUrl := os.Getenv("BASE_URL")
+				if baseUrl == "" {
+					baseUrl = "https://eurohaus.shop"
+				}
+				paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+			}
+
+			// Send approval email with payment link
+			go sendApprovalEmail(submission, paymentLink)
+
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+
+			fmt.Printf("Auto-approved submission %s - sent approval email with payment link\n", submission.ID)
 		}
-
-		// Send approval email immediately for auto-approved submissions
-		go sendApprovalEmail(submission, paymentLink)
-
-		fmt.Printf("Auto-approved submission %s and sent approval email with payment link: %s", submission.ID, paymentLink)
 	} else {
 		// Send confirmation email for pending submissions
 		go sendSubmissionConfirmationEmail(submission)
-
-		fmt.Printf("Created pending submission %s and sent confirmation email", submission.ID)
+		fmt.Printf("Created pending submission %s and sent confirmation email\n", submission.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -352,63 +359,16 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	paymentProcessing := false
 
 	if submission.CheckoutSessionID != "" {
-		// Retrieve the checkout session
-		sess, err := session.Get(submission.CheckoutSessionID, nil)
-		if err != nil {
-			log.Printf("Error retrieving checkout session for submission %s: %v", submissionID, err)
-		} else if sess.PaymentIntent != nil {
-			// Check if payment intent needs to be captured
-			pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
-			if err != nil {
-				log.Printf("Error retrieving payment intent %s: %v", sess.PaymentIntent.ID, err)
-			} else {
-				// Check the status and capture method
-				if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
-					// Capture the payment
-					fmt.Printf("Capturing payment for submission %s (payment intent: %s)", submissionID, pi.ID)
-					paymentProcessing = true
+		var captureErr error
+		paymentCaptured, paymentProcessing, captureErr = captureSubmissionPayment(submissionID)
 
-					capturedPI, err := paymentintent.Capture(pi.ID, nil)
-					if err != nil {
-						log.Printf("Error capturing payment for submission %s: %v", submissionID, err)
-						// Don't fail the approval, but note the error
-						rdb.HSet(ctx, submissionKey, map[string]interface{}{
-							"payment_capture_error":        err.Error(),
-							"payment_capture_attempted_at": time.Now().Format(time.RFC3339),
-						})
-					} else {
-						// Payment captured successfully
-						paymentCaptured = true
-						submission.PaymentIntentID = capturedPI.ID
-
-						rdb.HSet(ctx, submissionKey, map[string]interface{}{
-							"payment_intent_id":   capturedPI.ID,
-							"payment_captured":    "true",
-							"payment_captured_at": time.Now().Format(time.RFC3339),
-						})
-
-						fmt.Printf("Successfully captured payment %s for submission %s", capturedPI.ID, submissionID)
-
-						// The ticket will be created when the payment.intent.succeeded webhook fires
-						// This ensures proper flow and prevents duplicate tickets
-						// The webhook will also send the approval + ticket email
-					}
-				} else if pi.Status == "succeeded" {
-					// Payment already succeeded (might be auto-capture)
-					log.Printf("Payment already succeeded for submission %s", submissionID)
-					paymentCaptured = true
-					submission.PaymentIntentID = pi.ID
-
-					// Check if ticket was already created
-					existingTicket, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
-					if existingTicket == "" {
-						log.Printf("No ticket found for approved submission %s with succeeded payment. Webhook might handle it.", submissionID)
-					}
-				} else {
-					fmt.Printf("Payment intent %s for submission %s has status: %s (capture method: %s)",
-						pi.ID, submissionID, pi.Status, pi.CaptureMethod)
-				}
-			}
+		if captureErr != nil {
+			log.Printf("Error capturing payment for submission %s: %v", submissionID, captureErr)
+			// Don't fail the approval, but note the error
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"payment_capture_error":        captureErr.Error(),
+				"payment_capture_attempted_at": time.Now().Format(time.RFC3339),
+			})
 		}
 	}
 
@@ -850,31 +810,51 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate payment link
+	// Check if payment is already completed or being processed
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	// Get payment status from Redis
+	paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+	paymentCaptured, _ := rdb.HGet(ctx, submissionKey, "payment_captured").Result()
+	ticketID, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
+
+	// Determine if we need a payment link
 	paymentLink := ""
 
-	// If there's a checkout session, get the URL
-	if submission.CheckoutSessionID != "" {
-		params := &stripe.CheckoutSessionParams{}
-		sess, err := session.Get(submission.CheckoutSessionID, params)
-		if err == nil && sess.URL != "" {
-			paymentLink = sess.URL
+	// Only provide payment link if:
+	// 1. Payment is not completed
+	// 2. Payment is not captured
+	// 3. No ticket exists yet
+	if paymentCompleted != "true" && paymentCaptured != "true" && ticketID == "" {
+		// Check if there's an existing checkout session
+		if submission.CheckoutSessionID != "" {
+			params := &stripe.CheckoutSessionParams{}
+			sess, err := session.Get(submission.CheckoutSessionID, params)
+			if err == nil {
+				// Check if session is still valid and not paid
+				if sess.PaymentStatus != "paid" && sess.URL != "" {
+					paymentLink = sess.URL
+				} else if sess.PaymentStatus == "paid" {
+					// Payment is already done, no link needed
+					paymentLink = ""
+				}
+			}
+		}
+
+		// If no valid checkout session URL and payment not done, create a new payment link
+		if paymentLink == "" && paymentCompleted != "true" {
+			paymentLink, _ = createSubmissionPaymentLink(*submission)
 		}
 	}
-
-	// If no checkout session URL, create a new payment link
-	if paymentLink == "" {
-		paymentLink, _ = createSubmissionPaymentLink(*submission)
-	}
+	// If payment is completed/captured/ticket exists, paymentLink stays empty
+	// This will trigger the "payment processing" message in the template
 
 	// Send approval email
 	sendApprovalEmail(*submission, paymentLink)
 
 	// Update email sent status
-	rdb := services.GetRedisClient()
-	ctx := context.Background()
-	submissionKey := fmt.Sprintf("submission:%s", submissionID)
-
 	rdb.HSet(ctx, submissionKey, map[string]interface{}{
 		"approval_email_sent":    "true",
 		"approval_email_sent_at": time.Now().Format(time.RFC3339),
@@ -883,8 +863,9 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Approval email resent successfully",
+		"success":     true,
+		"message":     "Approval email resent successfully",
+		"paymentLink": paymentLink != "", // Let frontend know if payment action is needed
 	})
 }
 
@@ -1189,6 +1170,75 @@ func getSubmissionByID(submissionID string) (*VehicleSubmission, error) {
 	}
 
 	return submission, nil
+}
+
+// captureSubmissionPayment captures payment for an approved submission
+// This is used by both ApproveSubmission (manual approval) and CreateSubmission (auto-approval)
+// The webhook will handle sending emails and creating tickets when payment succeeds
+func captureSubmissionPayment(submissionID string) (bool, bool, error) {
+	// Get submission details
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		return false, false, fmt.Errorf("submission not found: %v", err)
+	}
+
+	if submission.CheckoutSessionID == "" {
+		return false, false, fmt.Errorf("no checkout session found")
+	}
+
+	// Retrieve the checkout session
+	sess, err := session.Get(submission.CheckoutSessionID, nil)
+	if err != nil {
+		return false, false, fmt.Errorf("error retrieving checkout session: %v", err)
+	}
+
+	if sess.PaymentIntent == nil {
+		return false, false, fmt.Errorf("no payment intent associated with checkout session")
+	}
+
+	// Get the payment intent
+	pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
+	if err != nil {
+		return false, false, fmt.Errorf("error retrieving payment intent: %v", err)
+	}
+
+	// Check the status and capture method
+	if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
+		// Capture the payment
+		fmt.Printf("Capturing payment for submission %s (payment intent: %s)\n", submissionID, pi.ID)
+
+		capturedPI, err := paymentintent.Capture(pi.ID, nil)
+		if err != nil {
+			return false, false, fmt.Errorf("error capturing payment: %v", err)
+		}
+
+		// Payment captured successfully - update Redis
+		rdb := services.GetRedisClient()
+		ctx := context.Background()
+		submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"payment_intent_id":   capturedPI.ID,
+			"payment_captured":    "true",
+			"payment_captured_at": time.Now().Format(time.RFC3339),
+		})
+
+		fmt.Printf("Successfully captured payment %s for submission %s\n", capturedPI.ID, submissionID)
+		// The webhook will handle the rest (sending emails, creating ticket)
+		return true, true, nil
+
+	} else if pi.Status == "succeeded" {
+		// Payment already succeeded
+		log.Printf("Payment already succeeded for submission %s\n", submissionID)
+		return true, false, nil
+
+	} else if pi.Status == "processing" {
+		// Payment is processing
+		log.Printf("Payment is processing for submission %s\n", submissionID)
+		return false, true, nil
+	}
+
+	return false, false, fmt.Errorf("payment intent status: %s (capture method: %s)", pi.Status, pi.CaptureMethod)
 }
 
 func createSubmissionPaymentLink(submission VehicleSubmission) (string, error) {
