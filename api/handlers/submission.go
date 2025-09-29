@@ -915,14 +915,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			if data["checkout_session_id"] == "" && data["payment_intent_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_payment")
-				log.Printf("Submission %s has no payment", submissionID)
+				fmt.Printf("Submission %s has no payment", submissionID)
 			}
 
 			// Issue 2: Approved but email not sent
 			if data["approval_email_sent"] != "true" {
 				hasIssue = true
 				issues = append(issues, "email_not_sent")
-				log.Printf("Submission %s email not sent", submissionID)
+				fmt.Printf("Submission %s email not sent", submissionID)
 			}
 
 			// Issue 3: Has checkout session but need to check with Stripe
@@ -940,11 +940,11 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 						if sess.ExpiresAt < time.Now().Unix() {
 							hasIssue = true
 							issues = append(issues, "payment_expired")
-							log.Printf("Submission %s payment expired", submissionID)
+							fmt.Printf("Submission %s payment expired", submissionID)
 						} else {
 							hasIssue = true
 							issues = append(issues, "payment_incomplete")
-							log.Printf("Submission %s payment incomplete", submissionID)
+							fmt.Printf("Submission %s payment incomplete", submissionID)
 						}
 					} else {
 						// Payment is paid
@@ -956,7 +956,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				if data["payment_intent_id"] == "" && !sessionValid {
 					hasIssue = true
 					issues = append(issues, "missing_payment_intent")
-					log.Printf("Submission %s has checkout session but no payment intent", submissionID)
+					fmt.Printf("Submission %s has checkout session but no payment intent", submissionID)
 				}
 			}
 
@@ -971,7 +971,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				} else if pi.Status != "succeeded" {
 					hasIssue = true
 					issues = append(issues, "payment_not_succeeded")
-					log.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
+					fmt.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
 				}
 			}
 
@@ -979,14 +979,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			if data["payment_intent_id"] != "" && data["ticket_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_ticket_created")
-				log.Printf("Submission %s has payment but no ticket", submissionID)
+				fmt.Printf("Submission %s has payment but no ticket", submissionID)
 			}
 
 			// Issue 6: Missing checkout data (neither checkout session nor ticket)
 			if data["checkout_session_id"] == "" && data["ticket_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "missing_checkout_data")
-				log.Printf("Submission %s missing checkout data", submissionID)
+				fmt.Printf("Submission %s missing checkout data", submissionID)
 			}
 		}
 
@@ -994,14 +994,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		if status != "approved" && hasPaymentData {
 			hasIssue = true
 			issues = append(issues, "payment_without_approval")
-			log.Printf("Submission %s has payment data but not approved", submissionID)
+			fmt.Printf("Submission %s has payment data but not approved", submissionID)
 		}
 
 		// Check for pending submissions that have checkout/payment info but no approval
 		if status == "pending" && hasPaymentData {
 			hasIssue = true
 			issues = append(issues, "pending_with_payment")
-			log.Printf("Submission %s is pending with payment data", submissionID)
+			fmt.Printf("Submission %s is pending with payment data", submissionID)
 		}
 
 		// Check if this submission has been stuck in pending for too long
@@ -1012,7 +1012,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				if submittedAt.Before(twoWeeksAgo) {
 					hasIssue = true
 					issues = append(issues, "pending_too_long")
-					log.Printf("Submission %s pending too long", submissionID)
+					fmt.Printf("Submission %s pending too long", submissionID)
 				}
 			}
 		}
@@ -1022,7 +1022,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			hasIssue = true
 			if !contains(issues, "no_ticket_created") {
 				issues = append(issues, "no_ticket_created")
-				log.Printf("Submission %s has payment data but no ticket", submissionID)
+				fmt.Printf("Submission %s has payment data but no ticket", submissionID)
 			}
 		}
 
@@ -1032,7 +1032,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			hasIssue = true
 			if !contains(issues, "incomplete_payment_process") {
 				issues = append(issues, "incomplete_payment_process")
-				log.Printf("Submission %s has incomplete payment process", submissionID)
+				fmt.Printf("Submission %s has incomplete payment process", submissionID)
 			}
 		}
 
@@ -1080,7 +1080,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("Found %d submissions with issues", len(issueSubmissions))
+	fmt.Printf("Found %d submissions with issues", len(issueSubmissions))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
