@@ -170,32 +170,7 @@ export function SubmissionIssuesManager({ submissions, events }: SubmissionIssue
 		})
 		setShowFilterDialog(false);
 
-		// Reload data with new filters
-		refreshWithFilters();
-	};
-
-	const refreshWithFilters = async () => {
-		try {
-			// Build the query string for the API request
-			const queryParams = new URLSearchParams();
-			if (filterOptions.debug) queryParams.set('debug', 'true');
-			if (filterOptions.all) queryParams.set('all', 'true');
-			if (filterOptions.includeId) queryParams.set('include_id', filterOptions.includeId);
-
-			// Make the API call with the query parameters
-			const response = await apiClient.get(`/admin/submissions/issues?${queryParams.toString()}`);
-
-			// Update the submissions data
-			// Note: In a real application, you would need to update the submissions in your state management
-			if (response.data && response.data.submissions) {
-				toast.success(`Found ${response.data.submissions.length} submissions with issues`);
-			}
-
-			// Force a full reload to get fresh data with the new filters
-			window.location.reload();
-		} catch (error) {
-			toast.error('Failed to refresh with filters');
-		}
+		toast.info('Filters applied')
 	};
 
 	const loadEventPrices = async (eventId: string) => {
