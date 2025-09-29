@@ -334,6 +334,7 @@ function EventDetailPage() {
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
 	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
 	const [showMerchandiseModal, setShowMerchandiseModal] = useState(false);
+	const [showFullDescription, setShowFullDescription] = useState(false);
 	const [pendingCheckout, setPendingCheckout] = useState<{
 		tier: TieredPrice | null;
 		quantity: number;
@@ -609,29 +610,43 @@ function EventDetailPage() {
 				</div>
 
 				{/* Hero Content Overlay */}
-				<div className="absolute bottom-0 left-0 right-0 z-20 p-8 bg-gradient-to-t from-background via-background/95 to-transparent">
-					<div className="max-w-7xl mx-auto">
-						<div className="flex flex-wrap items-center gap-3 mb-6">
-							{event.tags?.map((tag) => (
-								<Badge
-									key={tag}
-									className="bg-gradient-to-r from-primary/80 to-secondary/80 text-primary-foreground border-0 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm"
-								>
-									{tag}
-								</Badge>
-							))}
-							{event.status === 'soldout' && (
-								<Badge className="bg-gradient-to-r from-destructive to-destructive/80 text-destructive-foreground border-0 px-4 py-1.5 shadow-lg animate-pulse">
-									SOLD OUT
-								</Badge>
-							)}
+				<div className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/95 to-transparent transition-all duration-300 ${showFullDescription ? 'max-h-[500px]' : 'max-h-none'}`}>
+					<div className={`p-8 ${showFullDescription ? 'max-h-[500px] overflow-y-auto custom-scrollbar' : ''}`}>
+						<div className="max-w-7xl mx-auto">
+							<div className="flex flex-wrap items-center gap-3 mb-6">
+								{event.tags?.map((tag) => (
+									<Badge
+										key={tag}
+										className="bg-gradient-to-r from-primary/80 to-secondary/80 text-primary-foreground border-0 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm"
+									>
+										{tag}
+									</Badge>
+								))}
+								{event.status === 'soldout' && (
+									<Badge className="bg-gradient-to-r from-destructive to-destructive/80 text-destructive-foreground border-0 px-4 py-1.5 shadow-lg animate-pulse">
+										SOLD OUT
+									</Badge>
+								)}
+							</div>
+							<h1 className="text-5xl lg:text-6xl font-bold mb-4 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent animate-gradient bg-300%">
+								{event.title}
+							</h1>
+							<div className="max-w-3xl">
+								<p className={`text-xl text-muted-foreground leading-relaxed whitespace-pre-wrap ${!showFullDescription ? 'line-clamp-3' : ''}`}>
+									{event.description}
+								</p>
+								{event.description && event.description.length > 200 && (
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => setShowFullDescription(!showFullDescription)}
+										className="mt-2 text-primary hover:text-primary/80"
+									>
+										{showFullDescription ? 'Show Less' : 'Read More'}
+									</Button>
+								)}
+							</div>
 						</div>
-						<h1 className="text-5xl lg:text-6xl font-bold mb-4 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent animate-gradient bg-300%">
-							{event.title}
-						</h1>
-						<p className="text-xl text-muted-foreground max-w-3xl leading-relaxed">
-							{event.description}
-						</p>
 					</div>
 				</div>
 			</div>
