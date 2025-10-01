@@ -130,6 +130,36 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		handleCheckoutSessionExpired(checkoutSession)
 
+	case "charge.refunded":
+		var charge stripe.Charge
+		err := json.Unmarshal(event.Data.Raw, &charge)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handleChargeRefunded(charge)
+
+	case "payment_intent.canceled":
+		var paymentIntent stripe.PaymentIntent
+		err := json.Unmarshal(event.Data.Raw, &paymentIntent)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handlePaymentIntentCanceled(paymentIntent)
+
+	case "checkout.session.async_payment_failed":
+		var checkoutSession stripe.CheckoutSession
+		err := json.Unmarshal(event.Data.Raw, &checkoutSession)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handleCheckoutSessionPaymentFailed(checkoutSession)
+
 	default:
 		log.Printf("Unhandled event type: %s\n", event.Type)
 	}
@@ -787,6 +817,254 @@ func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, sub
 
 	log.Printf("Sent recovery email for submission %s (attempt %d of %d)",
 		submissionID, currentCount+1, MaxRecoveryAttempts)
+}
+
+// handleChargeRefunded processes refund events and invalidates associated tickets
+func handleChargeRefunded(charge stripe.Charge) {
+	log.Printf("Processing refund for charge: %s", charge.ID)
+
+	// Get payment intent ID from charge
+	paymentIntentID := charge.PaymentIntent.ID
+	if paymentIntentID == "" {
+		log.Printf("No payment intent associated with charge %s", charge.ID)
+		return
+	}
+
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Find tickets associated with this payment intent
+	pattern := "ticket:*"
+	iter := rdb.Scan(ctx, 0, pattern, 0).Iterator()
+
+	refundedTickets := []string{}
+	customerEmail := ""
+	customerName := ""
+	eventName := ""
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		ticketData, err := rdb.HGetAll(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+
+		// Check if this ticket is associated with the refunded payment
+		if ticketData["stripe_payment_intent_id"] == paymentIntentID {
+			ticketToken := strings.TrimPrefix(key, "ticket:")
+
+			// Store customer info for email
+			if customerEmail == "" {
+				customerEmail = ticketData["customer_email"]
+				customerName = ticketData["customer_name"]
+				eventName = ticketData["event_name"]
+			}
+
+			// Invalidate the ticket
+			if err := InvalidateTicket(ticketToken, "Payment refunded"); err != nil {
+				log.Printf("Error invalidating ticket %s: %v", ticketToken, err)
+			} else {
+				refundedTickets = append(refundedTickets, ticketToken)
+			}
+		}
+	}
+
+	if len(refundedTickets) > 0 && customerEmail != "" {
+		// Send refund notification email
+		sendRefundNotificationEmail(customerEmail, customerName, eventName, refundedTickets, charge.AmountRefunded)
+		log.Printf("Invalidated %d tickets for refunded payment %s", len(refundedTickets), paymentIntentID)
+	}
+}
+
+// handlePaymentIntentCanceled processes canceled payment intents
+func handlePaymentIntentCanceled(pi stripe.PaymentIntent) {
+	log.Printf("Processing canceled payment intent: %s", pi.ID)
+
+	// Check if this is a participant submission
+	if pi.Metadata != nil && pi.Metadata["submission_id"] != "" {
+		submissionID := pi.Metadata["submission_id"]
+
+		rdb := services.GetRedisClient()
+		ctx := context.Background()
+
+		// Update submission status
+		submissionKey := fmt.Sprintf("submission:%s", submissionID)
+		updates := map[string]interface{}{
+			"payment_status": "canceled",
+			"updated_at":     time.Now().Format(time.RFC3339),
+		}
+
+		if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+			log.Printf("Error updating submission %s: %v", submissionID, err)
+		}
+	}
+
+	// Find and invalidate any tickets
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	pattern := "ticket:*"
+	iter := rdb.Scan(ctx, 0, pattern, 0).Iterator()
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		ticketData, err := rdb.HGetAll(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+
+		if ticketData["stripe_payment_intent_id"] == pi.ID {
+			ticketToken := strings.TrimPrefix(key, "ticket:")
+			if err := InvalidateTicket(ticketToken, "Payment canceled"); err != nil {
+				log.Printf("Error invalidating ticket %s: %v", ticketToken, err)
+			}
+		}
+	}
+}
+
+// handleCheckoutSessionPaymentFailed handles failed async payments
+func handleCheckoutSessionPaymentFailed(session stripe.CheckoutSession) {
+	log.Printf("Processing failed payment for checkout session: %s", session.ID)
+
+	// Similar to refund, find and invalidate tickets
+	if session.PaymentIntent != nil {
+		pi, err := paymentintent.Get(session.PaymentIntent.ID, nil)
+		if err == nil {
+			handlePaymentIntentCanceled(*pi)
+		}
+	}
+}
+
+// sendRefundNotificationEmail sends an email to notify customer about refunded tickets
+func sendRefundNotificationEmail(customerEmail, customerName, eventName string, ticketTokens []string, amountRefunded int64) {
+	if customerName == "" {
+		customerName = "Valued Customer"
+	}
+
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	// Format refund amount
+	refundAmount := fmt.Sprintf("$%.2f", float64(amountRefunded)/100.0)
+
+	emailData := map[string]interface{}{
+		"CustomerName": customerName,
+		"EventName":    eventName,
+		"RefundAmount": refundAmount,
+		"TicketCodes":  ticketTokens,
+		"TicketCount":  len(ticketTokens),
+		"RefundDate":   time.Now().Format("January 2, 2006"),
+		"SupportEmail": "info@theeurohaus.com",
+	}
+
+	// Generate email HTML
+	html := generateRefundNotificationHTML(emailData)
+
+	msg := &services.EmailMessage{
+		To:         []string{customerEmail},
+		Subject:    fmt.Sprintf("Refund Processed - %s", eventName),
+		BodyHTML:   html,
+		TemplateID: "ticket-refunded",
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending refund notification email to %s: %v", customerEmail, err)
+	} else {
+		log.Printf("Sent refund notification to %s for %d tickets", customerEmail, len(ticketTokens))
+	}
+}
+
+// generateRefundNotificationHTML generates the HTML for refund notification emails
+func generateRefundNotificationHTML(data map[string]interface{}) string {
+	customerName := data["CustomerName"].(string)
+	eventName := data["EventName"].(string)
+	refundAmount := data["RefundAmount"].(string)
+	ticketCodes := data["TicketCodes"].([]string)
+	ticketCount := data["TicketCount"].(int)
+	refundDate := data["RefundDate"].(string)
+	supportEmail := data["SupportEmail"].(string)
+
+	ticketsList := ""
+	for _, code := range ticketCodes {
+		ticketsList += fmt.Sprintf("<li style=\"font-family: monospace; margin: 5px 0;\">%s</li>", code)
+	}
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Refund Notification - %s</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+				<div style="background-color: #dc3545; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+					<h1 style="margin: 0;">Refund Processed</h1>
+				</div>
+
+				<div style="padding: 30px 20px; background-color: #f8f9fa;">
+					<p>Dear %s,</p>
+
+					<p>We're writing to confirm that your refund has been successfully processed.</p>
+
+					<div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545;">
+						<h3 style="margin-top: 0; color: #dc3545;">Refund Details</h3>
+						<table style="width: 100%%;">
+							<tr>
+								<td style="padding: 5px 0;"><strong>Event:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Refund Amount:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Date Processed:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Tickets Cancelled:</strong></td>
+								<td>%d</td>
+							</tr>
+						</table>
+					</div>
+
+					<div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ffc107;">
+						<h4 style="margin-top: 0; color: #856404;">Cancelled Ticket Codes:</h4>
+						<ul style="margin: 10px 0; padding-left: 20px;">
+							%s
+						</ul>
+						<p style="margin: 10px 0 0 0; font-size: 14px; color: #856404;">
+							These tickets are no longer valid and cannot be used for event entry.
+						</p>
+					</div>
+
+					<p><strong>What happens next?</strong></p>
+					<ul>
+						<li>Your refund should appear in your account within 5-10 business days</li>
+						<li>You'll receive a receipt from your payment provider</li>
+						<li>Your tickets have been cancelled and removed from our system</li>
+					</ul>
+
+					<p>If you have any questions about this refund or would like to make a new purchase, please don't hesitate to contact us at <a href="mailto:%s">%s</a>.</p>
+
+					<p>We hope to see you at a future Euro Haus event!</p>
+
+					<p>Best regards,<br>
+					<strong>The Euro Haus Events Team</strong></p>
+				</div>
+
+				<div style="text-align: center; font-size: 12px; color: #777; margin-top: 30px; padding: 20px;">
+					<p>&copy; %d Euro Haus Events - Premium Automotive Experiences</p>
+					<p>This is an automated notification regarding your refund.</p>
+				</div>
+			</div>
+		</body>
+		</html>
+	`, eventName, customerName, eventName, refundAmount, refundDate, ticketCount, ticketsList, supportEmail, supportEmail, time.Now().Year())
+
+	return html
 }
 
 // sendManualRecoveryEmail sends an email asking the user to manually restart checkout

@@ -166,6 +166,7 @@ func main() {
 
 	// Admin event endpoints (requires authentication)
 	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/cleanup-tickets", middleware.RequireAuth(http.HandlerFunc(handlers.CleanupEventTickets))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/link-products", middleware.RequireAuth(http.HandlerFunc(handlers.LinkProductsToEvent))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/products/{productId}", middleware.RequireAuth(http.HandlerFunc(handlers.RemoveProductFromEvent))).Methods("DELETE", "OPTIONS")
