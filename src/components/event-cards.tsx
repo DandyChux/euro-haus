@@ -156,7 +156,8 @@ export const EventCard: React.FC<EventCardProps> = ({
 							weekday: 'long',
 							year: 'numeric',
 							month: 'long',
-							day: 'numeric'
+							day: 'numeric',
+							timeZone: 'UTC'
 						})}</span>
 					</div>
 					<div className="flex items-center gap-2 text-sm">

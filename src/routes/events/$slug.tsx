@@ -286,15 +286,12 @@ export const Route = createFileRoute('/events/$slug')({
 
 		// If no tiers, get the basic event and fetch single price info
 		const event = await stripeService.getEventBySlug(params.slug);
-		// console.log("Event: ", event);
 		if (!event) {
 			throw new Error('Event not found');
 		}
 
 		// Get linked products if any
 		const { linkedProducts, tierProducts } = await stripeService.getEventLinkedProducts(event.id);
-		// console.log("LINKED PRODUCTS:", linkedProducts);
-		// console.log("TIER PRODUCTS:", tierProducts);
 
 		// For single-price events, fetch the default price metadata
 		let singlePriceInfo = null;
@@ -563,7 +560,7 @@ function EventDetailPage() {
 					url: window.location.href,
 				});
 			} catch (error) {
-				console.log('Error sharing:', error);
+				console.error('Error sharing:', error);
 			}
 		} else {
 			navigator.clipboard.writeText(window.location.href);
