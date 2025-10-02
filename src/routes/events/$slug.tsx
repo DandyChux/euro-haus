@@ -592,6 +592,15 @@ function EventDetailPage() {
 		);
 	}
 
+	const formattedDate = new Date(event.date).toLocaleDateString('en-US', {
+		weekday: 'long',
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric',
+		timeZone: 'UTC'
+	})
+	console.log('Formatted Date: ', formattedDate)
+
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
 			{/* Hero Section with Enhanced Visuals */}
@@ -690,12 +699,7 @@ function EventDetailPage() {
 										<div className="flex-1">
 											<p className="font-semibold text-lg mb-1">Date & Time</p>
 											<p className="text-muted-foreground">
-												{new Date(event.date).toLocaleDateString('en-US', {
-													weekday: 'long',
-													year: 'numeric',
-													month: 'long',
-													day: 'numeric'
-												})}
+												{formattedDate}
 											</p>
 										</div>
 									</div>
