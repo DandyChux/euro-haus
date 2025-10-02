@@ -596,7 +596,6 @@ function EventDetailPage() {
 		day: 'numeric',
 		timeZone: 'UTC'
 	})
-	console.log('Formatted Date: ', formattedDate)
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
