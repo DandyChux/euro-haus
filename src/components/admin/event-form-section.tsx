@@ -115,16 +115,19 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 
 	// Helper functions for nested sponsor management
 	const addSponsorToTier = (tierIndex: number) => {
-		const currentTier = form.getValues(`sponsorTiers.${tierIndex}`);
+		const currentTier = sponsorTierFields[tierIndex];
+		if (!currentTier) return;
 		const updatedSponsors = [...(currentTier.sponsors || []), { name: '', logoUrl: '', link: '' }];
 		updateSponsorTier(tierIndex, { ...currentTier, sponsors: updatedSponsors });
 	};
 
 	const removeSponsorFromTier = (tierIndex: number, sponsorIndex: number) => {
-		const currentTier = form.getValues(`sponsorTiers.${tierIndex}`);
+		const currentTier = sponsorTierFields[tierIndex];
+		if (!currentTier) return;
 		const updatedSponsors = currentTier.sponsors.filter((_: any, i: number) => i !== sponsorIndex);
 		updateSponsorTier(tierIndex, { ...currentTier, sponsors: updatedSponsors });
 	};
+
 
 	const addFeatureToTier = (tierIndex: number) => {
 		const currentTier = tierFields[tierIndex];

@@ -80,9 +80,13 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 		moveVariant(index, newIndex);
 
 		// Update sort order after moving
-		variantFields.forEach((_, i) => {
-			updateVariant(i, { ...form.getValues(`variants.${i}`), sortOrder: i });
+		variantFields.forEach((field, i) => {
+			const variant = form.getValues(`variants.${i}`);
+			if (variant) {
+				updateVariant(i, { ...variant, sortOrder: i });
+			}
 		});
+
 	};
 
 	// Don't render if not a product
