@@ -19,6 +19,7 @@ import (
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/price"
+	"github.com/stripe/stripe-go/v82/refund"
 )
 
 // VehicleSubmission represents a participant's vehicle submission
@@ -1087,6 +1088,264 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		"submissions": issueSubmissions,
 		"total":       len(issueSubmissions),
 	})
+}
+
+// UpdateSubmissionEmail updates the email address for a submission
+func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	var req struct {
+		NewEmail    string `json:"newEmail"`
+		ResendEmail bool   `json:"resendEmail"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email format (basic validation)
+	if req.NewEmail == "" {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get submission
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Store old email for logging
+	oldEmail := submission.ParticipantEmail
+
+	// Update the email in Redis
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	updates := map[string]interface{}{
+		"participant_email": req.NewEmail,
+		"email_updated_at":  time.Now().Format(time.RFC3339),
+		"previous_email":    oldEmail,
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		http.Error(w, "Failed to update submission email", http.StatusInternalServerError)
+		return
+	}
+
+	// Also update the ticket if one exists
+	if submission.TicketID != "" {
+		ticketKey := fmt.Sprintf("ticket:%s", submission.TicketID)
+		ticketUpdates := map[string]interface{}{
+			"customer_email": req.NewEmail,
+		}
+		if err := rdb.HSet(ctx, ticketKey, ticketUpdates).Err(); err != nil {
+			log.Printf("Warning: Failed to update ticket email for ticket %s: %v", submission.TicketID, err)
+		}
+	}
+
+	log.Printf("Updated email for submission %s from %s to %s", submissionID, oldEmail, req.NewEmail)
+
+	// Get updated submission
+	updatedSubmission, _ := getSubmissionByID(submissionID)
+
+	response := map[string]interface{}{
+		"success":    true,
+		"message":    fmt.Sprintf("Email updated from %s to %s", oldEmail, req.NewEmail),
+		"submission": updatedSubmission,
+	}
+
+	// Resend email if requested and submission is approved
+	if req.ResendEmail && submission.Status == "approved" {
+		// Determine if we need a payment link
+		paymentLink := ""
+		paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+		ticketID, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
+
+		if paymentCompleted != "true" && ticketID == "" {
+			paymentLink, _ = createSubmissionPaymentLink(*updatedSubmission)
+		}
+
+		// Send approval email to new address
+		sendApprovalEmail(*updatedSubmission, paymentLink)
+
+		// Update email sent status
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"approval_email_sent":    "true",
+			"approval_email_sent_at": time.Now().Format(time.RFC3339),
+		})
+
+		response["emailResent"] = true
+		response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// RevokeSubmission revokes an approved submission, refunds payment, and cancels ticket
+func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	var req struct {
+		Reason       string `json:"reason"`
+		RefundAmount string `json:"refundAmount"` // "full" or "partial"
+		RefundReason string `json:"refundReason"` // Reason for Stripe refund
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Reason is optional, use default
+		req.Reason = "Submission revoked by administrator"
+		req.RefundAmount = "full"
+		req.RefundReason = "requested_by_customer"
+	}
+
+	// Get submission
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Validate that submission has been approved and has payment
+	if submission.Status != "approved" {
+		http.Error(w, "Can only revoke approved submissions", http.StatusBadRequest)
+		return
+	}
+
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	result := map[string]interface{}{
+		"submissionRevoked": false,
+		"ticketInvalidated": false,
+		"paymentRefunded":   false,
+		"errors":            []string{},
+	}
+
+	// Step 1: Issue refund if there's a payment intent
+	if submission.PaymentIntentID != "" {
+		refundParams := &stripe.RefundParams{
+			PaymentIntent: stripe.String(submission.PaymentIntentID),
+			Reason:        stripe.String(req.RefundReason),
+		}
+
+		refundResult, err := refund.New(refundParams)
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to process refund: %v", err)
+			log.Printf("Error refunding payment for submission %s: %v", submissionID, err)
+			result["errors"] = append(result["errors"].([]string), errMsg)
+			// Continue with other steps even if refund fails
+		} else {
+			result["paymentRefunded"] = true
+			result["refundId"] = refundResult.ID
+			result["refundAmount"] = float64(refundResult.Amount) / 100.0
+			result["refundCurrency"] = string(refundResult.Currency)
+			log.Printf("Refund issued for submission %s: %s", submissionID, refundResult.ID)
+
+			// Update submission with refund info
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"refund_id":        refundResult.ID,
+				"refund_amount":    float64(refundResult.Amount) / 100.0,
+				"refund_issued_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	} else {
+		result["paymentRefunded"] = true // No payment to refund
+		result["message"] = "No payment found - no refund needed"
+	}
+
+	// Step 2: Invalidate ticket if one exists
+	if submission.TicketID != "" {
+		if err := InvalidateTicket(submission.TicketID, req.Reason); err != nil {
+			errMsg := fmt.Sprintf("Failed to invalidate ticket: %v", err)
+			log.Printf("Error invalidating ticket for submission %s: %v", submissionID, err)
+			result["errors"] = append(result["errors"].([]string), errMsg)
+		} else {
+			result["ticketInvalidated"] = true
+			log.Printf("Ticket %s invalidated for submission %s", submission.TicketID, submissionID)
+		}
+	} else {
+		result["ticketInvalidated"] = true // No ticket to invalidate
+	}
+
+	// Step 3: Update submission status to revoked
+	updates := map[string]interface{}{
+		"status":            "revoked",
+		"revoked_at":        time.Now().Format(time.RFC3339),
+		"revoked_by":        "admin", // TODO: Get from auth context
+		"revocation_reason": req.Reason,
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		errMsg := fmt.Sprintf("Failed to update submission status: %v", err)
+		log.Printf("Error updating submission %s: %v", submissionID, err)
+		result["errors"] = append(result["errors"].([]string), errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
+		return
+	}
+
+	result["submissionRevoked"] = true
+
+	// Remove from approved set and add to revoked set
+	rdb.SRem(ctx, "submissions:approved", submissionID)
+	rdb.SAdd(ctx, "submissions:revoked", submissionID)
+
+	// Step 4: Send notification email to participant
+	sendRevocationEmail(*submission, req.Reason)
+
+	// Get updated submission
+	updatedSubmission, _ := getSubmissionByID(submissionID)
+	result["submission"] = updatedSubmission
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// sendRevocationEmail sends an email notifying the participant of revocation
+func sendRevocationEmail(submission VehicleSubmission, reason string) {
+	emailData := map[string]interface{}{
+		"ParticipantName":  submission.ParticipantName,
+		"VehicleDetails":   fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
+		"EventID":          submission.EventID,
+		"RevocationReason": reason,
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{submission.ParticipantEmail},
+		Subject:      "Vehicle Submission Revoked - Refund Issued",
+		TemplateID:   "submission-revoked",
+		TemplateData: emailData,
+		BodyHTML:     generateRevocationEmailHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending revocation email: %v", err)
+	}
+}
+
+func generateRevocationEmailHTML(data map[string]interface{}) string {
+	return fmt.Sprintf(`
+		<html>
+		<body style="font-family: Arial, sans-serif; color: #333;">
+			<h2>Vehicle Submission Revoked</h2>
+			<p>Dear %s,</p>
+			<p>We regret to inform you that your vehicle submission has been revoked:</p>
+			<p><strong>%s</strong></p>
+			<p><strong>Reason:</strong> %s</p>
+			<p>Your payment has been refunded and will appear in your account within 5-10 business days.</p>
+			<p>If you have any questions or concerns about this decision, please contact us immediately.</p>
+			<p>We apologize for any inconvenience this may cause.</p>
+			<p>Best regards,<br>The Euro Haus Events Team</p>
+		</body>
+		</html>
+	`, data["ParticipantName"], data["VehicleDetails"], data["RevocationReason"])
 }
 
 // Helper function to extract submission ID from Redis key

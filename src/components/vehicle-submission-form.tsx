@@ -91,7 +91,7 @@ export function VehicleSubmissionForm({
 		// Validate images
 		const validation = submissionService.validateImages(files);
 		if (!validation.valid) {
-			setError(validation.error!);
+			setError(validation.error ?? 'Invalid image format or size');
 			return;
 		}
 

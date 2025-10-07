@@ -821,7 +821,7 @@ func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, sub
 
 // handleChargeRefunded processes refund events and invalidates associated tickets
 func handleChargeRefunded(charge stripe.Charge) {
-	log.Printf("Processing refund for charge: %s", charge.ID)
+	fmt.Printf("Processing refund for charge: %s", charge.ID)
 
 	// Get payment intent ID from charge
 	paymentIntentID := charge.PaymentIntent.ID
