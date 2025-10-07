@@ -1161,26 +1161,63 @@ func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
 
 	// Resend email if requested and submission is approved
 	if req.ResendEmail && submission.Status == "approved" {
-		// Determine if we need a payment link
-		paymentLink := ""
-		paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+		emailsSent := []string{}
+
+		// Check if ticket exists - if so, send ticket email
 		ticketID, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
 
-		if paymentCompleted != "true" && ticketID == "" {
-			paymentLink, _ = createSubmissionPaymentLink(*updatedSubmission)
-		}
+		if ticketID != "" {
+			// Ticket exists - send the ticket email with existing QR code
+			submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+			if err == nil {
+				// Get event name from submission
+				eventName := submissionData["event_slug"]
+				if eventName == "" {
+					// Try to get a friendly name
+					eventName = "Euro Haus Event"
+				}
 
-		// Send approval email to new address
-		sendApprovalEmail(*updatedSubmission, paymentLink)
+				// Send participant ticket email
+				sendSubmissionTicketEmail(submissionData, ticketID, eventName)
+				emailsSent = append(emailsSent, "ticket")
+				log.Printf("Sent ticket email to %s for submission %s", req.NewEmail, submissionID)
+			}
+		} else {
+			// No ticket yet - check if payment is complete
+			paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+
+			if paymentCompleted != "true" {
+				// Payment not complete - send approval email with payment link
+				paymentLink, _ := createSubmissionPaymentLink(*updatedSubmission)
+				sendApprovalEmail(*updatedSubmission, paymentLink)
+				emailsSent = append(emailsSent, "approval")
+				log.Printf("Sent approval email with payment link to %s for submission %s", req.NewEmail, submissionID)
+			} else {
+				// Payment complete but no ticket (edge case) - send approval email without payment link
+				sendApprovalEmail(*updatedSubmission, "")
+				emailsSent = append(emailsSent, "approval")
+				log.Printf("Sent approval email to %s for submission %s", req.NewEmail, submissionID)
+			}
+		}
 
 		// Update email sent status
 		rdb.HSet(ctx, submissionKey, map[string]interface{}{
 			"approval_email_sent":    "true",
 			"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			"email_resent_count":     1, // Could increment this if needed
 		})
 
 		response["emailResent"] = true
-		response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+		response["emailsSent"] = emailsSent
+
+		if len(emailsSent) > 0 {
+			emailType := emailsSent[0]
+			if emailType == "ticket" {
+				response["message"] = fmt.Sprintf("Email updated from %s to %s and ticket email resent with QR code", oldEmail, req.NewEmail)
+			} else {
+				response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1557,6 +1594,85 @@ func createSubmissionPaymentLink(submission VehicleSubmission) (string, error) {
 }
 
 // Email functions
+
+// sendSubmissionTicketEmail sends a ticket email for an approved submission
+func sendSubmissionTicketEmail(submissionData map[string]string, ticketToken string, eventName string) {
+	// Generate QR code
+	qrCodeURL, err := generateQRCode(ticketToken)
+	if err != nil {
+		log.Printf("Error generating QR code: %v", err)
+		return
+	}
+
+	vehicleDetails := fmt.Sprintf("%s %s %s",
+		submissionData["vehicle_year"],
+		submissionData["vehicle_make"],
+		submissionData["vehicle_model"])
+
+	customerEmail := submissionData["participant_email"]
+	customerName := submissionData["participant_name"]
+
+	emailData := map[string]interface{}{
+		"CustomerName":   customerName,
+		"EventName":      eventName,
+		"TicketCode":     ticketToken,
+		"QRCodeURL":      qrCodeURL,
+		"VehicleDetails": vehicleDetails,
+		"TicketType":     "Event Participant",
+		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
+	}
+
+	// Generate ticket HTML
+	ticketHTML := fmt.Sprintf(`
+		<html>
+		<body style="font-family: Arial, sans-serif; color: #333;">
+			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+				<h1 style="color: #007bff;">Your Event Participant Ticket</h1>
+				<p>Dear %s,</p>
+				<p>Congratulations! Your registration as an event participant is complete. Your vehicle has been approved:</p>
+				<p style="font-size: 18px; font-weight: bold;">%s</p>
+
+				<div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+					<h2>Event Details</h2>
+					<p><strong>Event:</strong> %s</p>
+					<p><strong>Ticket Type:</strong> Event Participant</p>
+					<p><strong>Ticket Code:</strong> <span style="font-family: monospace; font-size: 18px;">%s</span></p>
+				</div>
+
+				<div style="text-align: center; margin: 30px 0;">
+					<img src="%s" alt="QR Code" style="width: 200px; height: 200px;">
+					<p style="font-size: 12px; color: #666;">Show this QR code at check-in</p>
+				</div>
+
+				<h3>Important Information for Participants:</h3>
+				<ul>
+					<li>Please arrive at least 30 minutes before the event start time</li>
+					<li>Have your vehicle clean and ready for display</li>
+					<li>Bring this ticket (printed or on your phone) for check-in</li>
+					<li>Follow all event guidelines and instructions from staff</li>
+				</ul>
+
+				<p>We're excited to have you showcase your vehicle at our event!</p>
+				<p>Best regards,<br>The Euro Haus Events Team</p>
+			</div>
+		</body>
+		</html>
+	`, customerName, vehicleDetails, eventName, ticketToken, qrCodeURL)
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      fmt.Sprintf("Event Participant Ticket - %s", eventName),
+		TemplateID:   "participant-ticket",
+		TemplateData: emailData,
+		BodyHTML:     ticketHTML,
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending participant ticket email: %v", err)
+	} else {
+		log.Printf("Successfully sent ticket email to %s for ticket %s", customerEmail, ticketToken)
+	}
+}
 
 func sendSubmissionConfirmationEmail(submission VehicleSubmission) {
 	emailData := map[string]interface{}{
