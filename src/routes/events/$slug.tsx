@@ -636,21 +636,6 @@ function EventDetailPage() {
 							<h1 className="text-5xl lg:text-6xl font-bold mb-4 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent animate-gradient bg-300%">
 								{event.title}
 							</h1>
-							<div className="max-w-3xl">
-								<p className={`text-xl text-muted-foreground leading-relaxed whitespace-pre-wrap ${!showFullDescription ? 'line-clamp-3' : ''}`}>
-									{event.description}
-								</p>
-								{event.description && event.description.length > 200 && (
-									<Button
-										variant="ghost"
-										size="sm"
-										onClick={() => setShowFullDescription(!showFullDescription)}
-										className="mt-2 text-primary hover:text-primary/80"
-									>
-										{showFullDescription ? 'Show Less' : 'Read More'}
-									</Button>
-								)}
-							</div>
 						</div>
 					</div>
 				</div>
@@ -658,6 +643,31 @@ function EventDetailPage() {
 
 			{/* Main Content */}
 			<div className="container mx-auto px-4 py-12">
+				<Card className="shadow-neumorph hover:shadow-neumorph-hover transition-all border-primary/20 mb-12">
+					<CardHeader>
+						<CardTitle className="text-2xl bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent">
+							Description
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="max-w-3xl">
+							<p className={`text-xl text-muted-foreground leading-relaxed whitespace-pre-wrap ${!showFullDescription ? 'line-clamp-6' : ''}`}>
+								{event.description}
+							</p>
+							{event.description && event.description.length > 200 && (
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => setShowFullDescription(!showFullDescription)}
+									className="mt-2 text-primary hover:text-primary/80"
+								>
+									{showFullDescription ? 'Show Less' : 'Read More'}
+								</Button>
+							)}
+						</div>
+					</CardContent>
+				</Card>
+
 				{/* Sponsors Section */}
 				{sponsorTiers.length > 0 && (
 					<section className="relative py-8 mb-12 rounded-3xl overflow-hidden">
