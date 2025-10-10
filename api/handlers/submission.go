@@ -19,6 +19,7 @@ import (
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/price"
+	"github.com/stripe/stripe-go/v82/promotioncode"
 	"github.com/stripe/stripe-go/v82/refund"
 )
 
@@ -527,10 +528,11 @@ func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
 // CreateParticipantCheckout creates a checkout session with manual capture for submissions
 func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SubmissionID string `json:"submissionId"`
-		PriceID      string `json:"priceId"`
-		EventName    string `json:"eventName"`
-		Quantity     int64  `json:"quantity"`
+		SubmissionID  string `json:"submissionId"`
+		PriceID       string `json:"priceId"`
+		EventName     string `json:"eventName"`
+		Quantity      int64  `json:"quantity"`
+		PromotionCode string `json:"promotionCode"` // Added promotion code support
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -580,6 +582,33 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
 	}
 
+	// Add promotion code if provided
+	if req.PromotionCode != "" {
+		// First, look up the promotion code to get its ID
+		pcParams := &stripe.PromotionCodeListParams{
+			Code: stripe.String(req.PromotionCode),
+		}
+		pcParams.Filters.AddFilter("limit", "", "1")
+
+		iter := promotioncode.List(pcParams)
+		if iter.Next() {
+			pc := iter.PromotionCode()
+			if pc.Active {
+				// Apply the promotion code using discounts
+				params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+					{
+						PromotionCode: stripe.String(pc.ID),
+					},
+				}
+				fmt.Printf("Applied promotion code %s to checkout for submission %s\n", req.PromotionCode, req.SubmissionID)
+			} else {
+				fmt.Printf("Promotion code %s is not active for submission %s\n", req.PromotionCode, req.SubmissionID)
+			}
+		} else {
+			fmt.Printf("Promotion code %s not found for submission %s\n", req.PromotionCode, req.SubmissionID)
+		}
+	}
+
 	// Only use manual capture if submission needs approval
 	if needsManualCapture {
 		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
@@ -627,6 +656,11 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		"price_id":            req.PriceID,
 		"requires_approval":   strconv.FormatBool(requiresApproval),
 		"checkout_created_at": time.Now().Format(time.RFC3339),
+	}
+
+	// Store the promotion code if used
+	if req.PromotionCode != "" {
+		updates["promotion_code"] = req.PromotionCode
 	}
 
 	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {

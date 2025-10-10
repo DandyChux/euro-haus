@@ -480,17 +480,24 @@ function EventDetailPage() {
 		}
 	};
 
-	const handleSubmissionSuccess = async (newSubmissionId: string) => {
+	const handleSubmissionSuccess = async (newSubmissionId: string, discountCode?: string) => {
 		setShowSubmissionForm(false);
 
 		try {
 			const priceId = selectedTier?.priceId || event?.priceId;
-			const response = await apiClient.post('/create-participant-checkout', {
+			const payload: any = {
 				submissionId: newSubmissionId,
 				priceId: priceId,
 				eventName: event?.title,
 				quantity: quantity,
-			});
+			};
+
+			// Add promotion code if provided
+			if (discountCode) {
+				payload.promotionCode = discountCode;
+			}
+
+			const response = await apiClient.post('/create-participant-checkout', payload);
 
 			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
@@ -501,6 +508,7 @@ function EventDetailPage() {
 			toast.error('Failed to create checkout session');
 		}
 	};
+
 
 	const handleAddToCart = () => {
 		if (event.status === 'soldout') {

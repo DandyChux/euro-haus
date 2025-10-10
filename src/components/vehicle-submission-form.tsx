@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Upload, X, Car, AlertCircle, Ticket, DollarSign, Plus, Trash2 } from 'lucide-react';
+import { Upload, X, Car, AlertCircle, Ticket, DollarSign, Plus, Trash2, Tag, CheckCircle } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
 import { Label } from '~/components/ui/label';
+import { Separator } from '~/components/ui/separator';
+import { Badge } from '~/components/ui/badge';
 import {
 	Form,
 	FormControl,
@@ -21,6 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { submissionService } from '~/lib/services/submission-service';
 import type { SubmissionWithFiles } from '~/lib/services/submission-service';
 import { Image } from './ui/image';
+import { apiClient } from '~/lib/api';
+import { toast } from 'sonner';
 
 const formSchema = z.object({
 	participantName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -35,6 +39,15 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
+interface DiscountInfo {
+	valid: boolean;
+	code: string;
+	couponName?: string;
+	percentOff?: number | null;
+	amountOff?: number | null;
+	currency?: string;
+}
+
 interface VehicleSubmissionFormProps {
 	eventId: string;
 	eventSlug: string;
@@ -42,7 +55,7 @@ interface VehicleSubmissionFormProps {
 	ticketTier?: string;
 	ticketPrice?: number;
 	ticketQuantity?: number;
-	onSuccess: (submissionId: string) => void;
+	onSuccess: (submissionId: string, discountCode?: string) => void;
 	onCancel: () => void;
 }
 
@@ -60,6 +73,10 @@ export function VehicleSubmissionForm({
 	const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 	const [uploading, setUploading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [discountCode, setDiscountCode] = useState('');
+	const [validatedDiscount, setValidatedDiscount] = useState<DiscountInfo | null>(null);
+	const [isValidating, setIsValidating] = useState(false);
+	const [discountError, setDiscountError] = useState<string | null>(null);
 
 	const form = useForm<FormData>({
 		resolver: zodResolver(formSchema),
@@ -84,6 +101,101 @@ export function VehicleSubmissionForm({
 		control: form.control,
 		name: "vehicleModifications"
 	})
+
+	// Calculate discounted price
+	const calculateDiscountedPrice = () => {
+		if (!ticketPrice || !ticketQuantity) return 0;
+		const subtotal = ticketPrice * ticketQuantity;
+
+		if (!validatedDiscount) return subtotal;
+
+		if (validatedDiscount.percentOff && validatedDiscount.percentOff > 0) {
+			return subtotal * (1 - validatedDiscount.percentOff / 100);
+		} else if (validatedDiscount.amountOff && validatedDiscount.amountOff > 0) {
+			// Amount off is in cents, so divide by 100
+			return Math.max(0, subtotal - (validatedDiscount.amountOff / 100));
+		}
+
+		return subtotal;
+	};
+
+	const getDiscountAmount = () => {
+		if (!ticketPrice || !ticketQuantity || !validatedDiscount) return 0;
+		const subtotal = ticketPrice * ticketQuantity;
+
+		if (validatedDiscount.percentOff && validatedDiscount.percentOff > 0) {
+			return subtotal * (validatedDiscount.percentOff / 100);
+		} else if (validatedDiscount.amountOff && validatedDiscount.amountOff > 0) {
+			// Amount off is in cents, so divide by 100
+			return Math.min(subtotal, validatedDiscount.amountOff / 100);
+		}
+
+		return 0;
+	};
+
+	const getDiscountDisplay = () => {
+		if (!validatedDiscount) return '';
+
+		if (validatedDiscount.percentOff && validatedDiscount.percentOff > 0) {
+			return `${validatedDiscount.percentOff}% OFF`;
+		} else if (validatedDiscount.amountOff && validatedDiscount.amountOff > 0) {
+			return `$${(validatedDiscount.amountOff / 100).toFixed(2)} OFF`;
+		}
+
+		return 'DISCOUNT APPLIED';
+	};
+
+	const handleValidateDiscount = async () => {
+		if (!discountCode.trim()) return;
+
+		setIsValidating(true);
+		setDiscountError(null);
+
+		try {
+			// Call the existing /validate-promotion-code endpoint
+			const response = await apiClient.post('/validate-promotion-code', {
+				code: discountCode.toUpperCase()
+			});
+
+			if (response.data.valid) {
+				const discountData: DiscountInfo = {
+					valid: true,
+					code: response.data.promotion_code.code,
+					couponName: response.data.promotion_code.coupon_name,
+					percentOff: response.data.discount.percent_off,
+					amountOff: response.data.discount.amount_off,
+					currency: response.data.discount.currency
+				};
+
+				setValidatedDiscount(discountData);
+				toast.success(`Discount "${discountCode}" applied successfully!`);
+			} else {
+				setDiscountError(response.data.error || 'Invalid or expired discount code');
+				setValidatedDiscount(null);
+			}
+		} catch (error) {
+			console.error('Failed to validate discount:', error);
+			setDiscountError('Invalid or expired discount code');
+			setValidatedDiscount(null);
+		} finally {
+			setIsValidating(false);
+		}
+	};
+
+	const handleRemoveDiscount = () => {
+		setDiscountCode('');
+		setValidatedDiscount(null);
+		setDiscountError(null);
+	};
+
+	const handleDiscountCodeChange = (value: string) => {
+		setDiscountCode(value.toUpperCase());
+		// Clear validated discount if code changes
+		if (validatedDiscount && value.toUpperCase() !== validatedDiscount.code) {
+			setValidatedDiscount(null);
+			setDiscountError(null);
+		}
+	};
 
 	const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = Array.from(e.target.files || []);
@@ -136,7 +248,6 @@ export function VehicleSubmissionForm({
 			?.filter(mod => mod.value.trim() !== '')
 			.map(mod => mod.value.trim());
 
-
 		try {
 			const submissionData: SubmissionWithFiles = {
 				...data,
@@ -150,7 +261,8 @@ export function VehicleSubmissionForm({
 			};
 
 			const submission = await submissionService.createSubmission(submissionData);
-			onSuccess(submission.id);
+			// Pass the validated discount code, not just any typed code
+			onSuccess(submission.id, validatedDiscount?.code);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Failed to submit vehicle information');
 		} finally {
@@ -177,35 +289,136 @@ export function VehicleSubmissionForm({
 							Selected Ticket
 						</CardTitle>
 					</CardHeader>
-					<CardContent>
-						<div className="flex flex-wrap gap-4 items-center">
-							<div>
-								<p className="text-sm text-muted-foreground">Tier</p>
-								<p className="font-semibold">{ticketTier}</p>
+					<CardContent className="space-y-4">
+						{/* Price Breakdown */}
+						<div className="space-y-3">
+							<div className="flex flex-wrap gap-4 items-center">
+								<div>
+									<p className="text-sm text-muted-foreground">Tier</p>
+									<p className="font-semibold">{ticketTier}</p>
+								</div>
+								{ticketPrice && (
+									<div>
+										<p className="text-sm text-muted-foreground">Price per ticket</p>
+										<p className="font-semibold flex items-center">
+											<DollarSign className="w-4 h-4" />
+											{ticketPrice.toFixed(2)}
+										</p>
+									</div>
+								)}
+								{ticketQuantity && (
+									<div>
+										<p className="text-sm text-muted-foreground">Quantity</p>
+										<p className="font-semibold">{ticketQuantity} ticket{ticketQuantity > 1 ? 's' : ''}</p>
+									</div>
+								)}
 							</div>
-							{ticketPrice && (
-								<div>
-									<p className="text-sm text-muted-foreground">Price</p>
-									<p className="font-semibold flex items-center">
-										<DollarSign className="w-4 h-4" />
-										{ticketPrice.toFixed(2)}
-									</p>
-								</div>
-							)}
-							{ticketQuantity && (
-								<div>
-									<p className="text-sm text-muted-foreground">Quantity</p>
-									<p className="font-semibold">{ticketQuantity} ticket{ticketQuantity > 1 ? 's' : ''}</p>
-								</div>
-							)}
+
+							{/* Price Summary with Discount */}
 							{ticketPrice && ticketQuantity && (
-								<div className="ml-auto">
-									<p className="text-sm text-muted-foreground">Total</p>
-									<p className="font-semibold flex items-center">
-										<DollarSign className="w-4 h-4" />
-										{(ticketPrice * ticketQuantity).toFixed(2)}
-									</p>
+								<div className="p-3 bg-background rounded-lg space-y-2">
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Subtotal</span>
+										<span>${(ticketPrice * ticketQuantity).toFixed(2)}</span>
+									</div>
+
+									{validatedDiscount && getDiscountAmount() > 0 && (
+										<div className="flex justify-between text-sm text-green-600">
+											<span>Discount ({validatedDiscount.couponName || validatedDiscount.code})</span>
+											<span>
+												-${getDiscountAmount().toFixed(2)}
+											</span>
+										</div>
+									)}
+
+									<Separator />
+
+									<div className="flex justify-between font-semibold text-lg">
+										<span>Total</span>
+										<span className="flex items-center">
+											<DollarSign className="w-4 h-4" />
+											{calculateDiscountedPrice().toFixed(2)}
+										</span>
+									</div>
 								</div>
+							)}
+						</div>
+
+						<Separator />
+
+						{/* Discount Code */}
+						<div className="space-y-2">
+							<Label htmlFor="discount-code" className="text-sm font-medium flex items-center gap-2">
+								<Tag className="w-4 h-4" />
+								Promotion Code (Optional)
+							</Label>
+
+							{!validatedDiscount ? (
+								<>
+									<div className="flex gap-2">
+										<Input
+											id="discount-code"
+											placeholder="Enter promotion code"
+											value={discountCode}
+											onChange={(e) => handleDiscountCodeChange(e.target.value)}
+											className="flex-1"
+											disabled={uploading || isValidating}
+											onKeyDown={(e) => {
+												if (e.key === 'Enter') {
+													e.preventDefault();
+													handleValidateDiscount();
+												}
+											}}
+										/>
+										<Button
+											variant="outline"
+											size="default"
+											type="button"
+											disabled={!discountCode.trim() || isValidating}
+											onClick={handleValidateDiscount}
+										>
+											{isValidating ? 'Validating...' : 'Apply'}
+										</Button>
+									</div>
+
+									{discountError && (
+										<Alert variant="destructive" className="py-2">
+											<AlertCircle className="h-4 w-4" />
+											<AlertDescription>{discountError}</AlertDescription>
+										</Alert>
+									)}
+								</>
+							) : (
+								<div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+									<div className="flex items-center gap-2">
+										<CheckCircle className="h-4 w-4 text-green-600" />
+										<span className="font-medium text-green-700 dark:text-green-400">
+											{validatedDiscount.code}
+										</span>
+										{validatedDiscount.couponName && (
+											<span className="text-sm text-muted-foreground">
+												({validatedDiscount.couponName})
+											</span>
+										)}
+										<Badge variant="secondary" className="text-xs">
+											{getDiscountDisplay()}
+										</Badge>
+									</div>
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={handleRemoveDiscount}
+										className="text-muted-foreground hover:text-destructive"
+									>
+										<X className="h-4 w-4" />
+									</Button>
+								</div>
+							)}
+
+							{!validatedDiscount && (
+								<p className="text-xs text-muted-foreground">
+									Enter a promotion code if you have one. The discount will be applied at checkout.
+								</p>
 							)}
 						</div>
 					</CardContent>
@@ -354,7 +567,7 @@ export function VehicleSubmissionForm({
 
 							{vehicleModifications.length === 0 ? (
 								<div className="text-center py-4 text-muted-foreground">
-									No tags added yet. Add tags to help categorize your event.
+									No modifications added yet. Add modifications to showcase your build.
 								</div>
 							) : (
 								<div className="space-y-2">
@@ -450,7 +663,7 @@ export function VehicleSubmissionForm({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={uploading || images.length === 0}>
-							{uploading ? 'Submitting...' : 'Submit for Review'}
+							{uploading ? 'Submitting...' : 'Continue to Checkout'}
 						</Button>
 					</div>
 				</form>
