@@ -26,7 +26,7 @@ export function AttendeeTabs({ attendees }: { attendees: any[] }) {
 			<TabsList className="grid w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
 				{sortedTiers.map(tier => {
 					const tierAttendees = groupedAttendees[tier];
-					const checkedInCount = tierAttendees.filter(t => t.checkedIn).length;
+					const checkedInCount = tierAttendees.filter((t: any) => t.checkedIn).length;
 					const totalCount = tierAttendees.length;
 					return (
 						<TabsTrigger key={tier} value={tier} className="w-full">
@@ -47,7 +47,7 @@ export function AttendeeTabs({ attendees }: { attendees: any[] }) {
 			{sortedTiers.map(tier => (
 				<TabsContent key={tier} value={tier}>
 					<div className="max-h-80 overflow-y-auto space-y-2 pt-4">
-						{groupedAttendees[tier].map(ticket => (
+						{groupedAttendees[tier].map((ticket: any) => (
 							<div
 								key={ticket.id}
 								className="flex justify-between items-center p-3 border rounded-lg"
