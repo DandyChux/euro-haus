@@ -380,7 +380,7 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 
 	// Search for products with type=event and matching slug
 	params := &stripe.ProductListParams{}
-	params.Filters.AddFilter("active", "", "true")
+	// params.Filters.AddFilter("active", "", "true")
 	params.AddExpand("data.default_price")
 
 	var eventProduct *stripe.Product

@@ -304,7 +304,7 @@ export function EventFormSection({ form, isEditing, eventId, onGenerateSlug }: E
 								<SelectItem value="ongoing">Ongoing</SelectItem>
 								<SelectItem value="completed">Completed</SelectItem>
 								<SelectItem value="cancelled">Cancelled</SelectItem>
-								<SelectItem value="sold-out">Sold Out</SelectItem>
+								<SelectItem value="soldout">Sold Out</SelectItem>
 							</SelectContent>
 						</Select>
 						<FormMessage />

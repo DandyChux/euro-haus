@@ -12,10 +12,10 @@ export const Route = createFileRoute('/admin/submissions')({
 		const events = await stripeService.getAllEvents();
 		// Filter only upcoming events that might have submissions
 		const now = new Date();
-		const endOfToday = new Date(now);
-		endOfToday.setHours(0, 0, 0, 999);
+		const startOfToday = new Date(now);
+		startOfToday.setHours(0, 0, 0, 999);
 		const upcomingEvents = events.filter(event =>
-			isAfter(new Date(event.date), endOfToday) && event.status !== 'cancelled'
+			isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
 		);
 		return { events: upcomingEvents };
 	},

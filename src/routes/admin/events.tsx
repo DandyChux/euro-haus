@@ -49,22 +49,15 @@ function AdminEventsContent() {
 
 	// Separate events by status
 	const now = new Date();
-	const endOfToday = new Date(now);
-	endOfToday.setHours(0, 0, 0, 999);
+	const startOfToday = new Date(now);
+	startOfToday.setHours(0, 0, 0, 999);
 
-	// const upcomingEvents = events.filter(event =>
-	// 	isAfter(new Date(event.date), endOfToday) && event.status !== 'cancelled'
-	// );
-	const upcomingEvents = events.filter(event => {
-		console.log(new Date(event.date));
-		return isAfter(new Date(event.date), endOfToday) && event.status !== 'cancelled';
-	});
-	// const pastEvents = events.filter(event =>
-	// 	!isAfter(new Date(event.date), endOfToday) || event.status === 'cancelled'
-	// );
-	const pastEvents = events.filter(event => {
-		return !isAfter(new Date(event.date), endOfToday) || event.status === 'cancelled';
-	});
+	const upcomingEvents = events.filter(event =>
+		isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
+	);
+	const pastEvents = events.filter(event =>
+		!isAfter(new Date(event.date), startOfToday) || event.status === 'cancelled'
+	);
 
 	return (
 		<div className="p-6 space-y-6 min-h-screen">
