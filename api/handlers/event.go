@@ -215,7 +215,9 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 
 // GetEventAttendees retrieves all attendees for a specific event
 func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
-	eventID := r.URL.Query().Get("event_id")
+	vars := mux.Vars(r)
+	eventID := vars["eventId"]
+
 	if eventID == "" {
 		http.Error(w, "Missing event_id parameter", http.StatusBadRequest)
 		return
