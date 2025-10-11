@@ -44,11 +44,19 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if we should include inactive products
+	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+
 	// Fetch products from Stripe
 	params := &stripe.ProductListParams{
-		Active: stripe.Bool(true),
 		Expand: []*string{stripe.String("data.default_price")},
 	}
+
+	// Only filter by active status if we're not including inactive products
+	if !includeInactive {
+		params.Active = stripe.Bool(true)
+	}
+
 	params.Filters.AddFilter("limit", "", "100")
 
 	iter := product.List(params)

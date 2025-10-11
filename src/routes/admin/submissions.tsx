@@ -5,13 +5,17 @@ import { stripeService } from '~/lib/services/stripe-service';
 import { useState } from 'react';
 import { Card, CardContent } from '~/components/ui/card';
 import { Calendar } from 'lucide-react';
+import { isAfter } from 'date-fns';
 
 export const Route = createFileRoute('/admin/submissions')({
 	loader: async () => {
 		const events = await stripeService.getAllEvents();
 		// Filter only upcoming events that might have submissions
+		const now = new Date();
+		const endOfToday = new Date(now);
+		endOfToday.setHours(23, 59, 59, 999);
 		const upcomingEvents = events.filter(event =>
-			new Date(event.date) > new Date() && event.status !== 'cancelled'
+			isAfter(new Date(event.date), endOfToday) && event.status !== 'cancelled'
 		);
 		return { events: upcomingEvents };
 	},

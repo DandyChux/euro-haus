@@ -29,7 +29,7 @@ import { Scanner } from '@yudiel/react-qr-scanner';
 
 export const Route = createFileRoute('/admin/events')({
 	loader: async () => {
-		const events = await stripeService.getAllEvents();
+		const events = await stripeService.getAllEvents(true);
 		return { events };
 	},
 	component: AdminEventsPage,
@@ -48,11 +48,15 @@ function AdminEventsContent() {
 	const [selectedTab, setSelectedTab] = useState('upcoming');
 
 	// Separate events by status
+	const now = new Date();
+	const endOfToday = new Date(now);
+	endOfToday.setHours(23, 59, 59, 999);
+
 	const upcomingEvents = events.filter(event =>
-		isAfter(new Date(event.date), new Date()) && event.status !== 'cancelled'
+		isAfter(new Date(event.date), endOfToday) && event.status !== 'cancelled'
 	);
 	const pastEvents = events.filter(event =>
-		!isAfter(new Date(event.date), new Date()) || event.status === 'cancelled'
+		!isAfter(new Date(event.date), endOfToday) || event.status === 'cancelled'
 	);
 
 	return (

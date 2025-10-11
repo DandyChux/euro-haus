@@ -163,6 +163,7 @@ func main() {
 	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.ListCoupons))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/coupons/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteCoupon))).Methods("DELETE", "OPTIONS")
 	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePromotionCode))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.ListPromotionCodes))).Methods("GET", "OPTIONS")
 
 	// Admin event endpoints (requires authentication)
 	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")

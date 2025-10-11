@@ -11,7 +11,7 @@ import { EventCard } from '~/components/event-cards';
 
 export const Route = createFileRoute('/events/')({
 	loader: async () => {
-		const events = await stripeService.getAllEvents()
+		const events = await stripeService.getAllEvents(true)
 		return { events }
 	},
 	pendingComponent: EventsLoadingPage,

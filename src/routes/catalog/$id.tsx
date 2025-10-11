@@ -296,7 +296,7 @@ function ProductDetailPage() {
 								<Image
 									src={allImages[selectedImage] || allImages[0]}
 									alt={product.title}
-									className="h-full w-full object-cover"
+									className="h-full w-full object-contain"
 								/>
 							</div>
 
@@ -623,9 +623,8 @@ function ProductDetailPage() {
 									<CardContent>
 										<ul className="space-y-2">
 											{eventData.includes.map((item, index) => (
-												<li key={index} className="flex items-center gap-2">
-													<span className="text-primary mt-1">•</span>
-													<span className="text-sm">{item}</span>
+												<li key={index} className="flex items-center gap-2 list-disc list-inside text-sm">
+													{item}
 												</li>
 											))}
 										</ul>
@@ -683,16 +682,16 @@ function ProductDetailPage() {
 								<Card>
 									<CardContent className="pt-6">
 										<h3 className="font-semibold mb-2">Shipping Information</h3>
-										<ul className="space-y-2 text-sm">
-											<li>• Free standard shipping on orders over $100</li>
-											<li>• Express shipping available at checkout</li>
-											<li>• International shipping to select countries</li>
+										<ul className="space-y-2 text-sm list-disc list-inside">
+											<li>Free standard shipping on orders over $100</li>
+											<li>Express shipping available at checkout</li>
+											<li>International shipping to select countries</li>
 										</ul>
 										<h3 className="font-semibold mt-4 mb-2">Return Policy</h3>
-										<ul className="space-y-2 text-sm">
-											<li>• 30-day return window</li>
-											<li>• Items must be unused and in original packaging</li>
-											<li>• Free returns on all orders</li>
+										<ul className="space-y-2 text-sm list-disc list-inside">
+											<li>30-day return window</li>
+											<li>Items must be unused and in original packaging</li>
+											<li>Free returns on all orders</li>
 										</ul>
 									</CardContent>
 								</Card>

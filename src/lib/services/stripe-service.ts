@@ -145,9 +145,10 @@ export const stripeService = {
 		}
 	},
 
-	async getAllEvents(): Promise<EventProduct[]> {
+	async getAllEvents(includeInactive: boolean = false): Promise<EventProduct[]> {
 		try {
-			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
+			const url = includeInactive ? '/products?include_inactive=true' : '/products'
+			const response = await apiClient.get<{ products: StripeProduct[] }>(url);
 
 			if (!response.data.products || response.data.products.length === 0) {
 				return [];
