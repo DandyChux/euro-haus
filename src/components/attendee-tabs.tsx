@@ -23,26 +23,28 @@ export function AttendeeTabs({ attendees }: { attendees: any[] }) {
 
 	return (
 		<Tabs value={activeTierTab} onValueChange={setActiveTierTab}>
-			<TabsList className="grid w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-				{sortedTiers.map(tier => {
-					const tierAttendees = groupedAttendees[tier];
-					const checkedInCount = tierAttendees.filter((t: any) => t.checkedIn).length;
-					const totalCount = tierAttendees.length;
-					return (
-						<TabsTrigger key={tier} value={tier} className="w-full">
-							<div className="flex items-center justify-between w-full">
-								<span>{tier}</span>
-								<Badge
-									variant={activeTierTab === tier ? 'default' : 'secondary'}
-									className="ml-2 h-5"
-								>
-									{checkedInCount} / {totalCount}
-								</Badge>
-							</div>
-						</TabsTrigger>
-					);
-				})}
-			</TabsList>
+			<div className="relative w-full overflow-x-auto">
+				<TabsList className="w-max space-x-2">
+					{sortedTiers.map(tier => {
+						const tierAttendees = groupedAttendees[tier];
+						const checkedInCount = tierAttendees.filter((t: any) => t.checkedIn).length;
+						const totalCount = tierAttendees.length;
+						return (
+							<TabsTrigger key={tier} value={tier} className="w-auto">
+								<div className="flex items-center justify-between w-full gap-4">
+									<span>{tier}</span>
+									<Badge
+										variant={activeTierTab === tier ? 'default' : 'secondary'}
+										className="ml-2 h-5 flex-shrink-0"
+									>
+										{checkedInCount} / {totalCount}
+									</Badge>
+								</div>
+							</TabsTrigger>
+						);
+					})}
+				</TabsList>
+			</div>
 
 			{sortedTiers.map(tier => (
 				<TabsContent key={tier} value={tier}>
