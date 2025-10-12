@@ -53,7 +53,7 @@ export interface Product {
 	description: string;
 	price: number;
 	compareAtPrice?: number;
-	imageUrl: string;
+	images: string[];
 	isNew?: boolean;
 	inStock?: boolean;
 	featured?: boolean;
@@ -269,7 +269,7 @@ export const stripeService = {
 			description: stripeProduct.description || '',
 			price,
 			compareAtPrice,
-			imageUrl: stripeProduct.images[0] || '/placeholder.svg?height=400&width=400',
+			images: stripeProduct.images,
 			isNew: stripeProduct.metadata.is_new === 'true',
 			inStock: stripeProduct.active && stripeProduct.metadata.in_stock !== 'false',
 			featured: stripeProduct.metadata.featured === 'true',
@@ -311,7 +311,7 @@ export const stripeService = {
 			title: stripeProduct.name,
 			description: stripeProduct.description || '',
 			price: stripeProduct.default_price?.unit_amount ? stripeProduct.default_price.unit_amount / 100 : 0,
-			imageUrl: stripeProduct.images?.[0] || '',
+			images: stripeProduct.images,
 			slug: metadata.slug || '',
 			date: metadata.event_date || '',
 			location: metadata.location || '',
@@ -330,10 +330,10 @@ export const stripeService = {
 		};
 	},
 
-	async getEventWithPriceTiers(eventId: string): Promise<EventWithTiers | null> {
+	async getEventWithPriceTiers(slug: string): Promise<EventWithTiers | null> {
 		try {
 			// Fetch the event product
-			const eventProduct = await this.getEventBySlug(eventId);
+			const eventProduct = await this.getEventBySlug(slug);
 			if (!eventProduct) return null;
 
 			// Fetch all prices for this product

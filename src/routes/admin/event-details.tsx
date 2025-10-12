@@ -9,29 +9,28 @@ import { stripeService } from '~/lib/services/stripe-service';
 import { ArrowLeft, Calendar, MapPin, Users, DollarSign } from 'lucide-react';
 import { format } from 'date-fns';
 import z from 'zod';
-import { apiClient } from '~/lib/api';
 import { Image } from '~/components/ui/image';
+import { ticketService } from '~/lib/services/ticket-service';
+import { AttendeeTabs } from '~/components/attendee-tabs';
 
 export const Route = createFileRoute('/admin/event-details')({
 	validateSearch: z.object({
-		event_id: z.string()
+		slug: z.string()
 	}),
-	loaderDeps: ({ search: { event_id } }) => ({
-		eventId: event_id
+	loaderDeps: ({ search: { slug } }) => ({
+		slug: slug
 	}),
-	loader: async ({ deps: { eventId } }) => {
+	loader: async ({ deps: { slug } }) => {
 		// Fetch event details
-		const eventResponse = await apiClient.get(`/products/${eventId}`);
-		const event = eventResponse.data;
+		const event = await stripeService.getEventWithPriceTiers(slug);
 
-		// Fetch event tiers if applicable
-		let tiers = [];
-		if (event.metadata?.has_tiers === 'true') {
-			const pricesResponse = await apiClient.get(`/products/${eventId}/prices`);
-			tiers = pricesResponse.data.prices?.filter((p: any) => p.nickname) || [];
+		if (!event) {
+			throw new Error("Event not found");
 		}
 
-		return { event, tiers };
+		const attendees = await ticketService.getEventAttendees(event.id);
+
+		return { event, attendees };
 	},
 	component: EventDetailsPage,
 });
@@ -45,12 +44,12 @@ function EventDetailsPage() {
 }
 
 function EventDetailsContent() {
-	const { event, tiers } = Route.useLoaderData();
+	const { event, attendees } = Route.useLoaderData();
 	const navigate = useNavigate();
 	const [activeTab, setActiveTab] = useState('overview');
 
 	// Parse event date safely
-	const eventDate = event.metadata?.event_date ? new Date(event.metadata.event_date) : null;
+	const eventDate = event.date ? new Date(event.date) : null;
 
 	return (
 		<div className="p-6 space-y-6">
@@ -65,7 +64,7 @@ function EventDetailsContent() {
 						<ArrowLeft className="w-4 h-4" />
 					</Button>
 					<div>
-						<h1 className="text-3xl font-bold">{event.name}</h1>
+						<h1 className="text-3xl font-bold">{event.title}</h1>
 						<p className="text-muted-foreground">Event Management</p>
 					</div>
 				</div>
@@ -95,7 +94,7 @@ function EventDetailsContent() {
 						<div className="flex items-center gap-2">
 							<MapPin className="w-4 h-4" />
 							<span className="font-semibold">
-								{event.metadata?.location || 'Not set'}
+								{event.location || 'Not set'}
 							</span>
 						</div>
 					</CardContent>
@@ -109,7 +108,7 @@ function EventDetailsContent() {
 						<div className="flex items-center gap-2">
 							<Users className="w-4 h-4" />
 							<span className="font-semibold">
-								{event.metadata?.capacity || 'Unlimited'}
+								{event.capacity || 'Unlimited'}
 							</span>
 						</div>
 					</CardContent>
@@ -123,14 +122,14 @@ function EventDetailsContent() {
 						<div className="flex items-center gap-2">
 							<DollarSign className="w-4 h-4" />
 							<span className="font-semibold">
-								{tiers.length > 0 ? (
+								{event.priceTiers?.length > 0 ? (
 									<>
-										${Math.min(...tiers.map((t: any) => t.unit_amount / 100)).toFixed(2)} -
-										${Math.max(...tiers.map((t: any) => t.unit_amount / 100)).toFixed(2)}
+										${Math.min(...event.priceTiers.map((t) => t.amount)).toFixed(2)} -
+										${Math.max(...event.priceTiers.map((t) => t.amount)).toFixed(2)}
 									</>
 								) : (
-									event.default_price ?
-										`$${(event.default_price.unit_amount / 100).toFixed(2)}` :
+									event.price ?
+										`$${(event.price).toFixed(2)}` :
 										'Not set'
 								)}
 							</span>
@@ -178,22 +177,22 @@ function EventDetailsContent() {
 									</div>
 								)}
 
-								{tiers.length > 0 && (
+								{event.priceTiers?.length > 0 && (
 									<div>
 										<label className="text-sm font-medium">Ticket Tiers</label>
 										<div className="space-y-2 mt-2">
-											{tiers.map((tier: any) => (
+											{event.priceTiers.map((tier) => (
 												<div key={tier.id} className="flex justify-between items-center p-3 bg-muted rounded">
 													<div>
-														<div className="font-medium">{tier.nickname}</div>
-														{tier.metadata?.description && (
+														<div className="font-medium">{tier.name}</div>
+														{tier.description && (
 															<div className="text-sm text-muted-foreground">
-																{tier.metadata.description}
+																{tier.description}
 															</div>
 														)}
 													</div>
 													<div className="font-semibold">
-														${(tier.unit_amount / 100).toFixed(2)}
+														${(tier.amount).toFixed(2)}
 													</div>
 												</div>
 											))}
@@ -208,31 +207,42 @@ function EventDetailsContent() {
 				<TabsContent value="products">
 					<EventProductsManager
 						eventId={event.id}
-						eventName={event.name}
-						tiers={tiers.map((t: any) => ({
+						eventName={event.title}
+						tiers={event.priceTiers.map((t) => ({
 							id: t.id,
 							priceId: t.id,
-							name: t.nickname || 'Unnamed Tier',
-							amount: t.unit_amount / 100,
+							name: t.name || 'Unnamed Tier',
+							amount: t.amount,
 							currency: t.currency
 						}))}
 					/>
 				</TabsContent>
 
 				<TabsContent value="attendees">
-					{/* Add attendee management here */}
 					<Card>
 						<CardHeader>
 							<CardTitle>Attendee Management</CardTitle>
 						</CardHeader>
 						<CardContent>
-							<p className="text-muted-foreground">Attendee management coming soon...</p>
+							{/*{attendees?.map((attendee) => (
+								<div key={attendee.id} className="flex justify-between items-center p-3 bg-muted rounded">
+									<div>
+										<span className="font-medium">{attendee.attendeeEmail}</span>
+										<span className="text-sm text-muted-foreground">
+											{attendee.attendeeName}
+										</span>
+									</div>
+								</div>
+							))}*/}
+							<AttendeeTabs
+								attendees={attendees}
+							/>
 						</CardContent>
 					</Card>
 				</TabsContent>
 
 				<TabsContent value="settings">
-					{/* Add event settings here */}
+					{/* TODO: Add event settings here */}
 					<Card>
 						<CardHeader>
 							<CardTitle>Event Settings</CardTitle>

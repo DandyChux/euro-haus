@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { apiClient } from '~/lib/api';
 import { Plus, X, Package, Shirt, Tag, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { Image } from '../ui/image';
+import { StripeProduct, stripeService } from '~/lib/services/stripe-service';
 
 interface EventProductsManagerProps {
 	eventId: string;
@@ -38,8 +39,8 @@ interface TierProduct {
 }
 
 export function EventProductsManager({ eventId, eventName, tiers = [] }: EventProductsManagerProps) {
-	const [linkedProducts, setLinkedProducts] = useState<Product[]>([]);
-	const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+	const [linkedProducts, setLinkedProducts] = useState<StripeProduct[]>([]);
+	const [availableProducts, setAvailableProducts] = useState<StripeProduct[]>([]);
 	const [tierProducts, setTierProducts] = useState<Record<string, TierProduct[]>>({});
 	const [loading, setLoading] = useState(false);
 	const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
@@ -52,12 +53,13 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 
 	const fetchLinkedProducts = async () => {
 		try {
-			const response = await apiClient.get(`/admin/events/${eventId}/linked-products`);
-			setLinkedProducts(response.data.linkedProducts || []);
+			// const response = await apiClient.get(`/admin/events/${eventId}/linked-products`);
+			const { linkedProducts, tierProducts } = await stripeService.getEventLinkedProducts(eventId);
+			setLinkedProducts(linkedProducts);
 
 			// Parse tier products
 			const tierProds: Record<string, TierProduct[]> = {};
-			(response.data.tierProducts || []).forEach((tier: any) => {
+			(tierProducts || []).forEach((tier) => {
 				tierProds[tier.tierId] = tier.includedProducts || [];
 			});
 			setTierProducts(tierProds);
@@ -255,9 +257,9 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 											)}
 											<div>
 												<div className="font-medium">{product.name}</div>
-												{product.price && (
+												{product.default_price && (
 													<div className="text-sm text-muted-foreground">
-														${(product.price.unit_amount / 100).toFixed(2)}
+														${(product.default_price.unit_amount / 100).toFixed(2)}
 													</div>
 												)}
 											</div>
@@ -370,7 +372,7 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 														<SelectContent>
 															{[...linkedProducts, ...availableProducts].map(product => (
 																<SelectItem key={product.id} value={product.id}>
-																	{product.name} - ${((product.price?.unit_amount || 0) / 100).toFixed(2)}
+																	{product.name} - ${((product.default_price?.unit_amount || 0) / 100).toFixed(2)}
 																</SelectItem>
 															))}
 														</SelectContent>
@@ -423,9 +425,9 @@ export function EventProductsManager({ eventId, eventName, tiers = [] }: EventPr
 												)}
 												<div className="flex-1">
 													<div className="font-medium">{product.name}</div>
-													{product.price && (
+													{product.default_price && (
 														<div className="text-sm text-muted-foreground">
-															${(product.price.unit_amount / 100).toFixed(2)}
+															${(product.default_price.unit_amount / 100).toFixed(2)}
 														</div>
 													)}
 												</div>

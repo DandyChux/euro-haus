@@ -21,8 +21,7 @@ import {
 	Camera,
 	Keyboard,
 	Clock,
-	MapPin,
-	Ticket as TicketIcon
+	MapPin
 } from 'lucide-react';
 import { format, isAfter } from 'date-fns';
 import { Scanner } from '@yudiel/react-qr-scanner';
@@ -33,6 +32,21 @@ export const Route = createFileRoute('/admin/events')({
 		const events = await stripeService.getAllEvents(true);
 		return { events };
 	},
+	// head: (ctx) => {
+	// 	const { params, loaderData } = ctx;
+
+	// 	return {
+	// 		meta: [
+	// 			{
+	// 				title: 'Admin Events Page | Euro Haus'
+	// 			},
+	// 			{
+	// 				name: 'description',
+	// 				content: 'Admin Events Page'
+	// 			}
+	// 		]
+	// 	}
+	// },
 	component: AdminEventsPage,
 });
 
@@ -149,7 +163,7 @@ function EventCard({ event, isPast }: EventCardProps) {
 							size="sm"
 							onClick={() => navigate({
 								to: '/admin/event-details',
-								search: { event_id: event.id }
+								search: { slug: event.slug }
 							})}
 						>
 							Manage Event
@@ -197,6 +211,7 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 	});
 	const [showAttendees, setShowAttendees] = useState(false);
 	const [loading, setLoading] = useState(false);
+	const [checkingInTicket, setCheckingInTicket] = useState<string | null>(null)
 
 	// Fetch event statistics and attendees
 	const fetchEventData = async () => {
@@ -230,6 +245,12 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 			checkInTicket(text);
 		}
 	};
+
+	const handleManualCheckIn = async (ticketCode: string) => {
+		setCheckingInTicket(ticketCode);
+		await checkInTicket(ticketCode);
+		setCheckingInTicket(null);
+	}
 
 	const handleManualSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -473,7 +494,11 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 						{attendees.length === 0 ? (
 							<p className="text-center text-muted-foreground py-4">No tickets sold yet</p>
 						) : (
-							<AttendeeTabs attendees={attendees} />
+							<AttendeeTabs
+								attendees={attendees}
+								onManualCheckIn={handleManualCheckIn}
+								checkingInTicket={checkingInTicket}
+							/>
 						)}
 					</CardContent>
 				</Card>

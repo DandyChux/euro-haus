@@ -6,18 +6,20 @@ import { useState } from 'react';
 import { Card, CardContent } from '~/components/ui/card';
 import { Calendar } from 'lucide-react';
 import { isAfter } from 'date-fns';
+import { Badge } from '~/components/ui/badge';
 
 export const Route = createFileRoute('/admin/submissions')({
 	loader: async () => {
 		const events = await stripeService.getAllEvents();
 		// Filter only upcoming events that might have submissions
-		const now = new Date();
-		const startOfToday = new Date(now);
-		startOfToday.setHours(0, 0, 0, 999);
-		const upcomingEvents = events.filter(event =>
-			isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
-		);
-		return { events: upcomingEvents };
+		// const now = new Date();
+		// const startOfToday = new Date(now);
+		// startOfToday.setHours(0, 0, 0, 999);
+		// const upcomingEvents = events.filter(event =>
+		// 	isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
+		// );
+
+		return { events: events };
 	},
 	component: AdminSubmissionsPage,
 });
@@ -32,7 +34,7 @@ function AdminSubmissionsPage() {
 				<Card>
 					<CardContent className="text-center py-8">
 						<Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-						<p className="text-muted-foreground">No upcoming events found</p>
+						<p className="text-muted-foreground">No events found</p>
 					</CardContent>
 				</Card>
 			</div>
@@ -48,11 +50,27 @@ function AdminSubmissionsPage() {
 
 			<Tabs value={selectedEvent} onValueChange={setSelectedEvent}>
 				<TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${Math.min(events.length, 4)}, 1fr)` }}>
-					{events.map((event) => (
+					{/*{events.map((event) => (
 						<TabsTrigger key={event.id} value={event.id}>
 							{event.title}
 						</TabsTrigger>
-					))}
+					))}*/}
+					{events.map((event) => {
+						const now = new Date();
+						const startOfToday = new Date(now);
+						startOfToday.setHours(0, 0, 0, 999);
+
+						return (
+							<TabsTrigger key={event.id} value={event.id}>
+								{event.title}
+								{startOfToday.getTime() < now.getTime() ? (
+									<Badge variant="secondary">Live</Badge>
+								) : (
+									<Badge variant="secondary">Upcoming</Badge>
+								)}
+							</TabsTrigger>
+						)
+					})}
 				</TabsList>
 
 				{events.map((event) => (
