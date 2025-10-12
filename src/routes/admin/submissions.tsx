@@ -63,7 +63,7 @@ function AdminSubmissionsPage() {
 						return (
 							<TabsTrigger key={event.id} value={event.id}>
 								{event.title}
-								{isAfter(new Date(event.date), startOfToday) ? (
+								{isAfter(now, new Date(event.date)) ? (
 									<Badge>Past</Badge>
 								) : (
 									<Badge variant="outline">Upcoming</Badge>
