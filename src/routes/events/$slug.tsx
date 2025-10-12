@@ -911,10 +911,18 @@ function EventDetailPage() {
 										<CardTitle>Select Tickets</CardTitle>
 									</CardHeader>
 									<CardContent className="pt-6">
-										<TieredPricing
-											tiers={(event as EventWithTiers).priceTiers}
-											onSelectTier={(tier, qty) => handleSelectTier(tier, qty)}
-										/>
+										{event.status === 'upcoming' ? (
+											<TieredPricing
+												tiers={(event as EventWithTiers).priceTiers}
+												onSelectTier={(tier, qty) => handleSelectTier(tier, qty)}
+											/>
+										) : (
+											<div className="text-center p-6 rounded-2xl bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
+												<p>
+													This event has passed. Tickets are no longer available.
+												</p>
+											</div>
+										)}
 									</CardContent>
 								</Card>
 							</div>
