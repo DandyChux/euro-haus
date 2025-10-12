@@ -217,7 +217,7 @@ function ProductDetailPage() {
 			description: product.description || '',
 			price: getCurrentPrice(),
 			quantity,
-			imageUrl: selectedVariant?.images?.[0] || product.imageUrl,
+			imageUrl: selectedVariant?.images?.[0] || product.images[0],
 			maxQuantity: getMaxQuantity(),
 			type: isEvent ? 'event' : 'product',
 			eventDate: eventData?.date,
@@ -248,8 +248,8 @@ function ProductDetailPage() {
 		if (selectedVariant?.images && selectedVariant.images.length > 0) {
 			return selectedVariant.images;
 		}
-		if (product.imageUrl) {
-			return [product.imageUrl];
+		if (product.images) {
+			return product.images
 		}
 		return ['/placeholder.svg?height=600&width=600'];
 	}

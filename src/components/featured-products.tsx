@@ -127,7 +127,7 @@ export default function FeaturedProducts() {
 									description={product.description}
 									price={product.price}
 									compareAtPrice={product.compareAtPrice}
-									imageUrl={product.imageUrl}
+									imageUrl={product.images[0]}
 									isNew={product.isNew}
 									inStock={product.inStock}
 								/>

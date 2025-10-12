@@ -411,7 +411,7 @@ function EventDetailPage() {
 			description: tier.description || `${tier.name} tier ticket`,
 			price: tier.amount,
 			quantity: tierQuantity,
-			imageUrl: event?.imageUrl || '',
+			imageUrl: event?.images[0] || '',
 			maxQuantity: tier.maxQuantity,
 			type: 'event',
 			eventDate: event?.date || event?.date,
@@ -436,7 +436,7 @@ function EventDetailPage() {
 					description: `${event?.title || 'Event'} Merchandise`,
 					price: (product.price?.unit_amount || 0) / 100,
 					quantity: product.quantity,
-					imageUrl: event?.imageUrl || '',
+					imageUrl: event?.images[0] || '',
 					type: 'product',
 				});
 			});
@@ -550,7 +550,7 @@ function EventDetailPage() {
 			description: `Event on ${new Date(event.date).toLocaleDateString()}`,
 			price: ticketPrice,
 			quantity,
-			imageUrl: event.imageUrl,
+			imageUrl: event.images[0],
 			maxQuantity: maxAvailable,
 			type: 'event',
 			eventDate: event.date,
@@ -613,7 +613,7 @@ function EventDetailPage() {
 				<div className="w-full h-[750px] relative">
 					<div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-background/60 z-10" />
 					<Image
-						src={event.imageUrl}
+						src={event.images[0]}
 						alt={event.title}
 						className="w-full h-full object-contain"
 					/>

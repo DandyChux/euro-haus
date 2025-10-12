@@ -497,7 +497,7 @@ function RouteComponent() {
 										title={product.title}
 										description={product.description}
 										price={product.price}
-										imageUrl={product.imageUrl}
+										imageUrl={product.images[0]}
 										isNew={product.isNew}
 										compareAtPrice={product.compareAtPrice}
 										inStock={product.inStock}
