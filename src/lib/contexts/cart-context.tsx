@@ -10,7 +10,7 @@ export interface CartItem {
 	quantity: number;
 	imageUrl: string;
 	maxQuantity?: number;
-	type?: 'product' | 'event'; // To distinguish between products and events
+	type?: 'product' | 'event' | 'bundle'; // To distinguish between products and events
 	eventDate?: string; // For event tickets
 }
 
