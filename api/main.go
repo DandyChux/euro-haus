@@ -156,7 +156,7 @@ func main() {
 	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/update-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePrice))).Methods("PUT", "OPTIONS")
 	api.Handle("/admin/archive-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.ArchivePrice))).Methods("PUT", "OPTIONS")
-	api.Handle("/admin/set-default-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/set-default-price", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("POST", "OPTIONS")
 
 	// Discount management endpoints (requires authentication)
 	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.CreateCoupon))).Methods("POST", "OPTIONS")

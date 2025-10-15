@@ -24,7 +24,7 @@ import (
 type CreateProductRequest struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
-	Price       int64             `json:"price"` // in cents
+	Price       int64             `json:"price,omitempty"` // in cents
 	Currency    string            `json:"currency"`
 	Images      []string          `json:"images"`
 	Metadata    map[string]string `json:"metadata"`
@@ -59,8 +59,8 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if req.Name == "" || req.Price <= 0 {
-		http.Error(w, "Name and price are required", http.StatusBadRequest)
+	if req.Name == "" {
+		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
 
@@ -95,48 +95,56 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create price for the product
-	priceParams := &stripe.PriceParams{
-		Product:    stripe.String(newProduct.ID),
-		UnitAmount: stripe.Int64(req.Price),
-		Currency:   stripe.String(req.Currency),
-	}
-
-	newPrice, err := price.New(priceParams)
-	if err != nil {
-		// Delete the product if price creation fails
-		log.Printf("Failed to create price, deleting product %s: %v", newProduct.ID, err)
-		_, delErr := product.Del(newProduct.ID, nil)
-		if delErr != nil {
-			log.Printf("Failed to delete product after price creation failure: %v", delErr)
-		}
-		http.Error(w, "Failed to create price: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Update product with default price
-	updateParams := &stripe.ProductParams{
-		DefaultPrice: stripe.String(newPrice.ID),
-	}
-	updatedProduct, err := product.Update(newProduct.ID, updateParams)
-	if err != nil {
-		log.Printf("Warning: Failed to set default price for product %s: %v", newProduct.ID, err)
-		// Continue anyway, the product and price were created successfully
-		updatedProduct = newProduct
-	}
-
-	log.Printf("Successfully created product %s with price %s", newProduct.ID, newPrice.ID)
-
-	// Return success response
 	response := CreateProductResponse{
 		Success:   true,
-		ProductID: updatedProduct.ID,
-		PriceID:   newPrice.ID,
+		ProductID: newProduct.ID,
 		Message:   "Product created successfully",
 	}
 
+	// If Price is provided, create a price and set it as default
+	if req.Price > 0 {
+		if req.Currency == "" {
+			http.Error(w, "Currency is required when a price is provided", http.StatusBadRequest)
+			return
+		}
+		// Create price for the product
+		priceParams := &stripe.PriceParams{
+			Product:    stripe.String(newProduct.ID),
+			UnitAmount: stripe.Int64(req.Price),
+			Currency:   stripe.String(req.Currency),
+		}
+
+		newPrice, err := price.New(priceParams)
+		if err != nil {
+			// Delete the product if price creation fails
+			log.Printf("Failed to create price, deleting product %s: %v", newProduct.ID, err)
+			_, delErr := product.Del(newProduct.ID, nil)
+			if delErr != nil {
+				log.Printf("Failed to delete product after price creation failure: %v", delErr)
+			}
+			http.Error(w, "Failed to create price: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Update product with default price
+		updateParams := &stripe.ProductParams{
+			DefaultPrice: stripe.String(newPrice.ID),
+		}
+		_, err = product.Update(newProduct.ID, updateParams)
+		if err != nil {
+			log.Printf("Warning: Failed to set default price for product %s: %v", newProduct.ID, err)
+			// Continue anyway, the product and price were created successfully
+		}
+
+		response.PriceID = newPrice.ID
+		log.Printf("Successfully created product %s with price %s", newProduct.ID, newPrice.ID)
+	} else {
+		log.Printf("Successfully created product %s without a default price", newProduct.ID)
+	}
+
+	// Return success response
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.NewEncoder(w).Encode(&response); err != nil {
 		log.Printf("Error encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
@@ -598,7 +606,7 @@ func ArchivePrice(w http.ResponseWriter, r *http.Request) {
 func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 	if r.Method == "OPTIONS" {
@@ -606,11 +614,9 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	productID := vars["id"]
-
 	var req struct {
-		PriceID string `json:"priceId"`
+		ProductID string `json:"productId"`
+		PriceID   string `json:"priceId"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -629,8 +635,8 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if the price belongs to the product
-	if priceObj.Product == nil || priceObj.Product.ID != productID {
-		log.Printf("Price product mismatch: price product=%v, requested product=%s", priceObj.Product, productID)
+	if priceObj.Product == nil || priceObj.Product.ID != req.ProductID {
+		log.Printf("Price product mismatch: price product=%v, requested product=%s", priceObj.Product, req.ProductID)
 		http.Error(w, "Price does not belong to this product", http.StatusBadRequest)
 		return
 	}
@@ -640,14 +646,14 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		DefaultPrice: stripe.String(req.PriceID),
 	}
 
-	updatedProduct, err := product.Update(productID, productParams)
+	updatedProduct, err := product.Update(req.ProductID, productParams)
 	if err != nil {
 		log.Printf("Error setting default price: %v", err)
 		http.Error(w, "Failed to set default price", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Successfully set default price %s for product %s", req.PriceID, productID)
+	log.Printf("Successfully set default price %s for product %s", req.PriceID, req.ProductID)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{

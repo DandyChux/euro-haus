@@ -74,6 +74,21 @@ export interface ProductVariant {
 	images?: string[];
 }
 
+export interface BundleItem {
+	productId: string;
+	productName: string;
+	quantity: number;
+	price: number;
+}
+
+export interface BundleProduct extends Product {
+	bundleItems: BundleItem[];
+	discountType: 'percentage' | 'fixed';
+	discountValue: number;
+	totalValue: number; // Total value if items bought separately
+	savings: number; // Amount saved
+}
+
 export interface ProductWithVariants extends Product {
 	variants: ProductVariant[];
 }
@@ -126,8 +141,64 @@ export interface EventWithTiers extends EventProduct {
 	priceTiers: TieredPrice[];
 }
 
+export type ProductOrBundle = Product | BundleProduct;
+
 export const stripeService = {
-	async getAllProducts(): Promise<Product[]> {
+	/**
+	 * Fetch all products and bundles from Stripe.
+	 *
+	 * @returns
+	 */
+	async getAllProductsAndBundles(): Promise<ProductOrBundle[]> {
+		try {
+			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
+
+			if (!response.data.products || response.data.products.length === 0) {
+				return [];
+			}
+
+			// Filter out event products
+			return response.data.products
+				.filter(p => p.metadata.type !== 'event')
+				.map(p => {
+					if (p.metadata.type === 'bundle') {
+						return this.transformStripeBundleProduct(p);
+					}
+					return this.transformStripeProduct(p);
+				});
+		} catch (error) {
+			console.error('Failed to fetch products from Stripe:', error);
+			throw new Error('Failed to load products');
+		}
+	},
+
+	/**
+	 * Fetch only browsable products for the catalog
+	 *
+	 * @returns
+	 */
+	async getAllCatalogProducts(): Promise<Product[]> {
+		const allItems = await this.getAllProductsAndBundles();
+		return allItems.filter(p => p.category !== 'bundle') as Product[];
+	},
+
+	/**
+	 * Find bundles that include a specific product ID.
+	 *
+	 * @param productId
+	 * @returns
+	 */
+	async findBundlesForProduct(productId: string): Promise<BundleProduct[]> {
+		const allItems = await this.getAllProductsAndBundles();
+		const bundles = allItems.filter(p => p.category === 'bundle') as BundleProduct[];
+
+		// Return bundles that include the given product ID
+		return bundles.filter(bundle =>
+			bundle.bundleItems.some(item => item.productId === productId)
+		);
+	},
+
+	async getAllProducts(): Promise<ProductOrBundle[]> {
 		try {
 			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
 
@@ -138,7 +209,12 @@ export const stripeService = {
 			// Filter out event products for regular product listing
 			return response.data.products
 				.filter(p => p.metadata.type !== 'event')
-				.map(this.transformStripeProduct);
+				.map(p => {
+					if (p.metadata.type === 'bundle') {
+						return this.transformStripeBundleProduct(p);
+					}
+					return this.transformStripeProduct(p);
+				});
 		} catch (error) {
 			console.error('Failed to fetch products from Stripe:', error);
 			throw new Error('Failed to load products');
@@ -278,6 +354,57 @@ export const stripeService = {
 			tags,
 			maxQuantity: stripeProduct.metadata.max_quantity ? parseInt(stripeProduct.metadata.max_quantity) : undefined,
 		};
+	},
+
+	transformStripeBundleProduct(stripeProduct: StripeProduct): BundleProduct {
+		const price = stripeProduct.default_price?.unit_amount ?
+			stripeProduct.default_price.unit_amount / 100 : 0;
+
+		// Parse bundle items from metadata
+		let bundleItems: BundleItem[] = [];
+		if (stripeProduct.metadata.bundle_items) {
+			try {
+				bundleItems = JSON.parse(stripeProduct.metadata.bundle_items);
+			} catch (e) {
+				console.error('Failed to parse bundle items:', e);
+			}
+		}
+
+		const discountType = (stripeProduct.metadata.discount_type || 'percentage') as 'percentage' | 'fixed';
+		const discountValue = parseFloat(stripeProduct.metadata.discount_value || '0');
+		const totalValue = parseFloat(stripeProduct.metadata.total_value || '0');
+		const savings = totalValue - price;
+
+		return {
+			id: stripeProduct.id,
+			priceId: stripeProduct.default_price?.id,
+			title: stripeProduct.name,
+			description: stripeProduct.description || '',
+			price,
+			images: stripeProduct.images,
+			inStock: stripeProduct.active && stripeProduct.metadata.in_stock !== 'false',
+			featured: stripeProduct.metadata.featured === 'true',
+			category: 'bundle',
+			maxQuantity: stripeProduct.metadata.max_quantity ? parseInt(stripeProduct.metadata.max_quantity) : undefined,
+			bundleItems,
+			discountType,
+			discountValue,
+			totalValue,
+			savings,
+		};
+	},
+
+	async getBundleProduct(productId: string): Promise<BundleProduct | null> {
+		try {
+			const response = await apiClient.get<StripeProduct>(`/products/${productId}`);
+			if (response.data.metadata.type === 'bundle') {
+				return this.transformStripeBundleProduct(response.data);
+			}
+			return null;
+		} catch (error) {
+			console.error('Failed to fetch bundle product:', error);
+			return null;
+		}
 	},
 
 	async transformStripeEventProduct(stripeProduct: StripeProduct): Promise<EventProduct> {
