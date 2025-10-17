@@ -81,13 +81,18 @@ export interface BundleItem {
 	price: number;
 }
 
+export interface BundleItemWithProduct extends BundleItem {
+	product: Product | ProductWithVariants; // Product might have variants
+}
+
 export interface BundleProduct extends Product {
-	bundleItems: BundleItem[];
+	bundleItems: BundleItem[] | BundleItemWithProduct[]; // Can be either depending on context
 	discountType: 'percentage' | 'fixed';
 	discountValue: number;
 	totalValue: number; // Total value if items bought separately
 	savings: number; // Amount saved
 }
+
 
 export interface ProductWithVariants extends Product {
 	variants: ProductVariant[];
@@ -143,6 +148,16 @@ export interface EventWithTiers extends EventProduct {
 
 export type ProductOrBundle = Product | BundleProduct;
 
+// Type guard to check if bundle items have product data
+export function bundleHasProductData(bundle: BundleProduct): bundle is BundleProduct & { bundleItems: BundleItemWithProduct[] } {
+	return bundle.bundleItems.length > 0 && 'product' in bundle.bundleItems[0];
+}
+
+// Helper type guard
+export function productHasVariants(product: Product | ProductWithVariants): product is ProductWithVariants {
+	return 'variants' in product && Array.isArray((product as ProductWithVariants).variants);
+}
+
 export const stripeService = {
 	/**
 	 * Fetch all products and bundles from Stripe.
@@ -182,6 +197,22 @@ export const stripeService = {
 		return allItems.filter(p => p.category !== 'bundle') as Product[];
 	},
 
+	async getProductsWithDetailsByIds(productIds: string[]): Promise<(Product | ProductWithVariants)[]> {
+		const productPromises = productIds.map(async (id) => {
+			// First try to get product with variants
+			const withVariants = await this.getProductWithVariants(id);
+			if (withVariants) {
+				return withVariants;
+			}
+			// Fallback to basic product
+			const response = await apiClient.get<StripeProduct>(`/products/${id}`);
+			return this.transformStripeProduct(response.data);
+		});
+
+		const results = await Promise.all(productPromises);
+		return results.filter((p): p is (Product | ProductWithVariants) => p !== null);
+	},
+
 	/**
 	 * Find bundles that include a specific product ID.
 	 *
@@ -190,12 +221,47 @@ export const stripeService = {
 	 */
 	async findBundlesForProduct(productId: string): Promise<BundleProduct[]> {
 		const allItems = await this.getAllProductsAndBundles();
-		const bundles = allItems.filter(p => p.category === 'bundle') as BundleProduct[];
+		const allBundles = allItems.filter(p => p.category === 'bundle') as BundleProduct[];
 
-		// Return bundles that include the given product ID
-		return bundles.filter(bundle =>
-			bundle.bundleItems.some(item => item.productId === productId)
+		const containingBundles = allBundles.filter(bundle =>
+			(bundle.bundleItems as BundleItem[]).some(item => item.productId === productId)
 		);
+
+		// Enrich bundle items with full product data including variants
+		const enrichedBundlesPromises = containingBundles.map(async (bundle) => {
+			const itemProductIds = (bundle.bundleItems as BundleItem[]).map(item => item.productId);
+			const productsForBundle = await this.getProductsWithDetailsByIds(itemProductIds);
+
+			const enrichedItems: BundleItemWithProduct[] = (bundle.bundleItems as BundleItem[]).map(item => {
+				const productData = productsForBundle.find(p => p.id === item.productId);
+				if (!productData) {
+					console.warn(`Product ${item.productId} not found for bundle ${bundle.id}`);
+					// Return a basic product as fallback
+					return {
+						...item,
+						product: {
+							id: item.productId,
+							title: item.productName,
+							description: '',
+							price: item.price,
+							images: [],
+							inStock: false,
+						} as Product
+					};
+				}
+				return {
+					...item,
+					product: productData,
+				};
+			});
+
+			return {
+				...bundle,
+				bundleItems: enrichedItems,
+			};
+		});
+
+		return Promise.all(enrichedBundlesPromises);
 	},
 
 	async getAllProducts(): Promise<ProductOrBundle[]> {

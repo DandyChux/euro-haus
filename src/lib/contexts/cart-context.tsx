@@ -12,6 +12,7 @@ export interface CartItem {
 	maxQuantity?: number;
 	type?: 'product' | 'event' | 'bundle'; // To distinguish between products and events
 	eventDate?: string; // For event tickets
+	metadata?: Record<string, any>;
 }
 
 interface CartContextType {

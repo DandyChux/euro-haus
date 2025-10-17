@@ -33,7 +33,7 @@ import { cn } from '~/lib/utils'
 import { stripeService, ProductVariant, ProductWithVariants, EventWithTiers, TieredPrice, StripeProduct, BundleProduct } from '~/lib/services/stripe-service'
 import { TieredPricing } from '~/components/tiered-pricing'
 import { BundleDisplay, BundleBadge } from '~/components/bundle-display'
-import { BundleOfferSection } from '~/components/bundle-offer'
+import { BundleOfferInteractive, SelectedVariant } from '~/components/bundle-offer'
 
 export const Route = createFileRoute('/catalog/$id')({
 	loader: async ({ params }) => {
@@ -263,6 +263,39 @@ function ProductDetailPage() {
 			type: 'bundle',
 		});
 		toast.success(`Added "${bundle.title}" to cart`);
+	};
+
+	// Handle adding bundle to cart with variant selections
+	const handleBundleAddToCart = (bundle: BundleProduct, selections: SelectedVariant[]) => {
+		// Create a descriptive title with selected variants
+		const variantDescriptions = selections
+			.filter(s => s.variant)
+			.map(s => s.variant!.variant)
+			.join(', ');
+
+		const bundleTitle = variantDescriptions
+			? `${bundle.title} (${variantDescriptions})`
+			: bundle.title;
+
+		// Add bundle to cart
+		// Note: You might want to store the selections in metadata
+		// or handle this differently based on your cart implementation
+		addItem({
+			id: bundle.id,
+			priceId: bundle.priceId,
+			title: bundleTitle,
+			description: `Bundle: ${bundle.bundleItems.map(i => i.productName).join(', ')}`,
+			price: bundle.price,
+			quantity: 1,
+			imageUrl: bundle.images[0],
+			maxQuantity: bundle.maxQuantity || 10,
+			type: 'bundle',
+			metadata: {
+				bundleSelections: JSON.stringify(selections),
+			}
+		});
+
+		toast.success('Bundle added to cart with your selections!');
 	};
 
 	// Share handler
@@ -756,7 +789,19 @@ function ProductDetailPage() {
 						</Tabs>
 					)}
 
-					<BundleOfferSection bundles={containingBundles!} onAddToCart={handleAddBundleToCart} />
+					{!isEvent && containingBundles && containingBundles.length > 0 && (
+						<div className="mt-12">
+							<h2 className="text-2xl font-bold mb-6">Save with Bundles</h2>
+							<div className="space-y-6">
+								{containingBundles.map(bundle => (
+									<BundleOfferInteractive
+										key={bundle.id}
+										bundle={bundle}
+									/>
+								))}
+							</div>
+						</div>
+					)}
 
 					{/* Related Products */}
 					<div className="mt-16">

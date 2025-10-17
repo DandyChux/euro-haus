@@ -203,6 +203,13 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		params.AllowPromotionCodes = stripe.Bool(true)
 	}
 
+	// Check if we need to collecting shipping address (for physical products)
+	if hasPhysicalProducts(req.LineItems) || len(req.AddOns) > 0 || req.PriceID != "" {
+		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
+			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
+		}
+	}
+
 	// Create the session
 	session, err := session.New(params)
 	if err != nil {
