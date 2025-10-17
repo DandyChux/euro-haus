@@ -60,6 +60,7 @@ func GetProductPrices(w http.ResponseWriter, r *http.Request) {
 
 	for iter.Next() {
 		p := iter.Price()
+
 		priceData := map[string]interface{}{
 			"id":          p.ID,
 			"product":     productID,

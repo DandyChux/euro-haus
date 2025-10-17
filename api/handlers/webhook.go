@@ -20,6 +20,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -470,6 +471,9 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		return
 	}
 
+	// Process stock updates for all items in the checkout session
+	processStockUpdates(fullSession)
+
 	// Keep track of products for order confirmation email
 	productItems := []map[string]interface{}{}
 	hasEventTickets := false
@@ -497,10 +501,6 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 
 		// Check if this is an event ticket
 		if lineItem.Price.Product.Metadata["type"] == "event" {
-			hasEventTickets = true
-			updateEventInventory(lineItem.Price.Product.ID, lineItem.Quantity)
-
-			// CRITICAL FIX: Only create tickets for non-participant purchases
 			// Check if this specific checkout is for a participant
 			isParticipantCheckout := fullSession.Metadata["participant"] == "true"
 
@@ -1556,6 +1556,270 @@ func updateEventInventory(productID string, quantitySold int64) {
 	}
 
 	log.Printf("Updated inventory for event %s: %d spots remaining\n", productID, newSpots)
+}
+
+// updateProductVariantStock updates the stock quantity for a specific product variant (price)
+func updateProductVariantStock(priceID string, quantitySold int64) {
+	// Get the current price with its metadata
+	p, err := price.Get(priceID, nil)
+	if err != nil {
+		log.Printf("Error fetching price %s: %v\n", priceID, err)
+		return
+	}
+
+	// Check if this price has stock tracking
+	stockQuantityStr, hasStock := p.Metadata["stock_quantity"]
+	if !hasStock || stockQuantityStr == "" {
+		// No stock tracking for this variant, skip
+		log.Printf("Price %s does not have stock tracking, skipping\n", priceID)
+		return
+	}
+
+	// Parse current stock
+	currentStock, err := strconv.Atoi(stockQuantityStr)
+	if err != nil {
+		log.Printf("Error parsing stock_quantity for price %s: %v\n", priceID, err)
+		return
+	}
+
+	// Calculate new stock
+	newStock := currentStock - int(quantitySold)
+	if newStock < 0 {
+		newStock = 0
+	}
+
+	// Prepare update params - we need to update ALL metadata fields
+	// because Stripe replaces the entire metadata object
+	updateParams := &stripe.PriceParams{
+		Metadata: p.Metadata, // Start with existing metadata
+	}
+
+	// Update stock quantity
+	updateParams.Metadata["stock_quantity"] = strconv.Itoa(newStock)
+
+	// Update in_stock status based on new quantity
+	if newStock == 0 {
+		updateParams.Metadata["in_stock"] = "false"
+	} else {
+		updateParams.Metadata["in_stock"] = "true"
+	}
+
+	// Update the price
+	_, err = price.Update(priceID, updateParams)
+	if err != nil {
+		log.Printf("Error updating price %s stock: %v\n", priceID, err)
+		return
+	}
+
+	// Log the stock update
+	variantName := p.Nickname
+	if variantName == "" {
+		variantName = p.Metadata["variant"]
+		if variantName == "" {
+			variantName = priceID
+		}
+	}
+
+	log.Printf("Updated stock for variant %s: %d -> %d units remaining\n", variantName, currentStock, newStock)
+
+	// Send low stock alert if needed
+	// if newStock > 0 && newStock <= 5 {
+	// 	sendLowStockAlert(p, newStock)
+	// }
+}
+
+// sendLowStockAlert sends an email notification when stock is low
+func sendLowStockAlert(p *stripe.Price, remainingStock int) {
+	// Get product details for the alert
+	prod, err := product.Get(p.Product.ID, nil)
+	if err != nil {
+		log.Printf("Error fetching product for low stock alert: %v\n", err)
+		return
+	}
+
+	variantName := p.Nickname
+	if variantName == "" {
+		variantName = p.Metadata["variant"]
+	}
+
+	// Send alert email to admin
+	adminEmail := os.Getenv("ADMIN_NOTIFICATION_EMAIL")
+	if adminEmail == "" {
+		adminEmail = "info@eurohaus.com" // Fallback
+	}
+
+	emailData := map[string]interface{}{
+		"ProductName":    prod.Name,
+		"VariantName":    variantName,
+		"Size":           p.Metadata["size"],
+		"Color":          p.Metadata["color"],
+		"RemainingStock": remainingStock,
+		"PriceID":        p.ID,
+		"ProductID":      prod.ID,
+	}
+
+	msg := &services.EmailMessage{
+		To:       []string{adminEmail},
+		Subject:  fmt.Sprintf("Low Stock Alert: %s - %s", prod.Name, variantName),
+		BodyHTML: generateLowStockAlertHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending low stock alert: %v", err)
+	}
+}
+
+// generateLowStockAlertHTML generates the HTML for low stock alert emails
+func generateLowStockAlertHTML(data map[string]interface{}) string {
+	productName := data["ProductName"].(string)
+	variantName := data["VariantName"].(string)
+	remainingStock := data["RemainingStock"].(int)
+
+	sizeInfo := ""
+	if size, ok := data["Size"].(string); ok && size != "" {
+		sizeInfo = fmt.Sprintf(" (Size: %s)", size)
+	}
+
+	colorInfo := ""
+	if color, ok := data["Color"].(string); ok && color != "" {
+		colorInfo = fmt.Sprintf(" (Color: %s)", color)
+	}
+
+	return fmt.Sprintf(`
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<style>
+			body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+			.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+			.header { background: #ff6b6b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+			.content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+			.alert { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
+			.details { background: white; padding: 15px; border-radius: 5px; margin: 20px 0; }
+			.action-btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>⚠️ Low Stock Alert</h1>
+			</div>
+			<div class="content">
+				<div class="alert">
+					<h2>Immediate Attention Required</h2>
+					<p>The following product variant is running low on stock:</p>
+				</div>
+
+				<div class="details">
+					<h3>Product Details:</h3>
+					<ul>
+						<li><strong>Product:</strong> %s</li>
+						<li><strong>Variant:</strong> %s%s%s</li>
+						<li><strong>Remaining Stock:</strong> <span style="color: #ff6b6b; font-weight: bold;">%d units</span></li>
+					</ul>
+				</div>
+
+				<p>Please restock this item as soon as possible to avoid stockouts.</p>
+
+				<a href="%s" class="action-btn">View in Stripe Dashboard</a>
+			</div>
+		</div>
+	</body>
+	</html>
+	`, productName, variantName, sizeInfo, colorInfo, remainingStock,
+		fmt.Sprintf("https://dashboard.stripe.com/products/%s", data["ProductID"]))
+}
+
+// processStockUpdates handles stock updates for all items in a checkout session
+func processStockUpdates(checkoutSession *stripe.CheckoutSession) {
+	// Process each line item
+	for _, lineItem := range checkoutSession.LineItems.Data {
+		// Skip if no price ID
+		if lineItem.Price == nil {
+			continue
+		}
+
+		priceID := lineItem.Price.ID
+		quantitySold := lineItem.Quantity
+
+		// Get the product type from metadata
+		if lineItem.Price.Product != nil {
+			productType := lineItem.Price.Product.Metadata["type"]
+
+			switch productType {
+			case "event":
+				// Update event inventory
+				updateEventInventory(lineItem.Price.Product.ID, quantitySold)
+
+			case "product":
+				// Update product variant stock
+				updateProductVariantStock(priceID, quantitySold)
+
+			case "bundle":
+				// For bundles, we need to update stock for each bundled item
+				// This is more complex as we need to parse the bundle metadata
+				handleBundleStockUpdate(lineItem.Price.Product.ID, quantitySold)
+
+			default:
+				// Regular product without specific type - still try to update stock
+				updateProductVariantStock(priceID, quantitySold)
+			}
+		} else {
+			// No product info, just try to update as variant stock
+			updateProductVariantStock(priceID, quantitySold)
+		}
+	}
+}
+
+// handleBundleStockUpdate processes stock updates for bundle products
+func handleBundleStockUpdate(bundleProductID string, quantitySold int64) {
+	// Get the bundle product
+	p, err := product.Get(bundleProductID, nil)
+	if err != nil {
+		log.Printf("Error fetching bundle product %s: %v\n", bundleProductID, err)
+		return
+	}
+
+	// Parse bundle items from metadata
+	bundleItemsJSON, exists := p.Metadata["bundle_items"]
+	if !exists || bundleItemsJSON == "" {
+		log.Printf("Bundle %s has no bundle_items metadata\n", bundleProductID)
+		return
+	}
+
+	// Parse the JSON to get bundle items
+	var bundleItems []struct {
+		ProductID string `json:"productId"`
+		Quantity  int    `json:"quantity"`
+	}
+
+	if err := json.Unmarshal([]byte(bundleItemsJSON), &bundleItems); err != nil {
+		log.Printf("Error parsing bundle_items for %s: %v\n", bundleProductID, err)
+		return
+	}
+
+	// For each item in the bundle, update its stock
+	for _, item := range bundleItems {
+		// Get the product's default price or prices
+		bundledProduct, err := product.Get(item.ProductID, nil)
+		if err != nil {
+			log.Printf("Error fetching bundled product %s: %v\n", item.ProductID, err)
+			continue
+		}
+
+		// Calculate total quantity to decrement (bundle quantity * item quantity * quantity sold)
+		totalQuantity := int64(item.Quantity) * quantitySold
+
+		// If product has variants, we need to handle this differently
+		// For simplicity, we'll update the default price if it exists
+		if bundledProduct.DefaultPrice != nil {
+			updateProductVariantStock(bundledProduct.DefaultPrice.ID, totalQuantity)
+		} else {
+			log.Printf("Bundle item %s has no default price to update stock\n", item.ProductID)
+		}
+	}
+
+	log.Printf("Processed stock updates for bundle %s\n", bundleProductID)
 }
 
 // generateUniqueToken creates a unique token for a ticket

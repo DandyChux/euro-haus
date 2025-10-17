@@ -37,7 +37,7 @@ export function VariantStockManager({ productId }: VariantStockManagerProps) {
 	useEffect(() => {
 		const fetchPrices = async () => {
 			try {
-				const response = await apiClient.get(`/admin/product-prices/${productId}`);
+				const response = await apiClient.get(`/products/${productId}/prices`);
 				const priceData = response.data.prices || [];
 				setPrices(priceData);
 
@@ -96,7 +96,7 @@ export function VariantStockManager({ productId }: VariantStockManagerProps) {
 			setHasChanges(false);
 
 			// Refresh prices to get updated metadata
-			const response = await apiClient.get(`/admin/product-prices/${productId}`);
+			const response = await apiClient.get(`/products/${productId}/prices`);
 			setPrices(response.data.prices || []);
 		} catch (error) {
 			console.error('Failed to update stock levels:', error);
