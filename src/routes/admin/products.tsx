@@ -440,6 +440,7 @@ function AdminProductsContent() {
 								color: variant.color || '',
 								sku: variant.sku || '',
 								in_stock: variant.inStock.toString(),
+								stock_quantity: variant.stockQuantity || '',
 								sort_order: variant.sortOrder.toString(),
 							},
 						};

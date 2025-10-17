@@ -21,6 +21,7 @@ export const productVariantSchema = z.object({
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
 	sku: z.string().optional(),
 	inStock: z.boolean(),
+	stockQuantity: z.string().regex(/^\d*$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
 });
 

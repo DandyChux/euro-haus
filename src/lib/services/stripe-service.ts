@@ -71,6 +71,7 @@ export interface ProductVariant {
 	variant: string;
 	price: number;
 	inStock: boolean;
+	stockQuantity?: number;
 	images?: string[];
 }
 
@@ -575,7 +576,9 @@ export const stripeService = {
 				color: price.metadata.color,
 				variant: price.metadata.variant || price.nickname || 'Standard',
 				price: price.unit_amount / 100,
-				inStock: price.metadata.in_stock !== 'false',
+				inStock: price.metadata?.in_stock !== 'false' &&
+					(!price.metadata?.stock_quantity || parseInt(price.metadata.stock_quantity) > 0),
+				stockQuantity: price.metadata?.stock_quantity ? parseInt(price.metadata.stock_quantity) : undefined,
 				images: price.metadata.images ? JSON.parse(price.metadata.images) : []
 			}));
 
