@@ -155,6 +155,9 @@ func main() {
 	// Price management endpoints (requires authentication)
 	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/update-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePrice))).Methods("PUT", "OPTIONS")
+	// In main.go, add this line in the price management section (around line 150):
+	api.Handle("/admin/update-price-metadata/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePriceMetadata))).Methods("PUT", "OPTIONS")
+
 	api.Handle("/admin/archive-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.ArchivePrice))).Methods("PUT", "OPTIONS")
 	api.Handle("/admin/set-default-price", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("POST", "OPTIONS")
 

@@ -81,12 +81,24 @@ export function VariantStockManager({ productId }: VariantStockManagerProps) {
 
 				// Only update if changed
 				if (newQuantity !== currentQuantity) {
-					await apiClient.put(`/admin/update-price-metadata/${price.id}`, {
-						metadata: {
-							...price.metadata,
-							stock_quantity: newQuantity,
-							in_stock: newQuantity === '0' ? 'false' : 'true'
+					// Create a complete metadata object with all fields
+					const updatedMetadata: Record<string, string> = {};
+
+					// Copy all existing metadata fields
+					Object.keys(price.metadata).forEach(key => {
+						const value = price.metadata[key];
+						if (value !== undefined) {
+							updatedMetadata[key] = value;
 						}
+					});
+
+					// Update the stock quantity and in_stock fields
+					updatedMetadata.stock_quantity = newQuantity;
+					updatedMetadata.in_stock = newQuantity === '0' ? 'false' : 'true';
+
+					// Send the complete metadata object
+					await apiClient.put(`/admin/update-price-metadata/${price.id}`, {
+						metadata: updatedMetadata
 					});
 				}
 			});
@@ -98,13 +110,24 @@ export function VariantStockManager({ productId }: VariantStockManagerProps) {
 			// Refresh prices to get updated metadata
 			const response = await apiClient.get(`/products/${productId}/prices`);
 			setPrices(response.data.prices || []);
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Failed to update stock levels:', error);
-			toast.error('Failed to update stock levels');
+
+			// More specific error messages
+			if (error.response?.status === 404) {
+				toast.error('Price not found. Please refresh and try again.');
+			} else if (error.response?.status === 401) {
+				toast.error('Authentication required. Please log in again.');
+			} else if (error.response?.data?.message) {
+				toast.error(error.response.data.message);
+			} else {
+				toast.error('Failed to update stock levels. Please try again.');
+			}
 		} finally {
 			setIsSaving(false);
 		}
 	};
+
 
 	if (isLoading) {
 		return <div className="animate-pulse bg-muted h-32 rounded-lg" />;
