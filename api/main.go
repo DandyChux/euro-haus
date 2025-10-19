@@ -122,6 +122,8 @@ func main() {
 
 	// Payment endpoints
 	api.HandleFunc("/create-payment-intent", handlers.CreatePaymentIntent).Methods("POST")
+	api.HandleFunc("/calculate-tax-shipping", handlers.CalculateTaxAndShipping).Methods("POST", "OPTIONS")
+	api.HandleFunc("/shipping-rates", handlers.GetShippingRates).Methods("GET", "OPTIONS")
 	api.HandleFunc("/create-checkout-session", handlers.CreateCheckoutSession).Methods("POST")
 	api.HandleFunc("/checkout-session", handlers.GetCheckoutSession).Methods("GET", "OPTIONS")
 

@@ -1,3 +1,4 @@
+// Updated euro-haus/src/routes/cart.tsx
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
@@ -6,9 +7,12 @@ import { Input } from '~/components/ui/input';
 import { Image } from '~/components/ui/image';
 import { Badge } from '~/components/ui/badge';
 import { Skeleton } from '~/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '~/components/ui/radio-group';
+import { Label } from '~/components/ui/label';
 import { useCart } from '~/lib/contexts/cart-context';
-import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, Package, Truck, Shield } from 'lucide-react';
-import { useState } from 'react';
+import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, Package, Truck, Shield, MapPin, Clock } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
@@ -18,6 +22,28 @@ export const Route = createFileRoute('/cart')({
 });
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+
+interface ShippingRate {
+	id: string;
+	display_name: string;
+	amount: number;
+	currency: string;
+	metadata?: {
+		delivery_days?: string;
+		eligible?: string;
+	};
+}
+
+interface TaxCalculationRequest {
+	line_items: Array<{ amount: number; reference: string; tax_code: string }>;
+	currency: string;
+	shipping_amount: number;
+	address?: {
+		country: string;
+		state: string;
+		postal_code: string;
+	};
+}
 
 function CartItemSkeleton() {
 	return (
@@ -40,15 +66,135 @@ function CartPage() {
 	const { items, removeItem, updateQuantity, subtotal, clearCart, isLoading } = useCart();
 	const [isCheckingOut, setIsCheckingOut] = useState(false);
 	const [promoCode, setPromoCode] = useState('');
+	const [isCalculatingTax, setIsCalculatingTax] = useState(false);
+	const [taxAmount, setTaxAmount] = useState<number>(0);
+	const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
+	const [selectedShippingRate, setSelectedShippingRate] = useState<string>('');
+	const [isLoadingShippingRates, setIsLoadingShippingRates] = useState(false);
 
-	// Calculate pricing
-	const shipping = subtotal > 75 ? 0 : 9.99;
-	const tax = subtotal * 0.08; // 8% tax rate
+	// Simple address collection for tax calculation
+	const [shippingAddress, setShippingAddress] = useState({
+		country: 'US',
+		state: '',
+		postal_code: ''
+	});
+
+	// Fetch shipping rates when cart changes
+	const fetchShippingRates = useCallback(async () => {
+		try {
+			setIsLoadingShippingRates(true);
+			const response = await apiClient.get('/shipping-rates', {
+				params: {
+					country: shippingAddress.country,
+					subtotal: Math.round(subtotal * 100) // Convert to cents
+				}
+			});
+
+			const rates = response.data as ShippingRate[];
+			setShippingRates(rates);
+
+			// Auto-select the first (best) rate
+			if (rates.length > 0 && !selectedShippingRate) {
+				setSelectedShippingRate(rates[0].id);
+			}
+		} catch (error) {
+			console.error('Error fetching shipping rates:', error);
+			// Fallback rates
+			const fallbackRates: ShippingRate[] = subtotal >= 75
+				? [
+					{ id: 'free_standard', display_name: 'FREE Standard Shipping (5-7 business days)', amount: 0, currency: 'usd' },
+					{ id: 'express', display_name: 'Express Shipping (2-3 business days)', amount: 1999, currency: 'usd' }
+				]
+				: [
+					{ id: 'standard', display_name: 'Standard Shipping (5-7 business days)', amount: 999, currency: 'usd' },
+					{ id: 'express', display_name: 'Express Shipping (2-3 business days)', amount: 1999, currency: 'usd' }
+				];
+			setShippingRates(fallbackRates);
+			if (!selectedShippingRate && fallbackRates.length > 0) {
+				setSelectedShippingRate(fallbackRates[0].id);
+			}
+		} finally {
+			setIsLoadingShippingRates(false);
+		}
+	}, [shippingAddress.country, subtotal, selectedShippingRate]);
+
+	// Calculate tax when cart or address changes
+	const calculateTax = useCallback(async () => {
+		if (items.length === 0) {
+			setTaxAmount(0);
+			return;
+		}
+
+		// Get selected shipping amount
+		const selectedRate = shippingRates.find(rate => rate.id === selectedShippingRate);
+		const shippingAmount = selectedRate?.amount || 0;
+
+		try {
+			setIsCalculatingTax(true);
+
+			// Prepare line items for tax calculation
+			const lineItems = items.map(item => ({
+				amount: Math.round(item.price * item.quantity * 100), // Convert to cents
+				reference: item.id,
+				tax_code: item.type === 'event' ? 'txcd_10000000' : 'txcd_99999999' // General merchandise tax code
+			}));
+
+			const requestData: TaxCalculationRequest = {
+				line_items: lineItems,
+				currency: 'usd',
+				shipping_amount: shippingAmount // Include shipping in tax calculation
+			};
+
+			// Only include address if we have enough information
+			if (shippingAddress.postal_code && shippingAddress.state) {
+				requestData.address = {
+					country: shippingAddress.country,
+					state: shippingAddress.state,
+					postal_code: shippingAddress.postal_code
+				};
+			}
+
+			const response = await apiClient.post('/calculate-tax-shipping', requestData);
+
+			// Use only the tax amount from the response, not shipping (we handle that separately)
+			setTaxAmount(response.data.tax_amount / 100); // Convert from cents
+		} catch (error) {
+			console.error('Error calculating tax:', error);
+			// Don't fall back to a fixed percentage - show 0 if we can't calculate
+			// This prevents showing incorrect estimates
+			setTaxAmount(0);
+		} finally {
+			setIsCalculatingTax(false);
+		}
+	}, [items, shippingRates, selectedShippingRate, shippingAddress]);
+
+	useEffect(() => {
+		if (items.length > 0) {
+			fetchShippingRates();
+		}
+	}, [items.length, subtotal, fetchShippingRates]);
+
+	useEffect(() => {
+		if (items.length > 0 && shippingAddress.postal_code && shippingAddress.state) {
+			calculateTax();
+		}
+	}, [items.length, shippingAddress.postal_code, shippingAddress.state, selectedShippingRate, calculateTax]);
+
+	// Calculate totals based on current selections
+	const selectedShippingAmount = shippingRates.find(rate => rate.id === selectedShippingRate)?.amount || 0;
+	const shipping = selectedShippingAmount / 100; // Convert from cents
+	const tax = taxAmount;
 	const total = subtotal + shipping + tax;
 
 	const handleCheckout = async () => {
 		if (items.length === 0) {
 			toast.error('Your cart is empty');
+			return;
+		}
+
+		// Validate shipping selection
+		if (!selectedShippingRate) {
+			toast.error('Please select a shipping method');
 			return;
 		}
 
@@ -80,16 +226,22 @@ function CartPage() {
 							unit_amount: Math.round(item.price * 100),
 						},
 						quantity: item.quantity,
+						// Add tax code for each item
+						tax_code: item.type === 'event' ? 'txcd_10000000' : 'txcd_99999999'
 					};
 				}
 			});
 
-			// Create checkout session
+			// Find selected shipping rate details
+			const selectedRate = shippingRates.find(rate => rate.id === selectedShippingRate);
+
+			// Create checkout session with automatic tax and selected shipping
 			const response = await apiClient.post('/create-checkout-session', {
 				line_items: lineItems,
 				mode: 'payment',
 				success_url: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
 				cancel_url: `${window.location.origin}/cart`,
+				allow_promotion_codes: true,
 				metadata: {
 					cart_items: JSON.stringify(items.map(item => ({
 						id: item.id,
@@ -97,7 +249,17 @@ function CartPage() {
 						quantity: item.quantity,
 						type: item.type,
 					}))),
+					selected_shipping_rate: selectedShippingRate,
+					shipping_amount: selectedRate?.amount?.toString() || '0'
 				},
+				// Pass pre-selected shipping info if available
+				...(shippingAddress.postal_code && shippingAddress.state && {
+					customer_address: {
+						country: shippingAddress.country,
+						state: shippingAddress.state,
+						postal_code: shippingAddress.postal_code
+					}
+				})
 			});
 
 			// Redirect to Stripe checkout
@@ -288,6 +450,131 @@ function CartPage() {
 								<CardTitle>Order Summary</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-4">
+								{/* Shipping Address for Tax Calculation */}
+								<div className="space-y-2">
+									<div className="flex items-center gap-2 text-sm font-medium">
+										<MapPin className="h-4 w-4" />
+										<span>Delivery Location</span>
+									</div>
+									<div className="grid grid-cols-2 gap-2">
+										<Select
+											value={shippingAddress.state}
+											onValueChange={(value) => setShippingAddress({ ...shippingAddress, state: value })}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="State" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="AL">Alabama</SelectItem>
+												<SelectItem value="AK">Alaska</SelectItem>
+												<SelectItem value="AZ">Arizona</SelectItem>
+												<SelectItem value="AR">Arkansas</SelectItem>
+												<SelectItem value="CA">California</SelectItem>
+												<SelectItem value="CO">Colorado</SelectItem>
+												<SelectItem value="CT">Connecticut</SelectItem>
+												<SelectItem value="DE">Delaware</SelectItem>
+												<SelectItem value="FL">Florida</SelectItem>
+												<SelectItem value="GA">Georgia</SelectItem>
+												<SelectItem value="HI">Hawaii</SelectItem>
+												<SelectItem value="ID">Idaho</SelectItem>
+												<SelectItem value="IL">Illinois</SelectItem>
+												<SelectItem value="IN">Indiana</SelectItem>
+												<SelectItem value="IA">Iowa</SelectItem>
+												<SelectItem value="KS">Kansas</SelectItem>
+												<SelectItem value="KY">Kentucky</SelectItem>
+												<SelectItem value="LA">Louisiana</SelectItem>
+												<SelectItem value="ME">Maine</SelectItem>
+												<SelectItem value="MD">Maryland</SelectItem>
+												<SelectItem value="MA">Massachusetts</SelectItem>
+												<SelectItem value="MI">Michigan</SelectItem>
+												<SelectItem value="MN">Minnesota</SelectItem>
+												<SelectItem value="MS">Mississippi</SelectItem>
+												<SelectItem value="MO">Missouri</SelectItem>
+												<SelectItem value="MT">Montana</SelectItem>
+												<SelectItem value="NE">Nebraska</SelectItem>
+												<SelectItem value="NV">Nevada</SelectItem>
+												<SelectItem value="NH">New Hampshire</SelectItem>
+												<SelectItem value="NJ">New Jersey</SelectItem>
+												<SelectItem value="NM">New Mexico</SelectItem>
+												<SelectItem value="NY">New York</SelectItem>
+												<SelectItem value="NC">North Carolina</SelectItem>
+												<SelectItem value="ND">North Dakota</SelectItem>
+												<SelectItem value="OH">Ohio</SelectItem>
+												<SelectItem value="OK">Oklahoma</SelectItem>
+												<SelectItem value="OR">Oregon</SelectItem>
+												<SelectItem value="PA">Pennsylvania</SelectItem>
+												<SelectItem value="RI">Rhode Island</SelectItem>
+												<SelectItem value="SC">South Carolina</SelectItem>
+												<SelectItem value="SD">South Dakota</SelectItem>
+												<SelectItem value="TN">Tennessee</SelectItem>
+												<SelectItem value="TX">Texas</SelectItem>
+												<SelectItem value="UT">Utah</SelectItem>
+												<SelectItem value="VT">Vermont</SelectItem>
+												<SelectItem value="VA">Virginia</SelectItem>
+												<SelectItem value="WA">Washington</SelectItem>
+												<SelectItem value="WV">West Virginia</SelectItem>
+												<SelectItem value="WI">Wisconsin</SelectItem>
+												<SelectItem value="WY">Wyoming</SelectItem>
+											</SelectContent>
+										</Select>
+										<Input
+											placeholder="ZIP Code"
+											value={shippingAddress.postal_code}
+											onChange={(e) => setShippingAddress({ ...shippingAddress, postal_code: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+											maxLength={5}
+										/>
+									</div>
+									{!shippingAddress.state || !shippingAddress.postal_code ? (
+										<p className="text-xs text-muted-foreground">
+											Enter your location for accurate tax and shipping calculations
+										</p>
+									) : null}
+								</div>
+
+								{/* Shipping Method Selection */}
+								{shippingRates.length > 0 && (
+									<div className="space-y-2">
+										<div className="flex items-center gap-2 text-sm font-medium">
+											<Truck className="h-4 w-4" />
+											<span>Shipping Method</span>
+										</div>
+										{isLoadingShippingRates ? (
+											<Skeleton className="h-20 w-full" />
+										) : (
+											<RadioGroup value={selectedShippingRate} onValueChange={setSelectedShippingRate}>
+												{shippingRates.map(rate => (
+													<div key={rate.id} className="flex items-center space-x-2 p-3 border rounded-md hover:bg-muted/50">
+														<RadioGroupItem value={rate.id} id={rate.id} />
+														<Label htmlFor={rate.id} className="flex-1 cursor-pointer">
+															<div className="flex justify-between items-start">
+																<div>
+																	<p className="font-medium text-sm">
+																		{rate.display_name}
+																	</p>
+																	{rate.metadata?.delivery_days && (
+																		<p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+																			<Clock className="h-3 w-3" />
+																			{rate.metadata.delivery_days} business days
+																		</p>
+																	)}
+																</div>
+																<p className="font-bold text-sm">
+																	{rate.amount === 0 ? 'FREE' : `$${(rate.amount / 100).toFixed(2)}`}
+																</p>
+															</div>
+														</Label>
+													</div>
+												))}
+											</RadioGroup>
+										)}
+										{subtotal < 75 && (
+											<p className="text-xs text-muted-foreground">
+												Add ${(75 - subtotal).toFixed(2)} more to qualify for free shipping!
+											</p>
+										)}
+									</div>
+								)}
+
 								{/* Promo Code */}
 								<div className="flex gap-2">
 									<Input
@@ -295,7 +582,7 @@ function CartPage() {
 										value={promoCode}
 										onChange={(e) => setPromoCode(e.target.value)}
 									/>
-									<Button variant="outline" size="default">
+									<Button variant="outline" size="default" disabled>
 										Apply
 									</Button>
 								</div>
@@ -310,22 +597,47 @@ function CartPage() {
 									</div>
 									<div className="flex justify-between text-sm">
 										<span>Shipping</span>
-										<span>{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
+										{isLoadingShippingRates ? (
+											<Skeleton className="h-4 w-16" />
+										) : (
+											<span>{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
+										)}
 									</div>
 									<div className="flex justify-between text-sm">
-										<span>Tax</span>
-										<span>${tax.toFixed(2)}</span>
+										<span>Estimated Tax</span>
+										{isCalculatingTax ? (
+											<Skeleton className="h-4 w-16" />
+										) : (
+											<span>
+												{tax > 0 ? `$${tax.toFixed(2)}` : (
+													shippingAddress.state && shippingAddress.postal_code ? '$0.00' : 'TBD'
+												)}
+											</span>
+										)}
 									</div>
 									{shipping === 0 && (
 										<Badge variant="secondary" className="w-full justify-center">
-											You qualify for free shipping!
+											✨ You qualify for free shipping!
 										</Badge>
 									)}
 									<Separator />
 									<div className="flex justify-between font-bold text-lg">
 										<span>Total</span>
-										<span>${total.toFixed(2)}</span>
+										{isCalculatingTax || isLoadingShippingRates ? (
+											<Skeleton className="h-6 w-20" />
+										) : (
+											<span>${total.toFixed(2)}</span>
+										)}
 									</div>
+									{!shippingAddress.state || !shippingAddress.postal_code ? (
+										<p className="text-xs text-muted-foreground">
+											Final tax will be calculated at checkout based on your shipping address
+										</p>
+									) : (
+										<p className="text-xs text-muted-foreground">
+											Tax calculated for {shippingAddress.state}. Final amount may vary slightly.
+										</p>
+									)}
 								</div>
 							</CardContent>
 							<CardFooter className="flex flex-col gap-2">
@@ -333,7 +645,7 @@ function CartPage() {
 									className="w-full"
 									size="lg"
 									onClick={handleCheckout}
-									disabled={isCheckingOut}
+									disabled={isCheckingOut || isCalculatingTax || isLoadingShippingRates || !selectedShippingRate}
 								>
 									{isCheckingOut ? 'Processing...' : 'Proceed to Checkout'}
 									<ArrowRight className="ml-2 h-4 w-4" />
