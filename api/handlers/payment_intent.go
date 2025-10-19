@@ -594,7 +594,7 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	// If there are physical products, collect shipping address
 	if hasIncludedProducts || len(req.AddOnProducts) > 0 {
 		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
-			AllowedCountries: stripe.StringSlice([]string{"US", "CA"}),
+			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
 		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{
 			{

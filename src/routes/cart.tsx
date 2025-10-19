@@ -47,14 +47,14 @@ interface TaxCalculationRequest {
 
 function CartItemSkeleton() {
 	return (
-		<div className="flex gap-4 p-4 border rounded-lg">
-			<Skeleton className="w-24 h-24 rounded-md" />
+		<div className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg">
+			<Skeleton className="w-full sm:w-24 h-24 rounded-md" />
 			<div className="flex-1 space-y-2">
 				<Skeleton className="h-5 w-3/4" />
 				<Skeleton className="h-4 w-1/2" />
 				<Skeleton className="h-4 w-24" />
 			</div>
-			<div className="flex flex-col items-end space-y-2">
+			<div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start space-y-0 sm:space-y-2 mt-3 sm:mt-0">
 				<Skeleton className="h-4 w-20" />
 				<Skeleton className="h-8 w-24" />
 			</div>
@@ -280,9 +280,9 @@ function CartPage() {
 	if (isLoading) {
 		return (
 			<div className="min-h-screen bg-background">
-				<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-					<Skeleton className="h-10 w-48 mb-8" />
-					<div className="grid lg:grid-cols-3 gap-8">
+				<div className="max-w-7xl mx-auto px-4 py-8 sm:py-12">
+					<Skeleton className="h-8 sm:h-10 w-32 sm:w-48 mb-6 sm:mb-8" />
+					<div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
 						<div className="lg:col-span-2 space-y-4">
 							{[1, 2, 3].map((i) => (
 								<CartItemSkeleton key={i} />
@@ -307,24 +307,24 @@ function CartPage() {
 
 	if (items.length === 0) {
 		return (
-			<div className="min-h-screen bg-background flex items-center justify-center">
-				<div className="text-center space-y-6 p-8">
-					<div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center">
-						<ShoppingBag className="w-12 h-12 text-muted-foreground" />
+			<div className="min-h-screen bg-background flex items-center justify-center px-4">
+				<div className="text-center space-y-4 sm:space-y-6 p-6 sm:p-8 max-w-md w-full">
+					<div className="mx-auto w-20 h-20 sm:w-24 sm:h-24 bg-muted rounded-full flex items-center justify-center">
+						<ShoppingBag className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground" />
 					</div>
-					<h1 className="text-3xl font-bold">Your cart is empty</h1>
-					<p className="text-muted-foreground max-w-md mx-auto">
+					<h1 className="text-2xl sm:text-3xl font-bold">Your cart is empty</h1>
+					<p className="text-sm sm:text-base text-muted-foreground">
 						Looks like you haven't added anything to your cart yet.
 						Start shopping to find your perfect Euro Haus gear!
 					</p>
-					<div className="flex gap-4 justify-center">
-						<Button asChild>
+					<div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+						<Button asChild className="w-full sm:w-auto">
 							<Link to="/catalog">
 								Browse Products
 								<ArrowRight className="ml-2 h-4 w-4" />
 							</Link>
 						</Button>
-						<Button asChild variant="outline">
+						<Button asChild variant="outline" className="w-full sm:w-auto">
 							<Link to="/events">View Events</Link>
 						</Button>
 					</div>
@@ -335,29 +335,34 @@ function CartPage() {
 
 	return (
 		<div className="min-h-screen bg-background">
-			<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+			<div className="max-w-7xl mx-auto px-4 py-6 sm:py-8 lg:py-12">
 				{/* Header */}
-				<div className="flex items-center justify-between mb-8">
-					<h1 className="text-3xl font-bold">Shopping Cart ({items.length} {items.length === 1 ? 'item' : 'items'})</h1>
+				<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 sm:mb-8">
+					<h1 className="text-2xl sm:text-3xl font-bold">
+						Shopping Cart
+						<span className="text-base sm:text-lg font-normal text-muted-foreground ml-2">
+							({items.length} {items.length === 1 ? 'item' : 'items'})
+						</span>
+					</h1>
 					<Button
 						variant="ghost"
 						size="sm"
 						onClick={clearCart}
-						className="text-muted-foreground hover:text-foreground"
+						className="text-muted-foreground hover:text-foreground self-start sm:self-auto"
 					>
 						Clear Cart
 					</Button>
 				</div>
 
-				<div className="grid lg:grid-cols-3 gap-8">
+				<div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
 					{/* Cart Items */}
 					<div className="lg:col-span-2 space-y-4">
 						{items.map((item) => (
 							<Card key={item.id} className="overflow-hidden">
-								<CardContent className="p-4">
-									<div className="flex gap-4">
+								<CardContent className="p-3 sm:p-4">
+									<div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
 										{/* Product Image */}
-										<div className="relative w-24 h-24 flex-shrink-0">
+										<div className="relative w-full sm:w-24 h-32 sm:h-24 flex-shrink-0">
 											<Image
 												src={item.imageUrl}
 												alt={item.title}
@@ -366,14 +371,47 @@ function CartPage() {
 										</div>
 
 										{/* Product Details */}
-										<div className="flex-1 min-w-0">
-											<h3 className="font-semibold text-lg truncate">{item.title}</h3>
-											<p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>
-											<p className="text-lg font-bold mt-2">${item.price.toFixed(2)}</p>
+										<div className="flex-1 min-w-0 space-y-1">
+											<h3 className="font-semibold text-base sm:text-lg line-clamp-2">{item.title}</h3>
+											<p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">{item.description}</p>
+											<p className="text-lg font-bold">${item.price.toFixed(2)}</p>
 										</div>
 
-										{/* Quantity and Actions */}
-										<div className="flex flex-col items-end justify-between">
+										{/* Quantity and Actions - Mobile */}
+										<div className="flex items-center justify-between sm:hidden mt-2">
+											<div className="flex items-center gap-2">
+												<Button
+													variant="outline"
+													size="icon"
+													className="h-7 w-7"
+													onClick={() => updateQuantity(item.id, item.quantity - 1)}
+													disabled={item.quantity <= 1}
+												>
+													<Minus className="h-3 w-3" />
+												</Button>
+												<span className="w-8 text-center text-sm">{item.quantity}</span>
+												<Button
+													variant="outline"
+													size="icon"
+													className="h-7 w-7"
+													onClick={() => updateQuantity(item.id, item.quantity + 1)}
+													disabled={item.quantity >= (item.maxQuantity || 99)}
+												>
+													<Plus className="h-3 w-3" />
+												</Button>
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => removeItem(item.id)}
+												className="text-muted-foreground hover:text-destructive"
+											>
+												Remove
+											</Button>
+										</div>
+
+										{/* Quantity and Actions - Desktop */}
+										<div className="hidden sm:flex flex-col items-end justify-between">
 											<Button
 												variant="ghost"
 												size="icon"
@@ -418,23 +456,23 @@ function CartPage() {
 						))}
 
 						{/* Features */}
-						<div className="grid sm:grid-cols-3 gap-4 mt-8">
-							<div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-								<Truck className="h-5 w-5 text-primary" />
+						<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-6 sm:mt-8">
+							<div className="flex items-center gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
+								<Truck className="h-5 w-5 text-primary flex-shrink-0" />
 								<div>
 									<p className="font-medium text-sm">Free Shipping</p>
 									<p className="text-xs text-muted-foreground">On orders over $75</p>
 								</div>
 							</div>
-							<div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-								<Package className="h-5 w-5 text-primary" />
+							<div className="flex items-center gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
+								<Package className="h-5 w-5 text-primary flex-shrink-0" />
 								<div>
 									<p className="font-medium text-sm">Easy Returns</p>
 									<p className="text-xs text-muted-foreground">30-day return policy</p>
 								</div>
 							</div>
-							<div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-								<Shield className="h-5 w-5 text-primary" />
+							<div className="flex items-center gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg">
+								<Shield className="h-5 w-5 text-primary flex-shrink-0" />
 								<div>
 									<p className="font-medium text-sm">Secure Checkout</p>
 									<p className="text-xs text-muted-foreground">Powered by Stripe</p>
@@ -445,9 +483,9 @@ function CartPage() {
 
 					{/* Order Summary */}
 					<div className="lg:col-span-1">
-						<Card className="sticky top-24">
-							<CardHeader>
-								<CardTitle>Order Summary</CardTitle>
+						<Card className="sticky top-4 lg:top-24">
+							<CardHeader className='pb-3 sm:pb-6'>
+								<CardTitle className='text-lg sm:text-xl'>Order Summary</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-4">
 								{/* Shipping Address for Tax Calculation */}
@@ -461,7 +499,7 @@ function CartPage() {
 											value={shippingAddress.state}
 											onValueChange={(value) => setShippingAddress({ ...shippingAddress, state: value })}
 										>
-											<SelectTrigger>
+											<SelectTrigger className='h-9 text-sm'>
 												<SelectValue placeholder="State" />
 											</SelectTrigger>
 											<SelectContent>
@@ -522,11 +560,12 @@ function CartPage() {
 											value={shippingAddress.postal_code}
 											onChange={(e) => setShippingAddress({ ...shippingAddress, postal_code: e.target.value.replace(/\D/g, '').slice(0, 5) })}
 											maxLength={5}
+											className='h-9 text-sm'
 										/>
 									</div>
 									{!shippingAddress.state || !shippingAddress.postal_code ? (
 										<p className="text-xs text-muted-foreground">
-											Enter your location for accurate tax and shipping calculations
+											Enter location for accurate tax & shipping
 										</p>
 									) : null}
 								</div>
@@ -541,24 +580,24 @@ function CartPage() {
 										{isLoadingShippingRates ? (
 											<Skeleton className="h-20 w-full" />
 										) : (
-											<RadioGroup value={selectedShippingRate} onValueChange={setSelectedShippingRate}>
+											<RadioGroup value={selectedShippingRate} onValueChange={setSelectedShippingRate} className="space-y-2">
 												{shippingRates.map(rate => (
-													<div key={rate.id} className="flex items-center space-x-2 p-3 border rounded-md hover:bg-muted/50">
-														<RadioGroupItem value={rate.id} id={rate.id} />
+													<div key={rate.id} className="flex items-start space-x-2 p-2 sm:p-3 border rounded-md hover:bg-muted/50">
+														<RadioGroupItem value={rate.id} id={rate.id} className="mt-0.5" />
 														<Label htmlFor={rate.id} className="flex-1 cursor-pointer">
-															<div className="flex justify-between items-start">
-																<div>
-																	<p className="font-medium text-sm">
+															<div className="flex justify-between items-start gap-2">
+																<div className="flex-1 min-w-0">
+																	<p className="font-medium text-xs sm:text-sm break-words">
 																		{rate.display_name}
 																	</p>
 																	{rate.metadata?.delivery_days && (
 																		<p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-																			<Clock className="h-3 w-3" />
-																			{rate.metadata.delivery_days} business days
+																			<Clock className="h-3 w-3 flex-shrink-0" />
+																			<span>{rate.metadata.delivery_days} days</span>
 																		</p>
 																	)}
 																</div>
-																<p className="font-bold text-sm">
+																<p className="font-bold text-xs sm:text-sm flex-shrink-0">
 																	{rate.amount === 0 ? 'FREE' : `$${(rate.amount / 100).toFixed(2)}`}
 																</p>
 															</div>
@@ -569,7 +608,7 @@ function CartPage() {
 										)}
 										{subtotal < 75 && (
 											<p className="text-xs text-muted-foreground">
-												Add ${(75 - subtotal).toFixed(2)} more to qualify for free shipping!
+												Add ${(75 - subtotal).toFixed(2)} more for free shipping!
 											</p>
 										)}
 									</div>
@@ -581,8 +620,9 @@ function CartPage() {
 										placeholder="Promo code"
 										value={promoCode}
 										onChange={(e) => setPromoCode(e.target.value)}
+										className="h-9 text-sm"
 									/>
-									<Button variant="outline" size="default" disabled>
+									<Button variant="outline" size="sm" disabled>
 										Apply
 									</Button>
 								</div>
@@ -593,14 +633,14 @@ function CartPage() {
 								<div className="space-y-2">
 									<div className="flex justify-between text-sm">
 										<span>Subtotal</span>
-										<span>${subtotal.toFixed(2)}</span>
+										<span className="font-medium">${subtotal.toFixed(2)}</span>
 									</div>
 									<div className="flex justify-between text-sm">
 										<span>Shipping</span>
 										{isLoadingShippingRates ? (
 											<Skeleton className="h-4 w-16" />
 										) : (
-											<span>{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
+											<span className="font-medium">{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
 										)}
 									</div>
 									<div className="flex justify-between text-sm">
@@ -608,42 +648,47 @@ function CartPage() {
 										{isCalculatingTax ? (
 											<Skeleton className="h-4 w-16" />
 										) : (
-											<span>
+											<span className="font-medium">
 												{tax > 0 ? `$${tax.toFixed(2)}` : (
 													shippingAddress.state && shippingAddress.postal_code ? '$0.00' : 'TBD'
 												)}
 											</span>
 										)}
 									</div>
+									{tax === 0 && shippingAddress.state && shippingAddress.postal_code && (
+										<p className="text-xs text-muted-foreground italic">
+											No tax in {shippingAddress.state}
+										</p>
+									)}
 									{shipping === 0 && (
-										<Badge variant="secondary" className="w-full justify-center">
+										<Badge variant="secondary" className="w-full justify-center text-xs">
 											✨ You qualify for free shipping!
 										</Badge>
 									)}
 									<Separator />
-									<div className="flex justify-between font-bold text-lg">
+									<div className="flex justify-between font-bold text-base sm:text-lg">
 										<span>Total</span>
 										{isCalculatingTax || isLoadingShippingRates ? (
-											<Skeleton className="h-6 w-20" />
+											<Skeleton className="h-5 sm:h-6 w-20" />
 										) : (
 											<span>${total.toFixed(2)}</span>
 										)}
 									</div>
 									{!shippingAddress.state || !shippingAddress.postal_code ? (
 										<p className="text-xs text-muted-foreground">
-											Final tax will be calculated at checkout based on your shipping address
+											Final tax calculated at checkout
 										</p>
 									) : (
 										<p className="text-xs text-muted-foreground">
-											Tax calculated for {shippingAddress.state}. Final amount may vary slightly.
+											Tax for {shippingAddress.state}. Final amount may vary.
 										</p>
 									)}
 								</div>
 							</CardContent>
-							<CardFooter className="flex flex-col gap-2">
+							<CardFooter className="flex flex-col gap-2 pt-3 sm:pt-6">
 								<Button
 									className="w-full"
-									size="lg"
+									size="default"
 									onClick={handleCheckout}
 									disabled={isCheckingOut || isCalculatingTax || isLoadingShippingRates || !selectedShippingRate}
 								>
