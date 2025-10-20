@@ -15,6 +15,7 @@ import (
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/price"
+	"github.com/stripe/stripe-go/v82/shippingrate"
 	"github.com/stripe/stripe-go/v82/tax/calculation"
 )
 
@@ -297,133 +298,36 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
 
-		// Build dynamic shipping options based on subtotal
+		// FETCH ACTUAL SHIPPING RATES FROM STRIPE
+		shippingRateParams := &stripe.ShippingRateListParams{
+			Active: stripe.Bool(true),
+		}
+
+		iter := shippingrate.List(shippingRateParams)
 		shippingOptions := []*stripe.CheckoutSessionShippingOptionParams{}
 
-		// Store select rate from request
-		selectedRate := req.SelectedShippingRate
+		for iter.Next() {
+			rate := iter.ShippingRate()
 
-		// Create all possible shipping options
-		var options = make(map[string]*stripe.CheckoutSessionShippingOptionParams)
+			// Use the actual shipping rate ID from your dashboard
+			shippingOptions = append(shippingOptions, &stripe.CheckoutSessionShippingOptionParams{
+				ShippingRate: stripe.String(rate.ID), // Use existing rate ID, not ShippingRateData
+			})
+		}
 
-		// Check if order qualifies for free shipping (over $75)
-		if subtotal >= 7500 { // $75 in cents
-			options["free_standard"] = &stripe.CheckoutSessionShippingOptionParams{
-				ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-					Type: stripe.String("fixed_amount"),
-					FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-						Amount:   stripe.Int64(0), // Free
-						Currency: stripe.String("usd"),
-					},
-					DisplayName: stripe.String("✨ FREE Standard Shipping (5-7 business days) - Orders over $75"),
-					DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-						Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(5),
-						},
-						Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(7),
-						},
-					},
-					TaxBehavior: stripe.String("exclusive"),
-					TaxCode:     stripe.String("txcd_92010001"),
-				},
-			}
+		if err := iter.Err(); err != nil {
+			log.Printf("Error fetching shipping rates: %v", err)
+			// Optionally fall back to your custom rates or return error
+			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
+			return
+		}
+
+		if len(shippingOptions) > 0 {
+			params.ShippingOptions = shippingOptions
 		} else {
-			options["standard"] = &stripe.CheckoutSessionShippingOptionParams{
-				ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-					Type: stripe.String("fixed_amount"),
-					FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-						Amount:   stripe.Int64(999), // $9.99
-						Currency: stripe.String("usd"),
-					},
-					DisplayName: stripe.String("Standard Shipping (5-7 business days)"),
-					DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-						Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(5),
-						},
-						Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-							Unit:  stripe.String("business_day"),
-							Value: stripe.Int64(7),
-						},
-					},
-					TaxBehavior: stripe.String("exclusive"),
-					TaxCode:     stripe.String("txcd_92010001"),
-				},
-			}
+			log.Println("Warning: No active shipping rates found")
+			// Decide whether to proceed without shipping or create fallback rates
 		}
-
-		// Always add Express and Overnight options
-		options["express"] = &stripe.CheckoutSessionShippingOptionParams{
-			ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-				Type: stripe.String("fixed_amount"),
-				FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-					Amount:   stripe.Int64(1999), // $19.99
-					Currency: stripe.String("usd"),
-				},
-				DisplayName: stripe.String("Express Shipping (2-3 business days)"),
-				DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-					Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-						Unit:  stripe.String("business_day"),
-						Value: stripe.Int64(2),
-					},
-					Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-						Unit:  stripe.String("business_day"),
-						Value: stripe.Int64(3),
-					},
-				},
-				TaxBehavior: stripe.String("exclusive"),
-				TaxCode:     stripe.String("txcd_92010001"),
-			},
-		}
-
-		options["overnight"] = &stripe.CheckoutSessionShippingOptionParams{
-			ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-				Type: stripe.String("fixed_amount"),
-				FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-					Amount:   stripe.Int64(3999), // $39.99
-					Currency: stripe.String("usd"),
-				},
-				DisplayName: stripe.String("Overnight Shipping (1 business day)"),
-				DeliveryEstimate: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateParams{
-					Minimum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMinimumParams{
-						Unit:  stripe.String("business_day"),
-						Value: stripe.Int64(1),
-					},
-					Maximum: &stripe.CheckoutSessionShippingOptionShippingRateDataDeliveryEstimateMaximumParams{
-						Unit:  stripe.String("business_day"),
-						Value: stripe.Int64(1),
-					},
-				},
-				TaxBehavior: stripe.String("exclusive"),
-				TaxCode:     stripe.String("txcd_92010001"),
-			},
-		}
-
-		// Add selected option first (Stripe auto-selects the first option)
-		if selectedRate != "" && options[selectedRate] != nil {
-			shippingOptions = append(shippingOptions, options[selectedRate])
-			delete(options, selectedRate) // Remove from map so we don't add it twice
-		}
-
-		// Add remaining options in a logical order
-		// Priority order: free/standard, express, overnight
-		if opt, exists := options["free_standard"]; exists {
-			shippingOptions = append(shippingOptions, opt)
-		}
-		if opt, exists := options["standard"]; exists {
-			shippingOptions = append(shippingOptions, opt)
-		}
-		if opt, exists := options["express"]; exists {
-			shippingOptions = append(shippingOptions, opt)
-		}
-		if opt, exists := options["overnight"]; exists {
-			shippingOptions = append(shippingOptions, opt)
-		}
-
-		params.ShippingOptions = shippingOptions
 	}
 
 	// Create the session
@@ -676,7 +580,7 @@ func CalculateTaxAndShipping(w http.ResponseWriter, r *http.Request) {
 		if shippingAmount > 0 {
 			lineItems = append(lineItems, &stripe.TaxCalculationLineItemParams{
 				Amount:    stripe.Int64(shippingAmount),
-				Reference: stripe.String("shipping"),
+				Reference: stripe.String("product_shipment"),
 				TaxCode:   stripe.String("txcd_92010001"), // Shipping tax code
 			})
 		}
@@ -826,54 +730,43 @@ func GetShippingRates(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build shipping rates based on subtotal
+	// FETCH ACTUAL SHIPPING RATES FROM STRIPE
+	params := &stripe.ShippingRateListParams{
+		Active: stripe.Bool(true), // Only get active rates
+	}
+
+	iter := shippingrate.List(params)
 	rates := []ShippingRateResponse{}
 
-	// Check if eligible for free shipping
-	if subtotal >= 7500 { // $75 in cents
+	for iter.Next() {
+		rate := iter.ShippingRate()
+
+		// Optionally filter based on metadata or other criteria
+		// For example, you could filter by delivery estimate or metadata tags
+		// Also consider subtotal for conditional free shipping
+		_ = subtotal // Use subtotal for future filtering logic
+
 		rates = append(rates, ShippingRateResponse{
-			ID:          "free_standard",
-			DisplayName: "FREE Standard Shipping (5-7 business days)",
-			Amount:      0,
-			Currency:    "usd",
-			Metadata: map[string]string{
-				"delivery_days": "5-7",
-				"eligible":      "true",
-			},
-		})
-	} else {
-		rates = append(rates, ShippingRateResponse{
-			ID:          "standard",
-			DisplayName: "Standard Shipping (5-7 business days)",
-			Amount:      999, // $9.99
-			Currency:    "usd",
-			Metadata: map[string]string{
-				"delivery_days": "5-7",
-			},
+			ID:          rate.ID, // Use the actual Stripe rate ID (shr_xxxx)
+			DisplayName: rate.DisplayName,
+			Amount:      rate.FixedAmount.Amount,
+			Currency:    string(rate.FixedAmount.Currency),
+			Metadata:    rate.Metadata,
 		})
 	}
 
-	// Always offer express shipping
-	rates = append(rates, ShippingRateResponse{
-		ID:          "express",
-		DisplayName: "Express Shipping (2-3 business days)",
-		Amount:      1999, // $19.99
-		Currency:    "usd",
-		Metadata: map[string]string{
-			"delivery_days": "2-3",
-		},
-	})
+	if err := iter.Err(); err != nil {
+		log.Printf("Error fetching shipping rates: %v", err)
+		http.Error(w, "Error fetching shipping rates", http.StatusInternalServerError)
+		return
+	}
 
-	// Overnight option
-	rates = append(rates, ShippingRateResponse{
-		ID:          "overnight",
-		DisplayName: "Overnight Shipping (1 business day)",
-		Amount:      3999, // $39.99
-		Currency:    "usd",
-		Metadata: map[string]string{
-			"delivery_days": "1",
-		},
-	})
+	// If no rates found, you can optionally fall back to hardcoded rates
+	// or return an error
+	if len(rates) == 0 {
+		log.Println("Warning: No active shipping rates found in Stripe dashboard")
+		// Optionally return fallback rates here
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rates)

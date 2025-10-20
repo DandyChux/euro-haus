@@ -134,9 +134,9 @@ function CartPage() {
 
 			// Prepare line items for tax calculation
 			const lineItems = items.map(item => ({
-				amount: Math.round(item.price * item.quantity * 100), // Convert to cents
+				amount: Math.round(item.price * item.quantity * 100),
 				reference: item.id,
-				tax_code: item.type === 'event' ? 'txcd_10000000' : 'txcd_99999999' // General merchandise tax code
+				tax_code: item.type === 'event' ? 'txcd_10000000' : 'txcd_99999999'
 			}));
 
 			const requestData: TaxCalculationRequest = {
@@ -192,12 +192,6 @@ function CartPage() {
 			return;
 		}
 
-		// Validate shipping selection
-		if (!selectedShippingRate) {
-			toast.error('Please select a shipping method');
-			return;
-		}
-
 		try {
 			setIsCheckingOut(true);
 
@@ -249,8 +243,10 @@ function CartPage() {
 						quantity: item.quantity,
 						type: item.type,
 					}))),
-					selected_shipping_rate: selectedShippingRate,
-					shipping_amount: selectedRate?.amount?.toString() || '0'
+					...(selectedShippingRate && selectedRate && {
+						selected_shipping_rate: selectedShippingRate,
+						shipping_amount: selectedRate.amount.toString()
+					})
 				},
 				// Pass pre-selected shipping info if available
 				...(shippingAddress.postal_code && shippingAddress.state && {
@@ -576,6 +572,7 @@ function CartPage() {
 										<div className="flex items-center gap-2 text-sm font-medium">
 											<Truck className="h-4 w-4" />
 											<span>Shipping Method</span>
+											<span className="text-xs font-normal text-muted-foreground">(Preview - select at checkout)</span>
 										</div>
 										{isLoadingShippingRates ? (
 											<Skeleton className="h-20 w-full" />
@@ -643,18 +640,20 @@ function CartPage() {
 											<span className="font-medium">{shipping === 0 ? 'FREE' : `$${shipping.toFixed(2)}`}</span>
 										)}
 									</div>
-									<div className="flex justify-between text-sm">
-										<span>Estimated Tax</span>
-										{isCalculatingTax ? (
-											<Skeleton className="h-4 w-16" />
+									<div className="flex justify-between font-bold text-base sm:text-lg">
+										<span>Estimated Total</span>
+										{isCalculatingTax || isLoadingShippingRates ? (
+											<Skeleton className="h-5 sm:h-6 w-20" />
 										) : (
-											<span className="font-medium">
-												{tax > 0 ? `$${tax.toFixed(2)}` : (
-													shippingAddress.state && shippingAddress.postal_code ? '$0.00' : 'TBD'
-												)}
-											</span>
+											<span>${selectedShippingRate ? total.toFixed(2) : subtotal.toFixed(2)}</span>
 										)}
 									</div>
+									<p className="text-xs text-muted-foreground">
+										{selectedShippingRate
+											? `Estimated with ${shippingRates.find(r => r.id === selectedShippingRate)?.display_name}. Final shipping selected at checkout.`
+											: 'Shipping and tax calculated at checkout'
+										}
+									</p>
 									{tax === 0 && shippingAddress.state && shippingAddress.postal_code && (
 										<p className="text-xs text-muted-foreground italic">
 											No tax in {shippingAddress.state}
@@ -690,7 +689,7 @@ function CartPage() {
 									className="w-full"
 									size="default"
 									onClick={handleCheckout}
-									disabled={isCheckingOut || isCalculatingTax || isLoadingShippingRates || !selectedShippingRate}
+									disabled={isCheckingOut}
 								>
 									{isCheckingOut ? 'Processing...' : 'Proceed to Checkout'}
 									<ArrowRight className="ml-2 h-4 w-4" />
