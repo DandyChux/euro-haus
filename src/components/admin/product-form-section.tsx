@@ -13,6 +13,7 @@ import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
 import { ExistingPricesManager } from './existing-prices-manager';
 import { Alert, AlertDescription } from '../ui/alert';
+import { VariantStockManager } from './variant-stock-manager';
 
 interface ProductFormSectionProps {
 	form: UseFormReturn<FormData>;
@@ -80,9 +81,13 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 		moveVariant(index, newIndex);
 
 		// Update sort order after moving
-		variantFields.forEach((_, i) => {
-			updateVariant(i, { ...form.getValues(`variants.${i}`), sortOrder: i });
+		variantFields.forEach((field, i) => {
+			const variant = form.getValues(`variants.${i}`);
+			if (variant) {
+				updateVariant(i, { ...variant, sortOrder: i });
+			}
 		});
+
 	};
 
 	// Don't render if not a product
@@ -206,6 +211,12 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 						productType="product"
 						form={form}
 					/>
+				</div>
+			)}
+
+			{isEditing && productId && form.watch('hasVariants') && (
+				<div className="mt-4">
+					<VariantStockManager productId={productId} />
 				</div>
 			)}
 
@@ -343,6 +354,52 @@ export function ProductFormSection({ form, isEditing, productId }: ProductFormSe
 													<FormControl>
 														<Input {...field} placeholder="PROD-VAR-001" />
 													</FormControl>
+												</FormItem>
+											)}
+										/>
+
+										<FormField
+											control={form.control}
+											name={`variants.${index}.stockQuantity`}
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>Stock Quantity</FormLabel>
+													<FormControl>
+														<Input
+															{...field}
+															type="number"
+															min="0"
+															placeholder="10"
+														/>
+													</FormControl>
+													<FormDescription>
+														Leave empty for unlimited stock
+													</FormDescription>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+
+										<FormField
+											control={form.control}
+											name={`variants.${index}.inStock`}
+											render={({ field }) => (
+												<FormItem className="flex items-center space-x-2">
+													<FormControl>
+														<Checkbox
+															checked={field.value}
+															onCheckedChange={(checked) => {
+																field.onChange(checked);
+																// If marking out of stock, optionally set quantity to 0
+																if (!checked) {
+																	form.setValue(`variants.${index}.stockQuantity`, '0');
+																}
+															}}
+														/>
+													</FormControl>
+													<FormLabel className="font-normal cursor-pointer">
+														Available for Purchase
+													</FormLabel>
 												</FormItem>
 											)}
 										/>

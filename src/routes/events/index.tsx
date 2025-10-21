@@ -8,11 +8,21 @@ import { Badge } from '~/components/ui/badge';
 import { stripeService } from '~/lib/services/stripe-service';
 import { Skeleton } from '~/components/ui/skeleton';
 import { EventCard } from '~/components/event-cards';
+import { isAfter } from 'date-fns';
 
 export const Route = createFileRoute('/events/')({
 	loader: async () => {
 		const events = await stripeService.getAllEvents()
-		return { events }
+
+		const now = new Date();
+		const startOfToday = new Date(now);
+		startOfToday.setHours(0, 0, 0, 999);
+
+		const upcomingEvents = events.filter(event =>
+			isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
+		);
+
+		return { upcomingEvents }
 	},
 	pendingComponent: EventsLoadingPage,
 	component: EventsPage,
@@ -55,7 +65,7 @@ function EventsLoadingPage() {
 }
 
 function EventsPage() {
-	const { events } = Route.useLoaderData()
+	const { upcomingEvents: events } = Route.useLoaderData()
 
 	return (
 		<div className="min-h-screen">

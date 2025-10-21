@@ -361,3 +361,56 @@ func ValidatePromotionCode(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
+
+// ListPromotionCodes returns all promotion codes or codes for a specific coupon
+func ListPromotionCodes(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get optional coupon ID from query parameter
+	couponID := r.URL.Query().Get("coupon_id")
+
+	// Create list params
+	params := &stripe.PromotionCodeListParams{}
+	params.Filters.AddFilter("limit", "", "100")
+
+	// If coupon ID is provided, filter by coupon
+	if couponID != "" {
+		params.Coupon = stripe.String(couponID)
+	}
+
+	// List promotion codes
+	iter := promotioncode.List(params)
+	var promoCodes []*stripe.PromotionCode
+
+	for iter.Next() {
+		pc := iter.PromotionCode()
+		promoCodes = append(promoCodes, pc)
+	}
+
+	if err := iter.Err(); err != nil {
+		log.Printf("Error listing promotion codes: %v", err)
+		http.Error(w, "Failed to list promotion codes", http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure we always return an array
+	if promoCodes == nil {
+		promoCodes = []*stripe.PromotionCode{}
+	}
+
+	response := map[string]interface{}{
+		"promotion_codes": promoCodes,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}

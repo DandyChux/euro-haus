@@ -134,7 +134,7 @@ export const EventCard: React.FC<EventCardProps> = ({
 		<Card className={cn("group overflow-hidden hover:shadow-lg transition-shadow", className)}>
 			<div className="aspect-auto relative overflow-hidden">
 				<Image
-					src={event.imageUrl}
+					src={event.images[0]}
 					alt={event.title}
 					className="object-contain w-full h-full"
 				/>
@@ -156,7 +156,8 @@ export const EventCard: React.FC<EventCardProps> = ({
 							weekday: 'long',
 							year: 'numeric',
 							month: 'long',
-							day: 'numeric'
+							day: 'numeric',
+							timeZone: 'UTC'
 						})}</span>
 					</div>
 					<div className="flex items-center gap-2 text-sm">

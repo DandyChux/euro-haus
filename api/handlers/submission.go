@@ -19,6 +19,8 @@ import (
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/price"
+	"github.com/stripe/stripe-go/v82/promotioncode"
+	"github.com/stripe/stripe-go/v82/refund"
 )
 
 // VehicleSubmission represents a participant's vehicle submission
@@ -161,17 +163,6 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	// Check if this tier requires approval
 	requiresApproval := checkIfTierRequiresApproval(priceID)
 
-	if !requiresApproval {
-		// Auto-approve the submission
-		submission.Status = "approved"
-		submission.ReviewedAt = time.Now().Format(time.RFC3339)
-		submission.ReviewedBy = "system-auto-approved"
-		submission.ReviewNotes = "Automatically approved - tier does not require manual approval"
-
-		fmt.Printf("Auto-approving submission %s for tier that doesn't require approval", submission.ID)
-	}
-
-	// Store submission in Redis
 	rdb := services.GetRedisClient()
 	ctx := context.Background()
 
@@ -215,29 +206,47 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to add submission to event set: %v", err)
 	}
 
-	// Send appropriate email
+	// Handle auto-approved submissions
 	if !requiresApproval {
-		// Generate payment link for auto-approved submission
-		paymentLink, err := createSubmissionPaymentLink(submission)
-		if err != nil {
-			log.Printf("Error creating payment link for auto-approved submission: %v", err)
-			// Use fallback link if payment link generation fails
-			baseUrl := os.Getenv("BASE_URL")
-			if baseUrl == "" {
-				baseUrl = "https://eurohaus.shop"
+		// For auto-approved, check if payment already exists and capture it
+		if submission.CheckoutSessionID != "" {
+			// Payment was collected before submission - capture it now
+			paymentCaptured, paymentProcessing, captureErr := captureSubmissionPayment(submission.ID)
+
+			if captureErr != nil {
+				log.Printf("Could not capture payment for auto-approved submission %s: %v", submission.ID, captureErr)
 			}
-			paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+
+			if paymentCaptured || paymentProcessing {
+				fmt.Printf("Auto-approved submission %s with payment captured/processing. Webhook will handle the rest.\n", submission.ID)
+			}
+		} else if priceID != "" {
+			// No payment yet - create checkout session for auto-approved submission
+			paymentLink, err := createSubmissionPaymentLink(submission)
+			if err != nil {
+				log.Printf("Error creating payment link for auto-approved submission: %v", err)
+				// Use fallback
+				baseUrl := os.Getenv("BASE_URL")
+				if baseUrl == "" {
+					baseUrl = "https://eurohaus.shop"
+				}
+				paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseUrl, submission.EventSlug, submission.ID)
+			}
+
+			// Send approval email with payment link
+			go sendApprovalEmail(submission, paymentLink)
+
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"approval_email_sent":    "true",
+				"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			})
+
+			fmt.Printf("Auto-approved submission %s - sent approval email with payment link\n", submission.ID)
 		}
-
-		// Send approval email immediately for auto-approved submissions
-		go sendApprovalEmail(submission, paymentLink)
-
-		fmt.Printf("Auto-approved submission %s and sent approval email with payment link: %s", submission.ID, paymentLink)
 	} else {
 		// Send confirmation email for pending submissions
 		go sendSubmissionConfirmationEmail(submission)
-
-		fmt.Printf("Created pending submission %s and sent confirmation email", submission.ID)
+		fmt.Printf("Created pending submission %s and sent confirmation email\n", submission.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -352,63 +361,16 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	paymentProcessing := false
 
 	if submission.CheckoutSessionID != "" {
-		// Retrieve the checkout session
-		sess, err := session.Get(submission.CheckoutSessionID, nil)
-		if err != nil {
-			log.Printf("Error retrieving checkout session for submission %s: %v", submissionID, err)
-		} else if sess.PaymentIntent != nil {
-			// Check if payment intent needs to be captured
-			pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
-			if err != nil {
-				log.Printf("Error retrieving payment intent %s: %v", sess.PaymentIntent.ID, err)
-			} else {
-				// Check the status and capture method
-				if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
-					// Capture the payment
-					fmt.Printf("Capturing payment for submission %s (payment intent: %s)", submissionID, pi.ID)
-					paymentProcessing = true
+		var captureErr error
+		paymentCaptured, paymentProcessing, captureErr = captureSubmissionPayment(submissionID)
 
-					capturedPI, err := paymentintent.Capture(pi.ID, nil)
-					if err != nil {
-						log.Printf("Error capturing payment for submission %s: %v", submissionID, err)
-						// Don't fail the approval, but note the error
-						rdb.HSet(ctx, submissionKey, map[string]interface{}{
-							"payment_capture_error":        err.Error(),
-							"payment_capture_attempted_at": time.Now().Format(time.RFC3339),
-						})
-					} else {
-						// Payment captured successfully
-						paymentCaptured = true
-						submission.PaymentIntentID = capturedPI.ID
-
-						rdb.HSet(ctx, submissionKey, map[string]interface{}{
-							"payment_intent_id":   capturedPI.ID,
-							"payment_captured":    "true",
-							"payment_captured_at": time.Now().Format(time.RFC3339),
-						})
-
-						fmt.Printf("Successfully captured payment %s for submission %s", capturedPI.ID, submissionID)
-
-						// The ticket will be created when the payment.intent.succeeded webhook fires
-						// This ensures proper flow and prevents duplicate tickets
-						// The webhook will also send the approval + ticket email
-					}
-				} else if pi.Status == "succeeded" {
-					// Payment already succeeded (might be auto-capture)
-					log.Printf("Payment already succeeded for submission %s", submissionID)
-					paymentCaptured = true
-					submission.PaymentIntentID = pi.ID
-
-					// Check if ticket was already created
-					existingTicket, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
-					if existingTicket == "" {
-						log.Printf("No ticket found for approved submission %s with succeeded payment. Webhook might handle it.", submissionID)
-					}
-				} else {
-					fmt.Printf("Payment intent %s for submission %s has status: %s (capture method: %s)",
-						pi.ID, submissionID, pi.Status, pi.CaptureMethod)
-				}
-			}
+		if captureErr != nil {
+			log.Printf("Error capturing payment for submission %s: %v", submissionID, captureErr)
+			// Don't fail the approval, but note the error
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"payment_capture_error":        captureErr.Error(),
+				"payment_capture_attempted_at": time.Now().Format(time.RFC3339),
+			})
 		}
 	}
 
@@ -566,10 +528,11 @@ func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
 // CreateParticipantCheckout creates a checkout session with manual capture for submissions
 func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SubmissionID string `json:"submissionId"`
-		PriceID      string `json:"priceId"`
-		EventName    string `json:"eventName"`
-		Quantity     int64  `json:"quantity"`
+		SubmissionID  string `json:"submissionId"`
+		PriceID       string `json:"priceId"`
+		EventName     string `json:"eventName"`
+		Quantity      int64  `json:"quantity"`
+		PromotionCode string `json:"promotionCode"` // Added promotion code support
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -619,6 +582,33 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
 	}
 
+	// Add promotion code if provided
+	if req.PromotionCode != "" {
+		// First, look up the promotion code to get its ID
+		pcParams := &stripe.PromotionCodeListParams{
+			Code: stripe.String(req.PromotionCode),
+		}
+		pcParams.Filters.AddFilter("limit", "", "1")
+
+		iter := promotioncode.List(pcParams)
+		if iter.Next() {
+			pc := iter.PromotionCode()
+			if pc.Active {
+				// Apply the promotion code using discounts
+				params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+					{
+						PromotionCode: stripe.String(pc.ID),
+					},
+				}
+				fmt.Printf("Applied promotion code %s to checkout for submission %s\n", req.PromotionCode, req.SubmissionID)
+			} else {
+				fmt.Printf("Promotion code %s is not active for submission %s\n", req.PromotionCode, req.SubmissionID)
+			}
+		} else {
+			fmt.Printf("Promotion code %s not found for submission %s\n", req.PromotionCode, req.SubmissionID)
+		}
+	}
+
 	// Only use manual capture if submission needs approval
 	if needsManualCapture {
 		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
@@ -666,6 +656,11 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		"price_id":            req.PriceID,
 		"requires_approval":   strconv.FormatBool(requiresApproval),
 		"checkout_created_at": time.Now().Format(time.RFC3339),
+	}
+
+	// Store the promotion code if used
+	if req.PromotionCode != "" {
+		updates["promotion_code"] = req.PromotionCode
 	}
 
 	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
@@ -850,31 +845,51 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate payment link
+	// Check if payment is already completed or being processed
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	// Get payment status from Redis
+	paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+	paymentCaptured, _ := rdb.HGet(ctx, submissionKey, "payment_captured").Result()
+	ticketID, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
+
+	// Determine if we need a payment link
 	paymentLink := ""
 
-	// If there's a checkout session, get the URL
-	if submission.CheckoutSessionID != "" {
-		params := &stripe.CheckoutSessionParams{}
-		sess, err := session.Get(submission.CheckoutSessionID, params)
-		if err == nil && sess.URL != "" {
-			paymentLink = sess.URL
+	// Only provide payment link if:
+	// 1. Payment is not completed
+	// 2. Payment is not captured
+	// 3. No ticket exists yet
+	if paymentCompleted != "true" && paymentCaptured != "true" && ticketID == "" {
+		// Check if there's an existing checkout session
+		if submission.CheckoutSessionID != "" {
+			params := &stripe.CheckoutSessionParams{}
+			sess, err := session.Get(submission.CheckoutSessionID, params)
+			if err == nil {
+				// Check if session is still valid and not paid
+				if sess.PaymentStatus != "paid" && sess.URL != "" {
+					paymentLink = sess.URL
+				} else if sess.PaymentStatus == "paid" {
+					// Payment is already done, no link needed
+					paymentLink = ""
+				}
+			}
+		}
+
+		// If no valid checkout session URL and payment not done, create a new payment link
+		if paymentLink == "" && paymentCompleted != "true" {
+			paymentLink, _ = createSubmissionPaymentLink(*submission)
 		}
 	}
-
-	// If no checkout session URL, create a new payment link
-	if paymentLink == "" {
-		paymentLink, _ = createSubmissionPaymentLink(*submission)
-	}
+	// If payment is completed/captured/ticket exists, paymentLink stays empty
+	// This will trigger the "payment processing" message in the template
 
 	// Send approval email
 	sendApprovalEmail(*submission, paymentLink)
 
 	// Update email sent status
-	rdb := services.GetRedisClient()
-	ctx := context.Background()
-	submissionKey := fmt.Sprintf("submission:%s", submissionID)
-
 	rdb.HSet(ctx, submissionKey, map[string]interface{}{
 		"approval_email_sent":    "true",
 		"approval_email_sent_at": time.Now().Format(time.RFC3339),
@@ -883,8 +898,9 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Approval email resent successfully",
+		"success":     true,
+		"message":     "Approval email resent successfully",
+		"paymentLink": paymentLink != "", // Let frontend know if payment action is needed
 	})
 }
 
@@ -934,14 +950,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			if data["checkout_session_id"] == "" && data["payment_intent_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_payment")
-				log.Printf("Submission %s has no payment", submissionID)
+				fmt.Printf("Submission %s has no payment", submissionID)
 			}
 
 			// Issue 2: Approved but email not sent
 			if data["approval_email_sent"] != "true" {
 				hasIssue = true
 				issues = append(issues, "email_not_sent")
-				log.Printf("Submission %s email not sent", submissionID)
+				fmt.Printf("Submission %s email not sent", submissionID)
 			}
 
 			// Issue 3: Has checkout session but need to check with Stripe
@@ -959,11 +975,11 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 						if sess.ExpiresAt < time.Now().Unix() {
 							hasIssue = true
 							issues = append(issues, "payment_expired")
-							log.Printf("Submission %s payment expired", submissionID)
+							fmt.Printf("Submission %s payment expired", submissionID)
 						} else {
 							hasIssue = true
 							issues = append(issues, "payment_incomplete")
-							log.Printf("Submission %s payment incomplete", submissionID)
+							fmt.Printf("Submission %s payment incomplete", submissionID)
 						}
 					} else {
 						// Payment is paid
@@ -975,7 +991,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				if data["payment_intent_id"] == "" && !sessionValid {
 					hasIssue = true
 					issues = append(issues, "missing_payment_intent")
-					log.Printf("Submission %s has checkout session but no payment intent", submissionID)
+					fmt.Printf("Submission %s has checkout session but no payment intent", submissionID)
 				}
 			}
 
@@ -990,7 +1006,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				} else if pi.Status != "succeeded" {
 					hasIssue = true
 					issues = append(issues, "payment_not_succeeded")
-					log.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
+					fmt.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
 				}
 			}
 
@@ -998,14 +1014,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			if data["payment_intent_id"] != "" && data["ticket_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "no_ticket_created")
-				log.Printf("Submission %s has payment but no ticket", submissionID)
+				fmt.Printf("Submission %s has payment but no ticket", submissionID)
 			}
 
 			// Issue 6: Missing checkout data (neither checkout session nor ticket)
 			if data["checkout_session_id"] == "" && data["ticket_id"] == "" {
 				hasIssue = true
 				issues = append(issues, "missing_checkout_data")
-				log.Printf("Submission %s missing checkout data", submissionID)
+				fmt.Printf("Submission %s missing checkout data", submissionID)
 			}
 		}
 
@@ -1013,14 +1029,14 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		if status != "approved" && hasPaymentData {
 			hasIssue = true
 			issues = append(issues, "payment_without_approval")
-			log.Printf("Submission %s has payment data but not approved", submissionID)
+			fmt.Printf("Submission %s has payment data but not approved", submissionID)
 		}
 
 		// Check for pending submissions that have checkout/payment info but no approval
 		if status == "pending" && hasPaymentData {
 			hasIssue = true
 			issues = append(issues, "pending_with_payment")
-			log.Printf("Submission %s is pending with payment data", submissionID)
+			fmt.Printf("Submission %s is pending with payment data", submissionID)
 		}
 
 		// Check if this submission has been stuck in pending for too long
@@ -1031,7 +1047,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				if submittedAt.Before(twoWeeksAgo) {
 					hasIssue = true
 					issues = append(issues, "pending_too_long")
-					log.Printf("Submission %s pending too long", submissionID)
+					fmt.Printf("Submission %s pending too long", submissionID)
 				}
 			}
 		}
@@ -1041,7 +1057,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			hasIssue = true
 			if !contains(issues, "no_ticket_created") {
 				issues = append(issues, "no_ticket_created")
-				log.Printf("Submission %s has payment data but no ticket", submissionID)
+				fmt.Printf("Submission %s has payment data but no ticket", submissionID)
 			}
 		}
 
@@ -1051,7 +1067,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			hasIssue = true
 			if !contains(issues, "incomplete_payment_process") {
 				issues = append(issues, "incomplete_payment_process")
-				log.Printf("Submission %s has incomplete payment process", submissionID)
+				fmt.Printf("Submission %s has incomplete payment process", submissionID)
 			}
 		}
 
@@ -1099,13 +1115,308 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("Found %d submissions with issues", len(issueSubmissions))
+	fmt.Printf("Found %d submissions with issues", len(issueSubmissions))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"submissions": issueSubmissions,
 		"total":       len(issueSubmissions),
 	})
+}
+
+// UpdateSubmissionEmail updates the email address for a submission
+func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	var req struct {
+		NewEmail    string `json:"newEmail"`
+		ResendEmail bool   `json:"resendEmail"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email format (basic validation)
+	if req.NewEmail == "" {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get submission
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Store old email for logging
+	oldEmail := submission.ParticipantEmail
+
+	// Update the email in Redis
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	updates := map[string]interface{}{
+		"participant_email": req.NewEmail,
+		"email_updated_at":  time.Now().Format(time.RFC3339),
+		"previous_email":    oldEmail,
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		http.Error(w, "Failed to update submission email", http.StatusInternalServerError)
+		return
+	}
+
+	// Also update the ticket if one exists
+	if submission.TicketID != "" {
+		ticketKey := fmt.Sprintf("ticket:%s", submission.TicketID)
+		ticketUpdates := map[string]interface{}{
+			"customer_email": req.NewEmail,
+		}
+		if err := rdb.HSet(ctx, ticketKey, ticketUpdates).Err(); err != nil {
+			log.Printf("Warning: Failed to update ticket email for ticket %s: %v", submission.TicketID, err)
+		}
+	}
+
+	log.Printf("Updated email for submission %s from %s to %s", submissionID, oldEmail, req.NewEmail)
+
+	// Get updated submission
+	updatedSubmission, _ := getSubmissionByID(submissionID)
+
+	response := map[string]interface{}{
+		"success":    true,
+		"message":    fmt.Sprintf("Email updated from %s to %s", oldEmail, req.NewEmail),
+		"submission": updatedSubmission,
+	}
+
+	// Resend email if requested and submission is approved
+	if req.ResendEmail && submission.Status == "approved" {
+		emailsSent := []string{}
+
+		// Check if ticket exists - if so, send ticket email
+		ticketID, _ := rdb.HGet(ctx, submissionKey, "ticket_id").Result()
+
+		if ticketID != "" {
+			// Ticket exists - send the ticket email with existing QR code
+			submissionData, err := rdb.HGetAll(ctx, submissionKey).Result()
+			if err == nil {
+				// Get event name from submission
+				eventName := submissionData["event_slug"]
+				if eventName == "" {
+					// Try to get a friendly name
+					eventName = "Euro Haus Event"
+				}
+
+				// Send participant ticket email
+				sendSubmissionTicketEmail(submissionData, ticketID, eventName)
+				emailsSent = append(emailsSent, "ticket")
+				log.Printf("Sent ticket email to %s for submission %s", req.NewEmail, submissionID)
+			}
+		} else {
+			// No ticket yet - check if payment is complete
+			paymentCompleted, _ := rdb.HGet(ctx, submissionKey, "payment_completed").Result()
+
+			if paymentCompleted != "true" {
+				// Payment not complete - send approval email with payment link
+				paymentLink, _ := createSubmissionPaymentLink(*updatedSubmission)
+				sendApprovalEmail(*updatedSubmission, paymentLink)
+				emailsSent = append(emailsSent, "approval")
+				log.Printf("Sent approval email with payment link to %s for submission %s", req.NewEmail, submissionID)
+			} else {
+				// Payment complete but no ticket (edge case) - send approval email without payment link
+				sendApprovalEmail(*updatedSubmission, "")
+				emailsSent = append(emailsSent, "approval")
+				log.Printf("Sent approval email to %s for submission %s", req.NewEmail, submissionID)
+			}
+		}
+
+		// Update email sent status
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"approval_email_sent":    "true",
+			"approval_email_sent_at": time.Now().Format(time.RFC3339),
+			"email_resent_count":     1, // Could increment this if needed
+		})
+
+		response["emailResent"] = true
+		response["emailsSent"] = emailsSent
+
+		if len(emailsSent) > 0 {
+			emailType := emailsSent[0]
+			if emailType == "ticket" {
+				response["message"] = fmt.Sprintf("Email updated from %s to %s and ticket email resent with QR code", oldEmail, req.NewEmail)
+			} else {
+				response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// RevokeSubmission revokes an approved submission, refunds payment, and cancels ticket
+func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	submissionID := vars["submissionId"]
+
+	var req struct {
+		Reason       string `json:"reason"`
+		RefundAmount string `json:"refundAmount"` // "full" or "partial"
+		RefundReason string `json:"refundReason"` // Reason for Stripe refund
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Reason is optional, use default
+		req.Reason = "Submission revoked by administrator"
+		req.RefundAmount = "full"
+		req.RefundReason = "requested_by_customer"
+	}
+
+	// Get submission
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	// Validate that submission has been approved and has payment
+	if submission.Status != "approved" {
+		http.Error(w, "Can only revoke approved submissions", http.StatusBadRequest)
+		return
+	}
+
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+	submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+	result := map[string]interface{}{
+		"submissionRevoked": false,
+		"ticketInvalidated": false,
+		"paymentRefunded":   false,
+		"errors":            []string{},
+	}
+
+	// Step 1: Issue refund if there's a payment intent
+	if submission.PaymentIntentID != "" {
+		refundParams := &stripe.RefundParams{
+			PaymentIntent: stripe.String(submission.PaymentIntentID),
+			Reason:        stripe.String(req.RefundReason),
+		}
+
+		refundResult, err := refund.New(refundParams)
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to process refund: %v", err)
+			log.Printf("Error refunding payment for submission %s: %v", submissionID, err)
+			result["errors"] = append(result["errors"].([]string), errMsg)
+			// Continue with other steps even if refund fails
+		} else {
+			result["paymentRefunded"] = true
+			result["refundId"] = refundResult.ID
+			result["refundAmount"] = float64(refundResult.Amount) / 100.0
+			result["refundCurrency"] = string(refundResult.Currency)
+			log.Printf("Refund issued for submission %s: %s", submissionID, refundResult.ID)
+
+			// Update submission with refund info
+			rdb.HSet(ctx, submissionKey, map[string]interface{}{
+				"refund_id":        refundResult.ID,
+				"refund_amount":    float64(refundResult.Amount) / 100.0,
+				"refund_issued_at": time.Now().Format(time.RFC3339),
+			})
+		}
+	} else {
+		result["paymentRefunded"] = true // No payment to refund
+		result["message"] = "No payment found - no refund needed"
+	}
+
+	// Step 2: Invalidate ticket if one exists
+	if submission.TicketID != "" {
+		if err := InvalidateTicket(submission.TicketID, req.Reason); err != nil {
+			errMsg := fmt.Sprintf("Failed to invalidate ticket: %v", err)
+			log.Printf("Error invalidating ticket for submission %s: %v", submissionID, err)
+			result["errors"] = append(result["errors"].([]string), errMsg)
+		} else {
+			result["ticketInvalidated"] = true
+			log.Printf("Ticket %s invalidated for submission %s", submission.TicketID, submissionID)
+		}
+	} else {
+		result["ticketInvalidated"] = true // No ticket to invalidate
+	}
+
+	// Step 3: Update submission status to revoked
+	updates := map[string]interface{}{
+		"status":            "revoked",
+		"revoked_at":        time.Now().Format(time.RFC3339),
+		"revoked_by":        "admin", // TODO: Get from auth context
+		"revocation_reason": req.Reason,
+	}
+
+	if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+		errMsg := fmt.Sprintf("Failed to update submission status: %v", err)
+		log.Printf("Error updating submission %s: %v", submissionID, err)
+		result["errors"] = append(result["errors"].([]string), errMsg)
+		http.Error(w, errMsg, http.StatusInternalServerError)
+		return
+	}
+
+	result["submissionRevoked"] = true
+
+	// Remove from approved set and add to revoked set
+	rdb.SRem(ctx, "submissions:approved", submissionID)
+	rdb.SAdd(ctx, "submissions:revoked", submissionID)
+
+	// Step 4: Send notification email to participant
+	sendRevocationEmail(*submission, req.Reason)
+
+	// Get updated submission
+	updatedSubmission, _ := getSubmissionByID(submissionID)
+	result["submission"] = updatedSubmission
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// sendRevocationEmail sends an email notifying the participant of revocation
+func sendRevocationEmail(submission VehicleSubmission, reason string) {
+	emailData := map[string]interface{}{
+		"ParticipantName":  submission.ParticipantName,
+		"VehicleDetails":   fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
+		"EventID":          submission.EventID,
+		"RevocationReason": reason,
+	}
+
+	msg := &services.EmailMessage{
+		To:           []string{submission.ParticipantEmail},
+		Subject:      "Vehicle Submission Revoked - Refund Issued",
+		TemplateID:   "submission-revoked",
+		TemplateData: emailData,
+		BodyHTML:     generateRevocationEmailHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending revocation email: %v", err)
+	}
+}
+
+func generateRevocationEmailHTML(data map[string]interface{}) string {
+	return fmt.Sprintf(`
+		<html>
+		<body style="font-family: Arial, sans-serif; color: #333;">
+			<h2>Vehicle Submission Revoked</h2>
+			<p>Dear %s,</p>
+			<p>We regret to inform you that your vehicle submission has been revoked:</p>
+			<p><strong>%s</strong></p>
+			<p><strong>Reason:</strong> %s</p>
+			<p>Your payment has been refunded and will appear in your account within 5-10 business days.</p>
+			<p>If you have any questions or concerns about this decision, please contact us immediately.</p>
+			<p>We apologize for any inconvenience this may cause.</p>
+			<p>Best regards,<br>The Euro Haus Events Team</p>
+		</body>
+		</html>
+	`, data["ParticipantName"], data["VehicleDetails"], data["RevocationReason"])
 }
 
 // Helper function to extract submission ID from Redis key
@@ -1191,6 +1502,75 @@ func getSubmissionByID(submissionID string) (*VehicleSubmission, error) {
 	return submission, nil
 }
 
+// captureSubmissionPayment captures payment for an approved submission
+// This is used by both ApproveSubmission (manual approval) and CreateSubmission (auto-approval)
+// The webhook will handle sending emails and creating tickets when payment succeeds
+func captureSubmissionPayment(submissionID string) (bool, bool, error) {
+	// Get submission details
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		return false, false, fmt.Errorf("submission not found: %v", err)
+	}
+
+	if submission.CheckoutSessionID == "" {
+		return false, false, fmt.Errorf("no checkout session found")
+	}
+
+	// Retrieve the checkout session
+	sess, err := session.Get(submission.CheckoutSessionID, nil)
+	if err != nil {
+		return false, false, fmt.Errorf("error retrieving checkout session: %v", err)
+	}
+
+	if sess.PaymentIntent == nil {
+		return false, false, fmt.Errorf("no payment intent associated with checkout session")
+	}
+
+	// Get the payment intent
+	pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
+	if err != nil {
+		return false, false, fmt.Errorf("error retrieving payment intent: %v", err)
+	}
+
+	// Check the status and capture method
+	if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
+		// Capture the payment
+		fmt.Printf("Capturing payment for submission %s (payment intent: %s)\n", submissionID, pi.ID)
+
+		capturedPI, err := paymentintent.Capture(pi.ID, nil)
+		if err != nil {
+			return false, false, fmt.Errorf("error capturing payment: %v", err)
+		}
+
+		// Payment captured successfully - update Redis
+		rdb := services.GetRedisClient()
+		ctx := context.Background()
+		submissionKey := fmt.Sprintf("submission:%s", submissionID)
+
+		rdb.HSet(ctx, submissionKey, map[string]interface{}{
+			"payment_intent_id":   capturedPI.ID,
+			"payment_captured":    "true",
+			"payment_captured_at": time.Now().Format(time.RFC3339),
+		})
+
+		fmt.Printf("Successfully captured payment %s for submission %s\n", capturedPI.ID, submissionID)
+		// The webhook will handle the rest (sending emails, creating ticket)
+		return true, true, nil
+
+	} else if pi.Status == "succeeded" {
+		// Payment already succeeded
+		log.Printf("Payment already succeeded for submission %s\n", submissionID)
+		return true, false, nil
+
+	} else if pi.Status == "processing" {
+		// Payment is processing
+		log.Printf("Payment is processing for submission %s\n", submissionID)
+		return false, true, nil
+	}
+
+	return false, false, fmt.Errorf("payment intent status: %s (capture method: %s)", pi.Status, pi.CaptureMethod)
+}
+
 func createSubmissionPaymentLink(submission VehicleSubmission) (string, error) {
 	// This creates a payment link that the participant can use to complete their purchase
 	baseUrl := os.Getenv("BASE_URL")
@@ -1248,6 +1628,85 @@ func createSubmissionPaymentLink(submission VehicleSubmission) (string, error) {
 }
 
 // Email functions
+
+// sendSubmissionTicketEmail sends a ticket email for an approved submission
+func sendSubmissionTicketEmail(submissionData map[string]string, ticketToken string, eventName string) {
+	// Generate QR code
+	qrCodeURL, err := generateQRCode(ticketToken)
+	if err != nil {
+		log.Printf("Error generating QR code: %v", err)
+		return
+	}
+
+	vehicleDetails := fmt.Sprintf("%s %s %s",
+		submissionData["vehicle_year"],
+		submissionData["vehicle_make"],
+		submissionData["vehicle_model"])
+
+	customerEmail := submissionData["participant_email"]
+	customerName := submissionData["participant_name"]
+
+	emailData := map[string]interface{}{
+		"CustomerName":   customerName,
+		"EventName":      eventName,
+		"TicketCode":     ticketToken,
+		"QRCodeURL":      qrCodeURL,
+		"VehicleDetails": vehicleDetails,
+		"TicketType":     "Event Participant",
+		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
+	}
+
+	// Generate ticket HTML
+	ticketHTML := fmt.Sprintf(`
+		<html>
+		<body style="font-family: Arial, sans-serif; color: #333;">
+			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+				<h1 style="color: #007bff;">Your Event Participant Ticket</h1>
+				<p>Dear %s,</p>
+				<p>Congratulations! Your registration as an event participant is complete. Your vehicle has been approved:</p>
+				<p style="font-size: 18px; font-weight: bold;">%s</p>
+
+				<div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+					<h2>Event Details</h2>
+					<p><strong>Event:</strong> %s</p>
+					<p><strong>Ticket Type:</strong> Event Participant</p>
+					<p><strong>Ticket Code:</strong> <span style="font-family: monospace; font-size: 18px;">%s</span></p>
+				</div>
+
+				<div style="text-align: center; margin: 30px 0;">
+					<img src="%s" alt="QR Code" style="width: 200px; height: 200px;">
+					<p style="font-size: 12px; color: #666;">Show this QR code at check-in</p>
+				</div>
+
+				<h3>Important Information for Participants:</h3>
+				<ul>
+					<li>Please arrive at least 30 minutes before the event start time</li>
+					<li>Have your vehicle clean and ready for display</li>
+					<li>Bring this ticket (printed or on your phone) for check-in</li>
+					<li>Follow all event guidelines and instructions from staff</li>
+				</ul>
+
+				<p>We're excited to have you showcase your vehicle at our event!</p>
+				<p>Best regards,<br>The Euro Haus Events Team</p>
+			</div>
+		</body>
+		</html>
+	`, customerName, vehicleDetails, eventName, ticketToken, qrCodeURL)
+
+	msg := &services.EmailMessage{
+		To:           []string{customerEmail},
+		Subject:      fmt.Sprintf("Event Participant Ticket - %s", eventName),
+		TemplateID:   "participant-ticket",
+		TemplateData: emailData,
+		BodyHTML:     ticketHTML,
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending participant ticket email: %v", err)
+	} else {
+		log.Printf("Successfully sent ticket email to %s for ticket %s", customerEmail, ticketToken)
+	}
+}
 
 func sendSubmissionConfirmationEmail(submission VehicleSubmission) {
 	emailData := map[string]interface{}{

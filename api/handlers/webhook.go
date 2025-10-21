@@ -20,6 +20,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -129,6 +130,36 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		handleCheckoutSessionExpired(checkoutSession)
+
+	case "charge.refunded":
+		var charge stripe.Charge
+		err := json.Unmarshal(event.Data.Raw, &charge)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handleChargeRefunded(charge)
+
+	case "payment_intent.canceled":
+		var paymentIntent stripe.PaymentIntent
+		err := json.Unmarshal(event.Data.Raw, &paymentIntent)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handlePaymentIntentCanceled(paymentIntent)
+
+	case "checkout.session.async_payment_failed":
+		var checkoutSession stripe.CheckoutSession
+		err := json.Unmarshal(event.Data.Raw, &checkoutSession)
+		if err != nil {
+			log.Printf("Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handleCheckoutSessionPaymentFailed(checkoutSession)
 
 	default:
 		log.Printf("Unhandled event type: %s\n", event.Type)
@@ -440,6 +471,9 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		return
 	}
 
+	// Process stock updates for all items in the checkout session
+	processStockUpdates(fullSession)
+
 	// Keep track of products for order confirmation email
 	productItems := []map[string]interface{}{}
 	hasEventTickets := false
@@ -467,10 +501,6 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 
 		// Check if this is an event ticket
 		if lineItem.Price.Product.Metadata["type"] == "event" {
-			hasEventTickets = true
-			updateEventInventory(lineItem.Price.Product.ID, lineItem.Quantity)
-
-			// CRITICAL FIX: Only create tickets for non-participant purchases
 			// Check if this specific checkout is for a participant
 			isParticipantCheckout := fullSession.Metadata["participant"] == "true"
 
@@ -787,6 +817,254 @@ func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, sub
 
 	log.Printf("Sent recovery email for submission %s (attempt %d of %d)",
 		submissionID, currentCount+1, MaxRecoveryAttempts)
+}
+
+// handleChargeRefunded processes refund events and invalidates associated tickets
+func handleChargeRefunded(charge stripe.Charge) {
+	fmt.Printf("Processing refund for charge: %s", charge.ID)
+
+	// Get payment intent ID from charge
+	paymentIntentID := charge.PaymentIntent.ID
+	if paymentIntentID == "" {
+		log.Printf("No payment intent associated with charge %s", charge.ID)
+		return
+	}
+
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Find tickets associated with this payment intent
+	pattern := "ticket:*"
+	iter := rdb.Scan(ctx, 0, pattern, 0).Iterator()
+
+	refundedTickets := []string{}
+	customerEmail := ""
+	customerName := ""
+	eventName := ""
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		ticketData, err := rdb.HGetAll(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+
+		// Check if this ticket is associated with the refunded payment
+		if ticketData["stripe_payment_intent_id"] == paymentIntentID {
+			ticketToken := strings.TrimPrefix(key, "ticket:")
+
+			// Store customer info for email
+			if customerEmail == "" {
+				customerEmail = ticketData["customer_email"]
+				customerName = ticketData["customer_name"]
+				eventName = ticketData["event_name"]
+			}
+
+			// Invalidate the ticket
+			if err := InvalidateTicket(ticketToken, "Payment refunded"); err != nil {
+				log.Printf("Error invalidating ticket %s: %v", ticketToken, err)
+			} else {
+				refundedTickets = append(refundedTickets, ticketToken)
+			}
+		}
+	}
+
+	if len(refundedTickets) > 0 && customerEmail != "" {
+		// Send refund notification email
+		sendRefundNotificationEmail(customerEmail, customerName, eventName, refundedTickets, charge.AmountRefunded)
+		log.Printf("Invalidated %d tickets for refunded payment %s", len(refundedTickets), paymentIntentID)
+	}
+}
+
+// handlePaymentIntentCanceled processes canceled payment intents
+func handlePaymentIntentCanceled(pi stripe.PaymentIntent) {
+	log.Printf("Processing canceled payment intent: %s", pi.ID)
+
+	// Check if this is a participant submission
+	if pi.Metadata != nil && pi.Metadata["submission_id"] != "" {
+		submissionID := pi.Metadata["submission_id"]
+
+		rdb := services.GetRedisClient()
+		ctx := context.Background()
+
+		// Update submission status
+		submissionKey := fmt.Sprintf("submission:%s", submissionID)
+		updates := map[string]interface{}{
+			"payment_status": "canceled",
+			"updated_at":     time.Now().Format(time.RFC3339),
+		}
+
+		if err := rdb.HSet(ctx, submissionKey, updates).Err(); err != nil {
+			log.Printf("Error updating submission %s: %v", submissionID, err)
+		}
+	}
+
+	// Find and invalidate any tickets
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	pattern := "ticket:*"
+	iter := rdb.Scan(ctx, 0, pattern, 0).Iterator()
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		ticketData, err := rdb.HGetAll(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+
+		if ticketData["stripe_payment_intent_id"] == pi.ID {
+			ticketToken := strings.TrimPrefix(key, "ticket:")
+			if err := InvalidateTicket(ticketToken, "Payment canceled"); err != nil {
+				log.Printf("Error invalidating ticket %s: %v", ticketToken, err)
+			}
+		}
+	}
+}
+
+// handleCheckoutSessionPaymentFailed handles failed async payments
+func handleCheckoutSessionPaymentFailed(session stripe.CheckoutSession) {
+	log.Printf("Processing failed payment for checkout session: %s", session.ID)
+
+	// Similar to refund, find and invalidate tickets
+	if session.PaymentIntent != nil {
+		pi, err := paymentintent.Get(session.PaymentIntent.ID, nil)
+		if err == nil {
+			handlePaymentIntentCanceled(*pi)
+		}
+	}
+}
+
+// sendRefundNotificationEmail sends an email to notify customer about refunded tickets
+func sendRefundNotificationEmail(customerEmail, customerName, eventName string, ticketTokens []string, amountRefunded int64) {
+	if customerName == "" {
+		customerName = "Valued Customer"
+	}
+
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	// Format refund amount
+	refundAmount := fmt.Sprintf("$%.2f", float64(amountRefunded)/100.0)
+
+	emailData := map[string]interface{}{
+		"CustomerName": customerName,
+		"EventName":    eventName,
+		"RefundAmount": refundAmount,
+		"TicketCodes":  ticketTokens,
+		"TicketCount":  len(ticketTokens),
+		"RefundDate":   time.Now().Format("January 2, 2006"),
+		"SupportEmail": "info@theeurohaus.com",
+	}
+
+	// Generate email HTML
+	html := generateRefundNotificationHTML(emailData)
+
+	msg := &services.EmailMessage{
+		To:         []string{customerEmail},
+		Subject:    fmt.Sprintf("Refund Processed - %s", eventName),
+		BodyHTML:   html,
+		TemplateID: "ticket-refunded",
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending refund notification email to %s: %v", customerEmail, err)
+	} else {
+		log.Printf("Sent refund notification to %s for %d tickets", customerEmail, len(ticketTokens))
+	}
+}
+
+// generateRefundNotificationHTML generates the HTML for refund notification emails
+func generateRefundNotificationHTML(data map[string]interface{}) string {
+	customerName := data["CustomerName"].(string)
+	eventName := data["EventName"].(string)
+	refundAmount := data["RefundAmount"].(string)
+	ticketCodes := data["TicketCodes"].([]string)
+	ticketCount := data["TicketCount"].(int)
+	refundDate := data["RefundDate"].(string)
+	supportEmail := data["SupportEmail"].(string)
+
+	ticketsList := ""
+	for _, code := range ticketCodes {
+		ticketsList += fmt.Sprintf("<li style=\"font-family: monospace; margin: 5px 0;\">%s</li>", code)
+	}
+
+	html := fmt.Sprintf(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>Refund Notification - %s</title>
+		</head>
+		<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+				<div style="background-color: #dc3545; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;">
+					<h1 style="margin: 0;">Refund Processed</h1>
+				</div>
+
+				<div style="padding: 30px 20px; background-color: #f8f9fa;">
+					<p>Dear %s,</p>
+
+					<p>We're writing to confirm that your refund has been successfully processed.</p>
+
+					<div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545;">
+						<h3 style="margin-top: 0; color: #dc3545;">Refund Details</h3>
+						<table style="width: 100%%;">
+							<tr>
+								<td style="padding: 5px 0;"><strong>Event:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Refund Amount:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Date Processed:</strong></td>
+								<td>%s</td>
+							</tr>
+							<tr>
+								<td style="padding: 5px 0;"><strong>Tickets Cancelled:</strong></td>
+								<td>%d</td>
+							</tr>
+						</table>
+					</div>
+
+					<div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ffc107;">
+						<h4 style="margin-top: 0; color: #856404;">Cancelled Ticket Codes:</h4>
+						<ul style="margin: 10px 0; padding-left: 20px;">
+							%s
+						</ul>
+						<p style="margin: 10px 0 0 0; font-size: 14px; color: #856404;">
+							These tickets are no longer valid and cannot be used for event entry.
+						</p>
+					</div>
+
+					<p><strong>What happens next?</strong></p>
+					<ul>
+						<li>Your refund should appear in your account within 5-10 business days</li>
+						<li>You'll receive a receipt from your payment provider</li>
+						<li>Your tickets have been cancelled and removed from our system</li>
+					</ul>
+
+					<p>If you have any questions about this refund or would like to make a new purchase, please don't hesitate to contact us at <a href="mailto:%s">%s</a>.</p>
+
+					<p>We hope to see you at a future Euro Haus event!</p>
+
+					<p>Best regards,<br>
+					<strong>The Euro Haus Events Team</strong></p>
+				</div>
+
+				<div style="text-align: center; font-size: 12px; color: #777; margin-top: 30px; padding: 20px;">
+					<p>&copy; %d Euro Haus Events - Premium Automotive Experiences</p>
+					<p>This is an automated notification regarding your refund.</p>
+				</div>
+			</div>
+		</body>
+		</html>
+	`, eventName, customerName, eventName, refundAmount, refundDate, ticketCount, ticketsList, supportEmail, supportEmail, time.Now().Year())
+
+	return html
 }
 
 // sendManualRecoveryEmail sends an email asking the user to manually restart checkout
@@ -1278,6 +1556,270 @@ func updateEventInventory(productID string, quantitySold int64) {
 	}
 
 	log.Printf("Updated inventory for event %s: %d spots remaining\n", productID, newSpots)
+}
+
+// updateProductVariantStock updates the stock quantity for a specific product variant (price)
+func updateProductVariantStock(priceID string, quantitySold int64) {
+	// Get the current price with its metadata
+	p, err := price.Get(priceID, nil)
+	if err != nil {
+		log.Printf("Error fetching price %s: %v\n", priceID, err)
+		return
+	}
+
+	// Check if this price has stock tracking
+	stockQuantityStr, hasStock := p.Metadata["stock_quantity"]
+	if !hasStock || stockQuantityStr == "" {
+		// No stock tracking for this variant, skip
+		log.Printf("Price %s does not have stock tracking, skipping\n", priceID)
+		return
+	}
+
+	// Parse current stock
+	currentStock, err := strconv.Atoi(stockQuantityStr)
+	if err != nil {
+		log.Printf("Error parsing stock_quantity for price %s: %v\n", priceID, err)
+		return
+	}
+
+	// Calculate new stock
+	newStock := currentStock - int(quantitySold)
+	if newStock < 0 {
+		newStock = 0
+	}
+
+	// Prepare update params - we need to update ALL metadata fields
+	// because Stripe replaces the entire metadata object
+	updateParams := &stripe.PriceParams{
+		Metadata: p.Metadata, // Start with existing metadata
+	}
+
+	// Update stock quantity
+	updateParams.Metadata["stock_quantity"] = strconv.Itoa(newStock)
+
+	// Update in_stock status based on new quantity
+	if newStock == 0 {
+		updateParams.Metadata["in_stock"] = "false"
+	} else {
+		updateParams.Metadata["in_stock"] = "true"
+	}
+
+	// Update the price
+	_, err = price.Update(priceID, updateParams)
+	if err != nil {
+		log.Printf("Error updating price %s stock: %v\n", priceID, err)
+		return
+	}
+
+	// Log the stock update
+	variantName := p.Nickname
+	if variantName == "" {
+		variantName = p.Metadata["variant"]
+		if variantName == "" {
+			variantName = priceID
+		}
+	}
+
+	log.Printf("Updated stock for variant %s: %d -> %d units remaining\n", variantName, currentStock, newStock)
+
+	// Send low stock alert if needed
+	// if newStock > 0 && newStock <= 5 {
+	// 	sendLowStockAlert(p, newStock)
+	// }
+}
+
+// sendLowStockAlert sends an email notification when stock is low
+func sendLowStockAlert(p *stripe.Price, remainingStock int) {
+	// Get product details for the alert
+	prod, err := product.Get(p.Product.ID, nil)
+	if err != nil {
+		log.Printf("Error fetching product for low stock alert: %v\n", err)
+		return
+	}
+
+	variantName := p.Nickname
+	if variantName == "" {
+		variantName = p.Metadata["variant"]
+	}
+
+	// Send alert email to admin
+	adminEmail := os.Getenv("ADMIN_NOTIFICATION_EMAIL")
+	if adminEmail == "" {
+		adminEmail = "info@eurohaus.com" // Fallback
+	}
+
+	emailData := map[string]interface{}{
+		"ProductName":    prod.Name,
+		"VariantName":    variantName,
+		"Size":           p.Metadata["size"],
+		"Color":          p.Metadata["color"],
+		"RemainingStock": remainingStock,
+		"PriceID":        p.ID,
+		"ProductID":      prod.ID,
+	}
+
+	msg := &services.EmailMessage{
+		To:       []string{adminEmail},
+		Subject:  fmt.Sprintf("Low Stock Alert: %s - %s", prod.Name, variantName),
+		BodyHTML: generateLowStockAlertHTML(emailData),
+	}
+
+	if err := services.SendEmail(msg); err != nil {
+		log.Printf("Error sending low stock alert: %v", err)
+	}
+}
+
+// generateLowStockAlertHTML generates the HTML for low stock alert emails
+func generateLowStockAlertHTML(data map[string]interface{}) string {
+	productName := data["ProductName"].(string)
+	variantName := data["VariantName"].(string)
+	remainingStock := data["RemainingStock"].(int)
+
+	sizeInfo := ""
+	if size, ok := data["Size"].(string); ok && size != "" {
+		sizeInfo = fmt.Sprintf(" (Size: %s)", size)
+	}
+
+	colorInfo := ""
+	if color, ok := data["Color"].(string); ok && color != "" {
+		colorInfo = fmt.Sprintf(" (Color: %s)", color)
+	}
+
+	return fmt.Sprintf(`
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<style>
+			body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+			.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+			.header { background: #ff6b6b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+			.content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+			.alert { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
+			.details { background: white; padding: 15px; border-radius: 5px; margin: 20px 0; }
+			.action-btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px; }
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>⚠️ Low Stock Alert</h1>
+			</div>
+			<div class="content">
+				<div class="alert">
+					<h2>Immediate Attention Required</h2>
+					<p>The following product variant is running low on stock:</p>
+				</div>
+
+				<div class="details">
+					<h3>Product Details:</h3>
+					<ul>
+						<li><strong>Product:</strong> %s</li>
+						<li><strong>Variant:</strong> %s%s%s</li>
+						<li><strong>Remaining Stock:</strong> <span style="color: #ff6b6b; font-weight: bold;">%d units</span></li>
+					</ul>
+				</div>
+
+				<p>Please restock this item as soon as possible to avoid stockouts.</p>
+
+				<a href="%s" class="action-btn">View in Stripe Dashboard</a>
+			</div>
+		</div>
+	</body>
+	</html>
+	`, productName, variantName, sizeInfo, colorInfo, remainingStock,
+		fmt.Sprintf("https://dashboard.stripe.com/products/%s", data["ProductID"]))
+}
+
+// processStockUpdates handles stock updates for all items in a checkout session
+func processStockUpdates(checkoutSession *stripe.CheckoutSession) {
+	// Process each line item
+	for _, lineItem := range checkoutSession.LineItems.Data {
+		// Skip if no price ID
+		if lineItem.Price == nil {
+			continue
+		}
+
+		priceID := lineItem.Price.ID
+		quantitySold := lineItem.Quantity
+
+		// Get the product type from metadata
+		if lineItem.Price.Product != nil {
+			productType := lineItem.Price.Product.Metadata["type"]
+
+			switch productType {
+			case "event":
+				// Update event inventory
+				updateEventInventory(lineItem.Price.Product.ID, quantitySold)
+
+			case "product":
+				// Update product variant stock
+				updateProductVariantStock(priceID, quantitySold)
+
+			case "bundle":
+				// For bundles, we need to update stock for each bundled item
+				// This is more complex as we need to parse the bundle metadata
+				handleBundleStockUpdate(lineItem.Price.Product.ID, quantitySold)
+
+			default:
+				// Regular product without specific type - still try to update stock
+				updateProductVariantStock(priceID, quantitySold)
+			}
+		} else {
+			// No product info, just try to update as variant stock
+			updateProductVariantStock(priceID, quantitySold)
+		}
+	}
+}
+
+// handleBundleStockUpdate processes stock updates for bundle products
+func handleBundleStockUpdate(bundleProductID string, quantitySold int64) {
+	// Get the bundle product
+	p, err := product.Get(bundleProductID, nil)
+	if err != nil {
+		log.Printf("Error fetching bundle product %s: %v\n", bundleProductID, err)
+		return
+	}
+
+	// Parse bundle items from metadata
+	bundleItemsJSON, exists := p.Metadata["bundle_items"]
+	if !exists || bundleItemsJSON == "" {
+		log.Printf("Bundle %s has no bundle_items metadata\n", bundleProductID)
+		return
+	}
+
+	// Parse the JSON to get bundle items
+	var bundleItems []struct {
+		ProductID string `json:"productId"`
+		Quantity  int    `json:"quantity"`
+	}
+
+	if err := json.Unmarshal([]byte(bundleItemsJSON), &bundleItems); err != nil {
+		log.Printf("Error parsing bundle_items for %s: %v\n", bundleProductID, err)
+		return
+	}
+
+	// For each item in the bundle, update its stock
+	for _, item := range bundleItems {
+		// Get the product's default price or prices
+		bundledProduct, err := product.Get(item.ProductID, nil)
+		if err != nil {
+			log.Printf("Error fetching bundled product %s: %v\n", item.ProductID, err)
+			continue
+		}
+
+		// Calculate total quantity to decrement (bundle quantity * item quantity * quantity sold)
+		totalQuantity := int64(item.Quantity) * quantitySold
+
+		// If product has variants, we need to handle this differently
+		// For simplicity, we'll update the default price if it exists
+		if bundledProduct.DefaultPrice != nil {
+			updateProductVariantStock(bundledProduct.DefaultPrice.ID, totalQuantity)
+		} else {
+			log.Printf("Bundle item %s has no default price to update stock\n", item.ProductID)
+		}
+	}
+
+	log.Printf("Processed stock updates for bundle %s\n", bundleProductID)
 }
 
 // generateUniqueToken creates a unique token for a ticket

@@ -16,6 +16,7 @@ interface ProductCardProps {
 	imageUrl: string
 	isNew?: boolean
 	inStock?: boolean
+	badges?: React.ReactNode
 }
 
 export function ProductCard({
@@ -27,6 +28,7 @@ export function ProductCard({
 	imageUrl,
 	isNew = false,
 	inStock = true,
+	badges,
 }: ProductCardProps) {
 	const [isHovered, setIsHovered] = useState(false)
 	const [isFavorite, setIsFavorite] = useState(false)
@@ -76,12 +78,12 @@ export function ProductCard({
 
 				{/* Badges */}
 				<div className="absolute left-2 top-2 flex flex-col gap-1">
-					{isNew && <Badge className="bg-primary text-primary-foreground">New</Badge>}
-					{compareAtPrice && discount > 0 && <Badge variant="destructive">-{discount}%</Badge>}
-					{!inStock && (
-						<Badge variant="outline" className="bg-background/80">
-							Out of Stock
-						</Badge>
+					{badges ? badges : (
+						<>
+							{isNew && <Badge className="bg-primary text-primary-foreground">New</Badge>}
+							{compareAtPrice && discount > 0 && <Badge variant="destructive">-{discount}%</Badge>}
+							{!inStock && <Badge variant="outline" className="bg-background/80">Out of Stock</Badge>}
+						</>
 					)}
 				</div>
 

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
@@ -23,7 +23,8 @@ import {
 	Package,
 	Calendar,
 	RefreshCw,
-	LayoutDashboard
+	LayoutDashboard,
+	Gift
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -63,10 +64,12 @@ import {
 	formSchema,
 	FormData,
 	ProductFormData,
-	EventFormData
+	EventFormData,
+	BundleFormData
 } from '~/lib/schemas/product-schema';
 import { ProductFormSection } from '~/components/admin/product-form-section';
 import { EventFormSection } from '~/components/admin/event-form-section';
+import { BundleFormSection } from '~/components/admin/bundle-form-section';
 import { Image } from '~/components/ui/image';
 import { fetchExternalMetadata } from '~/lib/utils';
 
@@ -111,9 +114,9 @@ function AdminProductsContent() {
 	const [filteredProducts, setFilteredProducts] = useState<StripeProduct[]>([]);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
-	const [filterType, setFilterType] = useState<'all' | 'product' | 'event'>('all');
+	const [filterType, setFilterType] = useState<'all' | 'product' | 'bundle' | 'event'>('all');
 	const [editingProduct, setEditingProduct] = useState<StripeProduct | null>(null);
-	const [productType, setProductType] = useState<'product' | 'event'>('product');
+	const [productType, setProductType] = useState<'product' | 'bundle' | 'event'>('product');
 	const [productToDelete, setProductToDelete] = useState<{ id: string; name: string } | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
 
@@ -134,6 +137,7 @@ function AdminProductsContent() {
 			isNew: false,
 			maxQuantity: '10',
 			variants: [],
+			// Bundle specific fields will be set when switching to bundle type
 			// Event specific fields will be set when switching to event type
 		},
 	});
@@ -420,7 +424,10 @@ function AdminProductsContent() {
 						productId = productResponse.data.productID || productResponse.data.product_id;
 					}
 
-					// Then create prices for each variant
+					// Then create prices for each variant and find the lowest price
+					let lowestPriceId: string | null = null;
+					let lowestPrice = Infinity;
+
 					for (const variant of data.variants) {
 						const variantPriceData = {
 							product: productId,
@@ -433,11 +440,27 @@ function AdminProductsContent() {
 								color: variant.color || '',
 								sku: variant.sku || '',
 								in_stock: variant.inStock.toString(),
+								stock_quantity: variant.stockQuantity || '',
 								sort_order: variant.sortOrder.toString(),
 							},
 						};
 
-						await apiClient.post('/admin/create-price', variantPriceData);
+						const priceResponse = await apiClient.post('/admin/create-price', variantPriceData);
+						const newPriceId = priceResponse.data.id;
+
+						if (variantPriceData.unit_amount < lowestPrice) {
+							lowestPrice = variantPriceData.unit_amount;
+							lowestPriceId = newPriceId;
+						}
+					}
+
+					// Set the lowest price as the default for the product
+					if (lowestPriceId) {
+						console.log('LOWEST PRICE ID', lowestPriceId)
+						await apiClient.post('/admin/set-default-price', {
+							productId: productId,
+							priceId: lowestPriceId,
+						});
 					}
 				} else {
 					// Single price product
@@ -451,6 +474,29 @@ function AdminProductsContent() {
 					} else {
 						await apiClient.post('/admin/create-product', requestData);
 					}
+				}
+			} else if (data.type === 'bundle') {
+				// Bundle metadata
+				metadata.in_stock = data.inStock?.toString() || 'false';
+				metadata.bundle_items = JSON.stringify(data.bundleItems);
+				metadata.discount_type = data.discountType;
+				metadata.discount_value = data.discountValue;
+				metadata.max_quantity = data.maxQuantity || '0';
+
+				// Calculate total value for reference
+				const totalValue = data.bundleItems.reduce((sum, item) =>
+					sum + (item.price * item.quantity), 0
+				);
+				metadata.total_value = totalValue.toString();
+
+				// Single price for bundle
+				requestData.price = Math.round(parseFloat(data.price || '0') * 100);
+				requestData.currency = 'usd';
+
+				if (editingProduct) {
+					await apiClient.put(`/admin/update-product/${editingProduct.id}`, requestData);
+				} else {
+					await apiClient.post('/admin/create-product', requestData);
 				}
 			} else {
 				// Event metadata
@@ -637,6 +683,26 @@ function AdminProductsContent() {
 		toast.success('Product template loaded');
 		setActiveTab('create');
 	};
+
+	const loadBundleTemplate = () => {
+		setEditingProduct(null);
+		setProductType('bundle');
+		form.reset({
+			type: 'bundle',
+			name: 'Euro Haus Bundle',
+			description: 'Premium cotton t-shirt with embroidered Euro Haus logo',
+			price: '29.99',
+			imageUrl: 'https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/product.jpg',
+			featured: false,
+			maxQuantity: '10',
+			inStock: true,
+			bundleItems: [],
+			discountType: 'percentage',
+			discountValue: '',
+		});
+		toast.success('Bundle template loaded');
+		setActiveTab('create');
+	}
 
 	const handleLogout = async () => {
 		await logout();
@@ -830,7 +896,7 @@ function AdminProductsContent() {
 					<TabsContent value="create">
 						{/* Quick Templates */}
 						{!editingProduct && (
-							<div className="grid md:grid-cols-2 gap-4 mb-8">
+							<div className="grid md:grid-cols-3 gap-4 mb-8">
 								<Card
 									className="cursor-pointer hover:shadow-md transition-shadow"
 									onClick={loadProductTemplate}
@@ -853,6 +919,18 @@ function AdminProductsContent() {
 											<Copy className="h-4 w-4" />
 										</div>
 										<CardDescription>Load event ticket template</CardDescription>
+									</CardHeader>
+								</Card>
+								<Card
+									className="cursor-pointer hover:shadow-md transition-shadow"
+									onClick={loadBundleTemplate}
+								>
+									<CardHeader>
+										<div className="flex items-center justify-between">
+											<CardTitle className="text-lg">Bundle Template</CardTitle>
+											<Copy className="h-4 w-4" />
+										</div>
+										<CardDescription>Load bundle template</CardDescription>
 									</CardHeader>
 								</Card>
 							</div>
@@ -880,8 +958,8 @@ function AdminProductsContent() {
 												<FormItem>
 													<FormLabel>Product Type</FormLabel>
 													<Select
-														value={productType}
-														onValueChange={(value: 'product' | 'event') => {
+														value={field.value}
+														onValueChange={(value: 'product' | 'bundle' | 'event') => {
 															setProductType(value);
 															field.onChange(value);
 
@@ -912,6 +990,20 @@ function AdminProductsContent() {
 																	availableSpots: '',
 																};
 																form.reset(eventDefaults);
+															} else if (value === 'bundle') {
+																const bundleDefaults: BundleFormData = {
+																	type: 'bundle',
+																	bundleItems: [],
+																	discountType: 'percentage',
+																	discountValue: '',
+																	name: '',
+																	description: '',
+																	imageUrl: '',
+																	featured: false,
+																	price: '',
+																	inStock: true
+																};
+																form.reset(bundleDefaults);
 															} else {
 																const currentValues = form.getValues();
 																const productDefaults: ProductFormData = {
@@ -940,8 +1032,24 @@ function AdminProductsContent() {
 															</SelectTrigger>
 														</FormControl>
 														<SelectContent>
-															<SelectItem value="product">Regular Product</SelectItem>
-															<SelectItem value="event">Event Ticket</SelectItem>
+															<SelectItem value="product">
+																<div className="flex items-center gap-2">
+																	<Package className="h-4 w-4" />
+																	Regular Product
+																</div>
+															</SelectItem>
+															<SelectItem value="bundle">
+																<div className="flex items-center gap-2">
+																	<Gift className="h-4 w-4" />
+																	Product Bundle
+																</div>
+															</SelectItem>
+															<SelectItem value="event">
+																<div className="flex items-center gap-2">
+																	<Calendar className="h-4 w-4" />
+																	Event
+																</div>
+															</SelectItem>
 														</SelectContent>
 													</Select>
 													<FormMessage />
@@ -1014,13 +1122,19 @@ function AdminProductsContent() {
 
 										{/* Type-specific forms */}
 										<div className="space-y-6">
-											{productType === 'product' ? (
+											{productType === 'product' && (
 												<ProductFormSection
 													form={form}
 													isEditing={!!editingProduct}
 													productId={editingProduct?.id}
 												/>
-											) : (
+											)}
+											{productType === 'bundle' && (
+												<BundleFormSection
+													form={form as UseFormReturn<BundleFormData>}
+												/>
+											)}
+											{productType === 'event' && (
 												<EventFormSection
 													form={form}
 													isEditing={!!editingProduct}

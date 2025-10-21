@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -214,7 +215,9 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 
 // GetEventAttendees retrieves all attendees for a specific event
 func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
-	eventID := r.URL.Query().Get("event_id")
+	vars := mux.Vars(r)
+	eventID := vars["eventId"]
+
 	if eventID == "" {
 		http.Error(w, "Missing event_id parameter", http.StatusBadRequest)
 		return
@@ -379,7 +382,7 @@ func GetEventBySlug(w http.ResponseWriter, r *http.Request) {
 
 	// Search for products with type=event and matching slug
 	params := &stripe.ProductListParams{}
-	params.Filters.AddFilter("active", "", "true")
+	// params.Filters.AddFilter("active", "", "true")
 	params.AddExpand("data.default_price")
 
 	var eventProduct *stripe.Product
@@ -661,4 +664,156 @@ func GetEventTickets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"tickets": tickets,
 	})
+}
+
+// CleanupEventTickets removes invalid and duplicate tickets for an event
+func CleanupEventTickets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get eventId from URL
+	vars := mux.Vars(r)
+	eventID := vars["eventId"]
+
+	if eventID == "" {
+		http.Error(w, "Missing eventId parameter", http.StatusBadRequest)
+		return
+	}
+
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	// Track statistics
+	type CleanupStats struct {
+		TotalTickets     int      `json:"totalTickets"`
+		InvalidTickets   []string `json:"invalidTickets"`
+		DuplicateTickets []string `json:"duplicateTickets"`
+		RefundedTickets  []string `json:"refundedTickets"`
+		CleanedTickets   int      `json:"cleanedTickets"`
+		ValidTickets     int      `json:"validTickets"`
+	}
+
+	stats := CleanupStats{}
+
+	// Get all attendee tokens for this event
+	attendeeTokens, err := rdb.SMembers(ctx, "event:"+eventID+":attendees").Result()
+	if err != nil {
+		http.Error(w, "Error retrieving tickets", http.StatusInternalServerError)
+		return
+	}
+
+	stats.TotalTickets = len(attendeeTokens)
+
+	// Track unique tickets by customer email + payment intent
+	uniqueTickets := make(map[string]string) // key: email+paymentintent, value: token
+	tokensToRemove := []string{}
+
+	for _, token := range attendeeTokens {
+		ticketKey := "ticket:" + token
+		ticketData, err := rdb.HGetAll(ctx, ticketKey).Result()
+		if err != nil {
+			continue
+		}
+
+		// Check if ticket data is valid
+		if ticketData["customer_email"] == "" || ticketData["stripe_product_id"] == "" {
+			stats.InvalidTickets = append(stats.InvalidTickets, token)
+			tokensToRemove = append(tokensToRemove, token)
+			log.Printf("Invalid ticket found (missing data): %s", token)
+			continue
+		}
+
+		// Check if it's been refunded
+		if ticketData["status"] == "refunded" || ticketData["status"] == "cancelled" {
+			stats.RefundedTickets = append(stats.RefundedTickets, token)
+			tokensToRemove = append(tokensToRemove, token)
+			log.Printf("Refunded/cancelled ticket found: %s", token)
+			continue
+		}
+
+		// Check for duplicates based on customer email and payment intent
+		paymentIntentID := ticketData["stripe_payment_intent_id"]
+		if paymentIntentID == "" {
+			// For checkout sessions without payment intent, use session ID
+			paymentIntentID = ticketData["stripe_checkout_session_id"]
+		}
+
+		uniqueKey := ticketData["customer_email"] + ":" + paymentIntentID
+		if existingToken, exists := uniqueTickets[uniqueKey]; exists {
+			// Keep the older ticket (first occurrence)
+			stats.DuplicateTickets = append(stats.DuplicateTickets, token)
+			tokensToRemove = append(tokensToRemove, token)
+
+			log.Printf("Duplicate ticket found: %s (keeping %s)", token, existingToken)
+		} else {
+			uniqueTickets[uniqueKey] = token
+		}
+	}
+
+	// Remove invalid and duplicate tickets
+	for _, token := range tokensToRemove {
+		// Remove from attendees set
+		if err := rdb.SRem(ctx, "event:"+eventID+":attendees", token).Err(); err != nil {
+			log.Printf("Error removing ticket %s from attendees set: %v", token, err)
+			continue
+		}
+
+		// Delete ticket data
+		ticketKey := "ticket:" + token
+		if err := rdb.Del(ctx, ticketKey).Err(); err != nil {
+			log.Printf("Error deleting ticket %s: %v", token, err)
+			continue
+		}
+
+		stats.CleanedTickets++
+		log.Printf("Removed invalid/duplicate ticket: %s", token)
+	}
+
+	stats.ValidTickets = stats.TotalTickets - stats.CleanedTickets
+
+	// Log cleanup summary
+	log.Printf("Event %s ticket cleanup complete: %d total, %d cleaned, %d valid remaining",
+		eventID, stats.TotalTickets, stats.CleanedTickets, stats.ValidTickets)
+
+	// Return cleanup statistics
+	json.NewEncoder(w).Encode(stats)
+}
+
+// InvalidateTicket marks a ticket as invalid/cancelled (helper function for refunds used in webhook)
+func InvalidateTicket(ticketToken string, reason string) error {
+	rdb := services.GetRedisClient()
+	ctx := context.Background()
+
+	ticketKey := "ticket:" + ticketToken
+
+	// Get ticket data
+	ticketData, err := rdb.HGetAll(ctx, ticketKey).Result()
+	if err != nil {
+		return fmt.Errorf("error retrieving ticket: %v", err)
+	}
+
+	if len(ticketData) == 0 {
+		return fmt.Errorf("ticket not found: %s", ticketToken)
+	}
+
+	// Update ticket status
+	updates := map[string]interface{}{
+		"status":              "cancelled",
+		"cancelled_at":        time.Now().Format(time.RFC3339),
+		"cancellation_reason": reason,
+	}
+
+	if err := rdb.HSet(ctx, ticketKey, updates).Err(); err != nil {
+		return fmt.Errorf("error updating ticket status: %v", err)
+	}
+
+	// Remove from attendees set
+	eventID := ticketData["stripe_product_id"]
+	if eventID != "" {
+		if err := rdb.SRem(ctx, "event:"+eventID+":attendees", ticketToken).Err(); err != nil {
+			log.Printf("Error removing ticket from attendees set: %v", err)
+		}
+	}
+
+	log.Printf("Ticket %s invalidated: %s", ticketToken, reason)
+	return nil
 }

@@ -23,14 +23,17 @@ import {
 	Clock,
 	CheckCircle,
 	Info,
-	Package
+	Package,
+	Gift
 } from 'lucide-react'
 import { apiClient } from '~/lib/api'
 import { useCart } from '~/lib/contexts/cart-context'
 import { toast } from 'sonner'
 import { cn } from '~/lib/utils'
-import { stripeService, ProductVariant, ProductWithVariants, EventWithTiers, TieredPrice, StripeProduct } from '~/lib/services/stripe-service'
+import { stripeService, ProductVariant, ProductWithVariants, EventWithTiers, TieredPrice, StripeProduct, BundleProduct } from '~/lib/services/stripe-service'
 import { TieredPricing } from '~/components/tiered-pricing'
+import { BundleDisplay, BundleBadge } from '~/components/bundle-display'
+import { BundleOfferInteractive, SelectedVariant } from '~/components/bundle-offer'
 
 export const Route = createFileRoute('/catalog/$id')({
 	loader: async ({ params }) => {
@@ -43,27 +46,41 @@ export const Route = createFileRoute('/catalog/$id')({
 				throw new Error('Product not found')
 			}
 
+			// Find bundles that this product is a part of
+			const containingBundles = await stripeService.findBundlesForProduct(params.id)
+
+			// Check product type
+			const productType = product.metadata.type;
+
+			// Handle bundles
+			if (productType === 'bundle') {
+				const bundleProduct = await stripeService.getBundleProduct(params.id);
+				if (bundleProduct) {
+					return { product: bundleProduct, isEvent: false, isBundle: true, hasVariants: false, hasTiers: false };
+				}
+			}
+
 			// Check if it's an event
-			const isEvent = product.metadata.type === 'event';
+			const isEvent = productType === 'event';
 
 			if (isEvent) {
 				// Try to fetch event with tiers
 				const eventWithTiers = await stripeService.getEventWithPriceTiers(params.id);
 				if (eventWithTiers) {
-					return { product: eventWithTiers, isEvent: true, hasTiers: true };
+					return { product: eventWithTiers, isEvent: true, isBundle: false, hasTiers: true, hasVariants: false };
 				}
 				// Fall back to regular event
 				const transformedEvent = await stripeService.transformStripeEventProduct(product);
-				return { product: transformedEvent, isEvent: true, hasTiers: false };
+				return { product: transformedEvent, isEvent: true, isBundle: false, hasTiers: false, hasVariants: false };
 			} else {
 				// Try to fetch product with variants
 				const productWithVariants = await stripeService.getProductWithVariants(params.id);
 				if (productWithVariants) {
-					return { product: productWithVariants, isEvent: false, hasVariants: true };
+					return { product: productWithVariants, isEvent: false, hasVariants: true, hasTiers: false, containingBundles };
 				}
 				// Fall back to regular product
 				const transformedProduct = stripeService.transformStripeProduct(product);
-				return { product: transformedProduct, isEvent: false, hasVariants: false };
+				return { product: transformedProduct, isEvent: false, hasVariants: false, hasTiers: false, containingBundles };
 			}
 		} catch (error: any) {
 			if (error.response?.status === 404) {
@@ -93,8 +110,9 @@ export const Route = createFileRoute('/catalog/$id')({
 	component: ProductDetailPage,
 })
 
+
 function ProductDetailPage() {
-	const { product, isEvent, hasVariants, hasTiers } = Route.useLoaderData()
+	const { product, isEvent, isBundle, hasVariants, hasTiers, containingBundles } = Route.useLoaderData()
 	const navigate = useNavigate()
 	const { addItem } = useCart()
 
@@ -106,6 +124,7 @@ function ProductDetailPage() {
 
 	// Type guards
 	const isEventProduct = (p: typeof product): p is EventWithTiers => isEvent;
+	const isBundleProduct = (p: typeof product): p is BundleProduct => isBundle ?? false;
 	const hasProductVariants = (p: typeof product): p is ProductWithVariants => (hasVariants ?? false) && !isEvent;
 
 	// Event specific data
@@ -217,7 +236,7 @@ function ProductDetailPage() {
 			description: product.description || '',
 			price: getCurrentPrice(),
 			quantity,
-			imageUrl: selectedVariant?.images?.[0] || product.imageUrl,
+			imageUrl: selectedVariant?.images?.[0] || product.images[0],
 			maxQuantity: getMaxQuantity(),
 			type: isEvent ? 'event' : 'product',
 			eventDate: eventData?.date,
@@ -225,6 +244,59 @@ function ProductDetailPage() {
 
 		toast.success(`Added ${quantity} ${quantity === 1 ? 'item' : 'items'} to cart`)
 	}
+
+	const handleAddBundleToCart = (bundle: BundleProduct) => {
+		if (!bundle.inStock) {
+			toast.error('This bundle is out of stock');
+			return;
+		}
+
+		addItem({
+			id: bundle.id,
+			priceId: bundle.priceId,
+			title: bundle.title,
+			description: `Bundle of ${bundle.bundleItems.length} items`,
+			price: bundle.price,
+			quantity: 1, // Bundles are added one at a time
+			imageUrl: bundle.images[0],
+			maxQuantity: bundle.maxQuantity || 10,
+			type: 'bundle',
+		});
+		toast.success(`Added "${bundle.title}" to cart`);
+	};
+
+	// Handle adding bundle to cart with variant selections
+	const handleBundleAddToCart = (bundle: BundleProduct, selections: SelectedVariant[]) => {
+		// Create a descriptive title with selected variants
+		const variantDescriptions = selections
+			.filter(s => s.variant)
+			.map(s => s.variant!.variant)
+			.join(', ');
+
+		const bundleTitle = variantDescriptions
+			? `${bundle.title} (${variantDescriptions})`
+			: bundle.title;
+
+		// Add bundle to cart
+		// Note: You might want to store the selections in metadata
+		// or handle this differently based on your cart implementation
+		addItem({
+			id: bundle.id,
+			priceId: bundle.priceId,
+			title: bundleTitle,
+			description: `Bundle: ${bundle.bundleItems.map(i => i.productName).join(', ')}`,
+			price: bundle.price,
+			quantity: 1,
+			imageUrl: bundle.images[0],
+			maxQuantity: bundle.maxQuantity || 10,
+			type: 'bundle',
+			metadata: {
+				bundleSelections: JSON.stringify(selections),
+			}
+		});
+
+		toast.success('Bundle added to cart with your selections!');
+	};
 
 	// Share handler
 	const handleShare = async () => {
@@ -248,8 +320,8 @@ function ProductDetailPage() {
 		if (selectedVariant?.images && selectedVariant.images.length > 0) {
 			return selectedVariant.images;
 		}
-		if (product.imageUrl) {
-			return [product.imageUrl];
+		if (product.images) {
+			return product.images
 		}
 		return ['/placeholder.svg?height=600&width=600'];
 	}
@@ -296,7 +368,7 @@ function ProductDetailPage() {
 								<Image
 									src={allImages[selectedImage] || allImages[0]}
 									alt={product.title}
-									className="h-full w-full object-cover"
+									className="h-full w-full object-contain"
 								/>
 							</div>
 
@@ -344,6 +416,7 @@ function ProductDetailPage() {
 
 								{/* Badges */}
 								<div className="flex flex-wrap gap-2 mb-4">
+									{isBundle && isBundleProduct(product) && <BundleBadge bundle={product} />}
 									{isEvent && <Badge variant="secondary">Event</Badge>}
 									{product.isNew && <Badge>New</Badge>}
 									{product.featured && <Badge variant="secondary">Featured</Badge>}
@@ -365,7 +438,12 @@ function ProductDetailPage() {
 
 								{/* Category or Event Status */}
 								<p className="text-sm text-muted-foreground mt-2">
-									{isEvent ? `Status: ${eventData?.status || 'upcoming'}` : `Category: ${product.category ? product.category.charAt(0).toUpperCase() + product.category.slice(1) : 'General'}`}
+									{isEvent
+										? `Status: ${eventData?.status || 'upcoming'}`
+										: isBundle
+											? `Bundle: ${isBundleProduct(product) ? product.bundleItems.length : 0} items included`
+											: `Category: ${product.category ? product.category.charAt(0).toUpperCase() + product.category.slice(1) : 'General'}`
+									}
 								</p>
 							</div>
 
@@ -406,6 +484,11 @@ function ProductDetailPage() {
 								<div className="prose prose-sm max-w-none">
 									<p>{product.description}</p>
 								</div>
+							)}
+
+							{/* Bundle Display */}
+							{isBundle && isBundleProduct(product) && (
+								<BundleDisplay bundle={product} />
 							)}
 
 							{/* Tags */}
@@ -623,9 +706,8 @@ function ProductDetailPage() {
 									<CardContent>
 										<ul className="space-y-2">
 											{eventData.includes.map((item, index) => (
-												<li key={index} className="flex items-center gap-2">
-													<span className="text-primary mt-1">•</span>
-													<span className="text-sm">{item}</span>
+												<li key={index} className="flex items-center gap-2 list-disc list-inside text-sm">
+													{item}
 												</li>
 											))}
 										</ul>
@@ -683,16 +765,16 @@ function ProductDetailPage() {
 								<Card>
 									<CardContent className="pt-6">
 										<h3 className="font-semibold mb-2">Shipping Information</h3>
-										<ul className="space-y-2 text-sm">
-											<li>• Free standard shipping on orders over $100</li>
-											<li>• Express shipping available at checkout</li>
-											<li>• International shipping to select countries</li>
+										<ul className="space-y-2 text-sm list-disc list-inside">
+											<li>Free standard shipping on orders over $100</li>
+											<li>Express shipping available at checkout</li>
+											<li>International shipping to select countries</li>
 										</ul>
 										<h3 className="font-semibold mt-4 mb-2">Return Policy</h3>
-										<ul className="space-y-2 text-sm">
-											<li>• 30-day return window</li>
-											<li>• Items must be unused and in original packaging</li>
-											<li>• Free returns on all orders</li>
+										<ul className="space-y-2 text-sm list-disc list-inside">
+											<li>30-day return window</li>
+											<li>Items must be unused and in original packaging</li>
+											<li>Free returns on all orders</li>
 										</ul>
 									</CardContent>
 								</Card>
@@ -705,6 +787,20 @@ function ProductDetailPage() {
 								</Card>
 							</TabsContent>
 						</Tabs>
+					)}
+
+					{!isEvent && containingBundles && containingBundles.length > 0 && (
+						<div className="mt-12">
+							<h2 className="text-2xl font-bold mb-6">Save with Bundles</h2>
+							<div className="space-y-6">
+								{containingBundles.map(bundle => (
+									<BundleOfferInteractive
+										key={bundle.id}
+										bundle={bundle}
+									/>
+								))}
+							</div>
+						</div>
 					)}
 
 					{/* Related Products */}

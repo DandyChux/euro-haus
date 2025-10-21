@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 )
 
@@ -44,11 +45,19 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if we should include inactive products
+	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+
 	// Fetch products from Stripe
 	params := &stripe.ProductListParams{
-		Active: stripe.Bool(true),
 		Expand: []*string{stripe.String("data.default_price")},
 	}
+
+	// Only filter by active status if we're not including inactive products
+	if !includeInactive {
+		params.Active = stripe.Bool(true)
+	}
+
 	params.Filters.AddFilter("limit", "", "100")
 
 	iter := product.List(params)
@@ -175,4 +184,56 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+// UpdatePriceMetadata updates the metadata for a specific price
+func UpdatePriceMetadata(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get price ID from URL
+	vars := mux.Vars(r)
+	priceID := vars["id"]
+
+	if priceID == "" {
+		http.Error(w, "Price ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		Metadata map[string]string `json:"metadata"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Update price metadata in Stripe
+	params := &stripe.PriceParams{
+		Metadata: req.Metadata,
+	}
+
+	updatedPrice, err := price.Update(priceID, params)
+	if err != nil {
+		log.Printf("Error updating price metadata: %v", err)
+		http.Error(w, "Failed to update price metadata", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"price":   updatedPrice,
+	})
 }

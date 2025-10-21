@@ -25,7 +25,9 @@ import {
 	Package,
 	CheckCircle,
 	XCircle,
-	QrCode
+	QrCode,
+	ChevronUp,
+	ChevronDown,
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
@@ -173,6 +175,9 @@ function AdminCouponsContent() {
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
 	const [showPromoDialog, setShowPromoDialog] = useState(false);
+	const [promotionCodes, setPromotionCodes] = useState<Record<string, PromotionCode[]>>({});
+	const [expandedCoupons, setExpandedCoupons] = useState<Record<string, boolean>>({});
+	const [loadingPromoCodes, setLoadingPromoCodes] = useState<Record<string, boolean>>({});
 
 	// Form for creating coupons
 	const couponForm = useForm<CouponFormData>({
@@ -226,6 +231,35 @@ function AdminCouponsContent() {
 			setProducts(response.data.products || []);
 		} catch (error) {
 			console.error('Error fetching products:', error);
+		}
+	};
+
+	// Fetch promotion codes for a specific coupon
+	const fetchPromotionCodes = async (couponId: string) => {
+		setLoadingPromoCodes(prev => ({ ...prev, [couponId]: true }));
+		try {
+			const response = await apiClient.get(`/admin/promotion-codes?coupon_id=${couponId}`);
+			setPromotionCodes(prev => ({
+				...prev,
+				[couponId]: response.data.promotion_codes || []
+			}));
+			console.log(response.data)
+		} catch (error) {
+			console.error('Error fetching promotion codes:', error);
+			toast.error('Failed to fetch promotion codes');
+		} finally {
+			setLoadingPromoCodes(prev => ({ ...prev, [couponId]: false }));
+		}
+	};
+
+	// Toggle showing promotion codes for a coupon
+	const togglePromoCodes = (couponId: string) => {
+		const isExpanded = expandedCoupons[couponId];
+		setExpandedCoupons(prev => ({ ...prev, [couponId]: !isExpanded }));
+
+		// Fetch codes if expanding and not already loaded
+		if (!isExpanded && !promotionCodes[couponId]) {
+			fetchPromotionCodes(couponId);
 		}
 	};
 
@@ -314,6 +348,7 @@ function AdminCouponsContent() {
 			toast.success('Promotion code created successfully!');
 			promoForm.reset();
 			setShowPromoDialog(false);
+			if (selectedCoupon) fetchPromotionCodes(selectedCoupon.id);
 			setSelectedCoupon(null);
 		} catch (error) {
 			console.error('Error creating promotion code:', error);
@@ -574,6 +609,84 @@ function AdminCouponsContent() {
 															<Trash2 className="h-4 w-4" />
 														</Button>
 													</div>
+												</div>
+
+												{/* Promotion Codes Section */}
+												<div className="mt-4 pt-4 border-t">
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => togglePromoCodes(coupon.id)}
+														className="w-full justify-between"
+													>
+														<span className="flex items-center gap-2">
+															<QrCode className="h-4 w-4" />
+															Active Promotion Codes
+															{promotionCodes[coupon.id] && (
+																<Badge variant="secondary" className="ml-2">
+																	{promotionCodes[coupon.id].length}
+																</Badge>
+															)}
+														</span>
+														{expandedCoupons[coupon.id] ? (
+															<ChevronUp className="h-4 w-4" />
+														) : (
+															<ChevronDown className="h-4 w-4" />
+														)}
+													</Button>
+
+													{expandedCoupons[coupon.id] && (
+														<div className="mt-3 space-y-2">
+															{loadingPromoCodes[coupon.id] ? (
+																<div className="flex items-center justify-center py-4">
+																	<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+																</div>
+															) : promotionCodes[coupon.id]?.length > 0 ? (
+																promotionCodes[coupon.id].map((promoCode) => (
+																	<div
+																		key={promoCode.id}
+																		className="flex items-center justify-between p-3 bg-muted rounded-md"
+																	>
+																		<div className="flex-1">
+																			<div className="flex items-center gap-2">
+																				<code className="font-mono font-semibold text-sm bg-background px-2 py-1 rounded">
+																					{promoCode.code}
+																				</code>
+																				{promoCode.active ? (
+																					<Badge variant="default" className="text-xs">Active</Badge>
+																				) : (
+																					<Badge variant="secondary" className="text-xs">Inactive</Badge>
+																				)}
+																			</div>
+																			<div className="mt-1 text-xs text-muted-foreground">
+																				Used {promoCode.times_redeemed} times
+																				{promoCode.max_redemptions && promoCode.max_redemptions > 0 ? ` / ${promoCode.max_redemptions}` : ''}
+																				{promoCode.expires_at && promoCode.expires_at > 0 ? (
+																					<span className="ml-2">
+																						• Expires {format(new Date(promoCode.expires_at * 1000), 'MMM dd, yyyy')}
+																					</span>
+																				) : null}
+																			</div>
+																		</div>
+																		<Button
+																			size="sm"
+																			variant="ghost"
+																			onClick={() => {
+																				navigator.clipboard.writeText(promoCode.code);
+																				toast.success('Code copied to clipboard');
+																			}}
+																		>
+																			<Copy className="h-4 w-4" />
+																		</Button>
+																	</div>
+																))
+															) : (
+																<p className="text-sm text-muted-foreground text-center py-4">
+																	No promotion codes created yet
+																</p>
+															)}
+														</div>
+													)}
 												</div>
 											</div>
 										))}

@@ -286,15 +286,12 @@ export const Route = createFileRoute('/events/$slug')({
 
 		// If no tiers, get the basic event and fetch single price info
 		const event = await stripeService.getEventBySlug(params.slug);
-		// console.log("Event: ", event);
 		if (!event) {
 			throw new Error('Event not found');
 		}
 
 		// Get linked products if any
 		const { linkedProducts, tierProducts } = await stripeService.getEventLinkedProducts(event.id);
-		// console.log("LINKED PRODUCTS:", linkedProducts);
-		// console.log("TIER PRODUCTS:", tierProducts);
 
 		// For single-price events, fetch the default price metadata
 		let singlePriceInfo = null;
@@ -334,6 +331,7 @@ function EventDetailPage() {
 	const [selectedTier, setSelectedTier] = useState<TieredPrice | null>(null);
 	const [showSubmissionForm, setShowSubmissionForm] = useState(false);
 	const [showMerchandiseModal, setShowMerchandiseModal] = useState(false);
+	const [showFullDescription, setShowFullDescription] = useState(false);
 	const [pendingCheckout, setPendingCheckout] = useState<{
 		tier: TieredPrice | null;
 		quantity: number;
@@ -413,7 +411,7 @@ function EventDetailPage() {
 			description: tier.description || `${tier.name} tier ticket`,
 			price: tier.amount,
 			quantity: tierQuantity,
-			imageUrl: event?.imageUrl || '',
+			imageUrl: event?.images[0] || '',
 			maxQuantity: tier.maxQuantity,
 			type: 'event',
 			eventDate: event?.date || event?.date,
@@ -438,7 +436,7 @@ function EventDetailPage() {
 					description: `${event?.title || 'Event'} Merchandise`,
 					price: (product.price?.unit_amount || 0) / 100,
 					quantity: product.quantity,
-					imageUrl: event?.imageUrl || '',
+					imageUrl: event?.images[0] || '',
 					type: 'product',
 				});
 			});
@@ -482,17 +480,24 @@ function EventDetailPage() {
 		}
 	};
 
-	const handleSubmissionSuccess = async (newSubmissionId: string) => {
+	const handleSubmissionSuccess = async (newSubmissionId: string, discountCode?: string) => {
 		setShowSubmissionForm(false);
 
 		try {
 			const priceId = selectedTier?.priceId || event?.priceId;
-			const response = await apiClient.post('/create-participant-checkout', {
+			const payload: any = {
 				submissionId: newSubmissionId,
 				priceId: priceId,
 				eventName: event?.title,
 				quantity: quantity,
-			});
+			};
+
+			// Add promotion code if provided
+			if (discountCode) {
+				payload.promotionCode = discountCode;
+			}
+
+			const response = await apiClient.post('/create-participant-checkout', payload);
 
 			const stripe = await stripePromise;
 			if (stripe && response.data.sessionId) {
@@ -503,6 +508,7 @@ function EventDetailPage() {
 			toast.error('Failed to create checkout session');
 		}
 	};
+
 
 	const handleAddToCart = () => {
 		if (event.status === 'soldout') {
@@ -544,7 +550,7 @@ function EventDetailPage() {
 			description: `Event on ${new Date(event.date).toLocaleDateString()}`,
 			price: ticketPrice,
 			quantity,
-			imageUrl: event.imageUrl,
+			imageUrl: event.images[0],
 			maxQuantity: maxAvailable,
 			type: 'event',
 			eventDate: event.date,
@@ -562,7 +568,7 @@ function EventDetailPage() {
 					url: window.location.href,
 				});
 			} catch (error) {
-				console.log('Error sharing:', error);
+				console.error('Error sharing:', error);
 			}
 		} else {
 			navigator.clipboard.writeText(window.location.href);
@@ -591,6 +597,14 @@ function EventDetailPage() {
 		);
 	}
 
+	const formattedDate = new Date(event.date).toLocaleDateString('en-US', {
+		weekday: 'long',
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric',
+		timeZone: 'UTC'
+	})
+
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background">
 			{/* Hero Section with Enhanced Visuals */}
@@ -599,7 +613,7 @@ function EventDetailPage() {
 				<div className="w-full h-[750px] relative">
 					<div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-background/60 z-10" />
 					<Image
-						src={event.imageUrl}
+						src={event.images[0]}
 						alt={event.title}
 						className="w-full h-full object-contain"
 					/>
@@ -609,35 +623,59 @@ function EventDetailPage() {
 				</div>
 
 				{/* Hero Content Overlay */}
-				<div className="absolute bottom-0 left-0 right-0 z-20 p-8 bg-gradient-to-t from-background via-background/95 to-transparent">
-					<div className="max-w-7xl mx-auto">
-						<div className="flex flex-wrap items-center gap-3 mb-6">
-							{event.tags?.map((tag) => (
-								<Badge
-									key={tag}
-									className="bg-gradient-to-r from-primary/80 to-secondary/80 text-primary-foreground border-0 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm"
-								>
-									{tag}
-								</Badge>
-							))}
-							{event.status === 'soldout' && (
-								<Badge className="bg-gradient-to-r from-destructive to-destructive/80 text-destructive-foreground border-0 px-4 py-1.5 shadow-lg animate-pulse">
-									SOLD OUT
-								</Badge>
-							)}
+				<div className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/95 to-transparent transition-all duration-300 ${showFullDescription ? 'max-h-[500px]' : 'max-h-none'}`}>
+					<div className={`p-8 ${showFullDescription ? 'max-h-[500px] overflow-y-auto custom-scrollbar' : ''}`}>
+						<div className="max-w-7xl mx-auto">
+							<div className="flex flex-wrap items-center gap-3 mb-6">
+								{event.tags?.map((tag) => (
+									<Badge
+										key={tag}
+										className="bg-gradient-to-r from-primary/80 to-secondary/80 text-primary-foreground border-0 px-4 py-1.5 text-sm font-medium shadow-lg backdrop-blur-sm"
+									>
+										{tag}
+									</Badge>
+								))}
+								{event.status === 'soldout' && (
+									<Badge className="bg-gradient-to-r from-destructive to-destructive/80 text-destructive-foreground border-0 px-4 py-1.5 shadow-lg animate-pulse">
+										SOLD OUT
+									</Badge>
+								)}
+							</div>
+							<h1 className="text-5xl lg:text-6xl font-bold mb-4 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent animate-gradient bg-300%">
+								{event.title}
+							</h1>
 						</div>
-						<h1 className="text-5xl lg:text-6xl font-bold mb-4 bg-gradient-to-r from-foreground via-primary to-accent bg-clip-text text-transparent animate-gradient bg-300%">
-							{event.title}
-						</h1>
-						<p className="text-xl text-muted-foreground max-w-3xl leading-relaxed">
-							{event.description}
-						</p>
 					</div>
 				</div>
 			</div>
 
 			{/* Main Content */}
 			<div className="container mx-auto px-4 py-12">
+				<Card className="shadow-neumorph hover:shadow-neumorph-hover transition-all border-primary/20 mb-12">
+					<CardHeader>
+						<CardTitle className="text-2xl bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent">
+							Description
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="max-w-3xl">
+							<p className={`text-xl text-muted-foreground leading-relaxed whitespace-pre-wrap ${!showFullDescription ? 'line-clamp-6' : ''}`}>
+								{event.description}
+							</p>
+							{event.description && event.description.length > 200 && (
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => setShowFullDescription(!showFullDescription)}
+									className="mt-2 text-primary hover:text-primary/80"
+								>
+									{showFullDescription ? 'Show Less' : 'Read More'}
+								</Button>
+							)}
+						</div>
+					</CardContent>
+				</Card>
+
 				{/* Sponsors Section */}
 				{sponsorTiers.length > 0 && (
 					<section className="relative py-8 mb-12 rounded-3xl overflow-hidden">
@@ -675,12 +713,7 @@ function EventDetailPage() {
 										<div className="flex-1">
 											<p className="font-semibold text-lg mb-1">Date & Time</p>
 											<p className="text-muted-foreground">
-												{new Date(event.date).toLocaleDateString('en-US', {
-													weekday: 'long',
-													year: 'numeric',
-													month: 'long',
-													day: 'numeric'
-												})}
+												{formattedDate}
 											</p>
 										</div>
 									</div>
@@ -878,10 +911,18 @@ function EventDetailPage() {
 										<CardTitle>Select Tickets</CardTitle>
 									</CardHeader>
 									<CardContent className="pt-6">
-										<TieredPricing
-											tiers={(event as EventWithTiers).priceTiers}
-											onSelectTier={(tier, qty) => handleSelectTier(tier, qty)}
-										/>
+										{event.status === 'upcoming' ? (
+											<TieredPricing
+												tiers={(event as EventWithTiers).priceTiers}
+												onSelectTier={(tier, qty) => handleSelectTier(tier, qty)}
+											/>
+										) : (
+											<div className="text-center p-6 rounded-2xl bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5">
+												<p>
+													This event has passed. Tickets are no longer available.
+												</p>
+											</div>
+										)}
 									</CardContent>
 								</Card>
 							</div>

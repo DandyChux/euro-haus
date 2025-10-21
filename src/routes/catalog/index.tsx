@@ -12,12 +12,13 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { ProductCard } from '~/components/product-card';
 import { Loader2 } from 'lucide-react';
-import { Product, stripeService } from '~/lib/services/stripe-service';
+import { Product, stripeService, BundleProduct, ProductOrBundle } from '~/lib/services/stripe-service';
+import { BundleBadge } from '~/components/bundle-display';
 
 export const Route = createFileRoute('/catalog/')({
 	component: RouteComponent,
 	loader: async () => {
-		const products = await stripeService.getAllProducts()
+		const products = await stripeService.getAllCatalogProducts()
 
 		if (!products) {
 			throw new Error('Failed to load products. Please try again later.')
@@ -42,7 +43,7 @@ export const Route = createFileRoute('/catalog/')({
 
 function RouteComponent() {
 	const products = Route.useLoaderData()
-	const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
+	const [filteredProducts, setFilteredProducts] = useState<ProductOrBundle[]>([])
 	const [activeCategory, setActiveCategory] = useState<string>("all")
 	const [activeFilters, setActiveFilters] = useState<{
 		categories: string[]
@@ -497,7 +498,7 @@ function RouteComponent() {
 										title={product.title}
 										description={product.description}
 										price={product.price}
-										imageUrl={product.imageUrl}
+										imageUrl={product.images[0]}
 										isNew={product.isNew}
 										compareAtPrice={product.compareAtPrice}
 										inStock={product.inStock}

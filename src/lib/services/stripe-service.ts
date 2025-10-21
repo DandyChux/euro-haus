@@ -53,7 +53,7 @@ export interface Product {
 	description: string;
 	price: number;
 	compareAtPrice?: number;
-	imageUrl: string;
+	images: string[];
 	isNew?: boolean;
 	inStock?: boolean;
 	featured?: boolean;
@@ -71,8 +71,29 @@ export interface ProductVariant {
 	variant: string;
 	price: number;
 	inStock: boolean;
+	stockQuantity?: number;
 	images?: string[];
 }
+
+export interface BundleItem {
+	productId: string;
+	productName: string;
+	quantity: number;
+	price: number;
+}
+
+export interface BundleItemWithProduct extends BundleItem {
+	product: Product | ProductWithVariants; // Product might have variants
+}
+
+export interface BundleProduct extends Product {
+	bundleItems: BundleItem[] | BundleItemWithProduct[]; // Can be either depending on context
+	discountType: 'percentage' | 'fixed';
+	discountValue: number;
+	totalValue: number; // Total value if items bought separately
+	savings: number; // Amount saved
+}
+
 
 export interface ProductWithVariants extends Product {
 	variants: ProductVariant[];
@@ -126,8 +147,125 @@ export interface EventWithTiers extends EventProduct {
 	priceTiers: TieredPrice[];
 }
 
+export type ProductOrBundle = Product | BundleProduct;
+
+// Type guard to check if bundle items have product data
+export function bundleHasProductData(bundle: BundleProduct): bundle is BundleProduct & { bundleItems: BundleItemWithProduct[] } {
+	return bundle.bundleItems.length > 0 && 'product' in bundle.bundleItems[0];
+}
+
+// Helper type guard
+export function productHasVariants(product: Product | ProductWithVariants): product is ProductWithVariants {
+	return 'variants' in product && Array.isArray((product as ProductWithVariants).variants);
+}
+
 export const stripeService = {
-	async getAllProducts(): Promise<Product[]> {
+	/**
+	 * Fetch all products and bundles from Stripe.
+	 *
+	 * @returns
+	 */
+	async getAllProductsAndBundles(): Promise<ProductOrBundle[]> {
+		try {
+			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
+
+			if (!response.data.products || response.data.products.length === 0) {
+				return [];
+			}
+
+			// Filter out event products
+			return response.data.products
+				.filter(p => p.metadata.type !== 'event')
+				.map(p => {
+					if (p.metadata.type === 'bundle') {
+						return this.transformStripeBundleProduct(p);
+					}
+					return this.transformStripeProduct(p);
+				});
+		} catch (error) {
+			console.error('Failed to fetch products from Stripe:', error);
+			throw new Error('Failed to load products');
+		}
+	},
+
+	/**
+	 * Fetch only browsable products for the catalog
+	 *
+	 * @returns
+	 */
+	async getAllCatalogProducts(): Promise<Product[]> {
+		const allItems = await this.getAllProductsAndBundles();
+		return allItems.filter(p => p.category !== 'bundle') as Product[];
+	},
+
+	async getProductsWithDetailsByIds(productIds: string[]): Promise<(Product | ProductWithVariants)[]> {
+		const productPromises = productIds.map(async (id) => {
+			// First try to get product with variants
+			const withVariants = await this.getProductWithVariants(id);
+			if (withVariants) {
+				return withVariants;
+			}
+			// Fallback to basic product
+			const response = await apiClient.get<StripeProduct>(`/products/${id}`);
+			return this.transformStripeProduct(response.data);
+		});
+
+		const results = await Promise.all(productPromises);
+		return results.filter((p): p is (Product | ProductWithVariants) => p !== null);
+	},
+
+	/**
+	 * Find bundles that include a specific product ID.
+	 *
+	 * @param productId
+	 * @returns
+	 */
+	async findBundlesForProduct(productId: string): Promise<BundleProduct[]> {
+		const allItems = await this.getAllProductsAndBundles();
+		const allBundles = allItems.filter(p => p.category === 'bundle') as BundleProduct[];
+
+		const containingBundles = allBundles.filter(bundle =>
+			(bundle.bundleItems as BundleItem[]).some(item => item.productId === productId)
+		);
+
+		// Enrich bundle items with full product data including variants
+		const enrichedBundlesPromises = containingBundles.map(async (bundle) => {
+			const itemProductIds = (bundle.bundleItems as BundleItem[]).map(item => item.productId);
+			const productsForBundle = await this.getProductsWithDetailsByIds(itemProductIds);
+
+			const enrichedItems: BundleItemWithProduct[] = (bundle.bundleItems as BundleItem[]).map(item => {
+				const productData = productsForBundle.find(p => p.id === item.productId);
+				if (!productData) {
+					console.warn(`Product ${item.productId} not found for bundle ${bundle.id}`);
+					// Return a basic product as fallback
+					return {
+						...item,
+						product: {
+							id: item.productId,
+							title: item.productName,
+							description: '',
+							price: item.price,
+							images: [],
+							inStock: false,
+						} as Product
+					};
+				}
+				return {
+					...item,
+					product: productData,
+				};
+			});
+
+			return {
+				...bundle,
+				bundleItems: enrichedItems,
+			};
+		});
+
+		return Promise.all(enrichedBundlesPromises);
+	},
+
+	async getAllProducts(): Promise<ProductOrBundle[]> {
 		try {
 			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
 
@@ -138,16 +276,22 @@ export const stripeService = {
 			// Filter out event products for regular product listing
 			return response.data.products
 				.filter(p => p.metadata.type !== 'event')
-				.map(this.transformStripeProduct);
+				.map(p => {
+					if (p.metadata.type === 'bundle') {
+						return this.transformStripeBundleProduct(p);
+					}
+					return this.transformStripeProduct(p);
+				});
 		} catch (error) {
 			console.error('Failed to fetch products from Stripe:', error);
 			throw new Error('Failed to load products');
 		}
 	},
 
-	async getAllEvents(): Promise<EventProduct[]> {
+	async getAllEvents(includeInactive: boolean = false): Promise<EventProduct[]> {
 		try {
-			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
+			const url = includeInactive ? '/products?include_inactive=true' : '/products'
+			const response = await apiClient.get<{ products: StripeProduct[] }>(url);
 
 			if (!response.data.products || response.data.products.length === 0) {
 				return [];
@@ -268,7 +412,7 @@ export const stripeService = {
 			description: stripeProduct.description || '',
 			price,
 			compareAtPrice,
-			imageUrl: stripeProduct.images[0] || '/placeholder.svg?height=400&width=400',
+			images: stripeProduct.images,
 			isNew: stripeProduct.metadata.is_new === 'true',
 			inStock: stripeProduct.active && stripeProduct.metadata.in_stock !== 'false',
 			featured: stripeProduct.metadata.featured === 'true',
@@ -277,6 +421,57 @@ export const stripeService = {
 			tags,
 			maxQuantity: stripeProduct.metadata.max_quantity ? parseInt(stripeProduct.metadata.max_quantity) : undefined,
 		};
+	},
+
+	transformStripeBundleProduct(stripeProduct: StripeProduct): BundleProduct {
+		const price = stripeProduct.default_price?.unit_amount ?
+			stripeProduct.default_price.unit_amount / 100 : 0;
+
+		// Parse bundle items from metadata
+		let bundleItems: BundleItem[] = [];
+		if (stripeProduct.metadata.bundle_items) {
+			try {
+				bundleItems = JSON.parse(stripeProduct.metadata.bundle_items);
+			} catch (e) {
+				console.error('Failed to parse bundle items:', e);
+			}
+		}
+
+		const discountType = (stripeProduct.metadata.discount_type || 'percentage') as 'percentage' | 'fixed';
+		const discountValue = parseFloat(stripeProduct.metadata.discount_value || '0');
+		const totalValue = parseFloat(stripeProduct.metadata.total_value || '0');
+		const savings = totalValue - price;
+
+		return {
+			id: stripeProduct.id,
+			priceId: stripeProduct.default_price?.id,
+			title: stripeProduct.name,
+			description: stripeProduct.description || '',
+			price,
+			images: stripeProduct.images,
+			inStock: stripeProduct.active && stripeProduct.metadata.in_stock !== 'false',
+			featured: stripeProduct.metadata.featured === 'true',
+			category: 'bundle',
+			maxQuantity: stripeProduct.metadata.max_quantity ? parseInt(stripeProduct.metadata.max_quantity) : undefined,
+			bundleItems,
+			discountType,
+			discountValue,
+			totalValue,
+			savings,
+		};
+	},
+
+	async getBundleProduct(productId: string): Promise<BundleProduct | null> {
+		try {
+			const response = await apiClient.get<StripeProduct>(`/products/${productId}`);
+			if (response.data.metadata.type === 'bundle') {
+				return this.transformStripeBundleProduct(response.data);
+			}
+			return null;
+		} catch (error) {
+			console.error('Failed to fetch bundle product:', error);
+			return null;
+		}
 	},
 
 	async transformStripeEventProduct(stripeProduct: StripeProduct): Promise<EventProduct> {
@@ -310,7 +505,7 @@ export const stripeService = {
 			title: stripeProduct.name,
 			description: stripeProduct.description || '',
 			price: stripeProduct.default_price?.unit_amount ? stripeProduct.default_price.unit_amount / 100 : 0,
-			imageUrl: stripeProduct.images?.[0] || '',
+			images: stripeProduct.images,
 			slug: metadata.slug || '',
 			date: metadata.event_date || '',
 			location: metadata.location || '',
@@ -329,10 +524,10 @@ export const stripeService = {
 		};
 	},
 
-	async getEventWithPriceTiers(eventId: string): Promise<EventWithTiers | null> {
+	async getEventWithPriceTiers(slug: string): Promise<EventWithTiers | null> {
 		try {
 			// Fetch the event product
-			const eventProduct = await this.getEventBySlug(eventId);
+			const eventProduct = await this.getEventBySlug(slug);
 			if (!eventProduct) return null;
 
 			// Fetch all prices for this product
@@ -381,7 +576,9 @@ export const stripeService = {
 				color: price.metadata.color,
 				variant: price.metadata.variant || price.nickname || 'Standard',
 				price: price.unit_amount / 100,
-				inStock: price.metadata.in_stock !== 'false',
+				inStock: price.metadata?.in_stock !== 'false' &&
+					(!price.metadata?.stock_quantity || parseInt(price.metadata.stock_quantity) > 0),
+				stockQuantity: price.metadata?.stock_quantity ? parseInt(price.metadata.stock_quantity) : undefined,
 				images: price.metadata.images ? JSON.parse(price.metadata.images) : []
 			}));
 

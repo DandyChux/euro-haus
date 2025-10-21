@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Refund Notification - Euro Haus</title>
+	<style>
+		body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+		.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+		.header { background-color: #dc3545; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+		.content { padding: 30px 20px; background-color: #f8f9fa; }
+		.refund-details { background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545; }
+		.cancelled-tickets { background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ffc107; }
+		.footer { text-align: center; font-size: 12px; color: #777; margin-top: 30px; padding: 20px; }
+		table { width: 100%; }
+		td { padding: 5px 0; }
+		ul { margin: 10px 0; padding-left: 20px; }
+		li { margin: 5px 0; }
+		.ticket-code { font-family: monospace; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>Refund Processed</h1>
+		</div>
+
+		<div class="content">
+			<p>Dear {{.CustomerName}},</p>
+
+			<p>We're writing to confirm that your refund has been successfully processed.</p>
+
+			<div class="refund-details">
+				<h3 style="margin-top: 0; color: #dc3545;">Refund Details</h3>
+				<table>
+					<tr>
+						<td><strong>Event:</strong></td>
+						<td>{{.EventName}}</td>
+					</tr>
+					<tr>
+						<td><strong>Refund Amount:</strong></td>
+						<td>{{.RefundAmount}}</td>
+					</tr>
+					<tr>
+						<td><strong>Date Processed:</strong></td>
+						<td>{{.RefundDate}}</td>
+					</tr>
+					<tr>
+						<td><strong>Tickets Cancelled:</strong></td>
+						<td>{{.TicketCount}}</td>
+					</tr>
+				</table>
+			</div>
+
+			<div class="cancelled-tickets">
+				<h4 style="margin-top: 0; color: #856404;">Cancelled Ticket Codes:</h4>
+				<ul>
+					{{range .TicketCodes}}
+					<li class="ticket-code">{{.}}</li>
+					{{end}}
+				</ul>
+				<p style="margin: 10px 0 0 0; font-size: 14px; color: #856404;">
+					These tickets are no longer valid and cannot be used for event entry.
+				</p>
+			</div>
+
+			<h3>What happens next?</h3>
+			<ul>
+				<li>Your refund should appear in your account within 5-10 business days</li>
+				<li>You'll receive a receipt from your payment provider</li>
+				<li>Your tickets have been cancelled and removed from our system</li>
+			</ul>
+
+			<p>If you have any questions about this refund or would like to make a new purchase, please don't hesitate to contact us at <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a>.</p>
+
+			<p>We hope to see you at a future Euro Haus event!</p>
+
+			<p>Best regards,<br>
+			<strong>The Euro Haus Events Team</strong></p>
+		</div>
+
+		<div class="footer">
+			<p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
+			<p>This is an automated notification regarding your refund.</p>
+		</div>
+	</div>
+</body>
+</html>

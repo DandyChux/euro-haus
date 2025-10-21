@@ -77,7 +77,7 @@ export function ExistingPricesManager({ productId, productType, form }: Existing
 		event?.stopPropagation();
 
 		try {
-			await apiClient.put(`/admin/set-default-price/${productId}`, { priceId });
+			await apiClient.post('/admin/set-default-price', { productId, priceId });
 			toast.success('Default price updated successfully');
 			setTimeout(fetchPrices, 500);
 		} catch (error) {

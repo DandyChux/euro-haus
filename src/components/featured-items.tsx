@@ -91,7 +91,7 @@ export default function FeaturedItems() {
 					title: event.title,
 					description: event.description,
 					price: event.price,
-					imageUrl: event.imageUrl,
+					imageUrl: event.images[0],
 					slug: event.slug,
 					date: event.date,
 					location: event.location,
@@ -107,7 +107,7 @@ export default function FeaturedItems() {
 					title: product.title,
 					description: product.description,
 					price: product.price,
-					imageUrl: product.imageUrl,
+					imageUrl: product.images[0],
 					compareAtPrice: product.compareAtPrice,
 					inStock: product.inStock
 				}));

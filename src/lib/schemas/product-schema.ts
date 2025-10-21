@@ -21,7 +21,16 @@ export const productVariantSchema = z.object({
 	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
 	sku: z.string().optional(),
 	inStock: z.boolean(),
+	stockQuantity: z.string().regex(/^\d*$/, 'Must be a number').optional().or(z.literal('')),
 	sortOrder: z.number(),
+});
+
+// Bundle item schema
+export const bundleItemSchema = z.object({
+	productId: z.string().min(1, 'Product ID is required'),
+	productName: z.string().min(1, 'Product name is required'),
+	quantity: z.number().min(1, 'Quantity must be at least 1'),
+	price: z.number(), // Store the price at time of bundle creation for reference
 });
 
 // Base schema for all products
@@ -45,6 +54,17 @@ export const productSchema = baseSchema.extend({
 	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 	// Variants for products with size/color options
 	variants: z.array(productVariantSchema).optional(),
+});
+
+// Bundle schema
+export const bundleSchema = baseSchema.extend({
+	type: z.literal('bundle'),
+	bundleItems: z.array(bundleItemSchema).min(2, 'Bundle must contain at least 2 products'),
+	discountType: z.enum(['percentage', 'fixed']),
+	discountValue: z.string().min(1, 'Discount value is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid discount format'),
+	price: z.string().min(1, 'Price is required').regex(/^\d+\.?\d{0,2}$/, 'Invalid price format'),
+	inStock: z.boolean(),
+	maxQuantity: z.string().regex(/^\d+$/, 'Must be a number').optional().or(z.literal('')),
 });
 
 // Sponsor schema
@@ -90,11 +110,13 @@ export const eventSchema = baseSchema.extend({
 });
 
 // Combined schema
-export const formSchema = z.discriminatedUnion('type', [productSchema, eventSchema]);
+export const formSchema = z.discriminatedUnion('type', [productSchema, bundleSchema, eventSchema]);
 
 // Type exports
 export type BaseFormData = z.infer<typeof baseSchema>;
 export type ProductFormData = z.infer<typeof productSchema>;
+export type BundleFormData = z.infer<typeof bundleSchema>;
+export type BundleItem = z.infer<typeof bundleItemSchema>;
 export type EventFormData = z.infer<typeof eventSchema>;
 export type FormData = z.infer<typeof formSchema>;
 export type PriceTier = z.infer<typeof priceTierSchema>;

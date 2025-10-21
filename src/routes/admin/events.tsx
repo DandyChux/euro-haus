@@ -21,17 +21,32 @@ import {
 	Camera,
 	Keyboard,
 	Clock,
-	MapPin,
-	Ticket as TicketIcon
+	MapPin
 } from 'lucide-react';
 import { format, isAfter } from 'date-fns';
 import { Scanner } from '@yudiel/react-qr-scanner';
+import { AttendeeTabs } from '~/components/attendee-tabs';
 
 export const Route = createFileRoute('/admin/events')({
 	loader: async () => {
-		const events = await stripeService.getAllEvents();
+		const events = await stripeService.getAllEvents(true);
 		return { events };
 	},
+	// head: (ctx) => {
+	// 	const { params, loaderData } = ctx;
+
+	// 	return {
+	// 		meta: [
+	// 			{
+	// 				title: 'Admin Events Page | Euro Haus'
+	// 			},
+	// 			{
+	// 				name: 'description',
+	// 				content: 'Admin Events Page'
+	// 			}
+	// 		]
+	// 	}
+	// },
 	component: AdminEventsPage,
 });
 
@@ -48,11 +63,15 @@ function AdminEventsContent() {
 	const [selectedTab, setSelectedTab] = useState('upcoming');
 
 	// Separate events by status
+	const now = new Date();
+	const startOfToday = new Date(now);
+	startOfToday.setHours(0, 0, 0, 999);
+
 	const upcomingEvents = events.filter(event =>
-		isAfter(new Date(event.date), new Date()) && event.status !== 'cancelled'
+		isAfter(new Date(event.date), startOfToday) && event.status !== 'cancelled'
 	);
 	const pastEvents = events.filter(event =>
-		!isAfter(new Date(event.date), new Date()) || event.status === 'cancelled'
+		!isAfter(new Date(event.date), startOfToday) || event.status === 'cancelled'
 	);
 
 	return (
@@ -144,7 +163,7 @@ function EventCard({ event, isPast }: EventCardProps) {
 							size="sm"
 							onClick={() => navigate({
 								to: '/admin/event-details',
-								search: { event_id: event.id }
+								search: { slug: event.slug }
 							})}
 						>
 							Manage Event
@@ -192,6 +211,7 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 	});
 	const [showAttendees, setShowAttendees] = useState(false);
 	const [loading, setLoading] = useState(false);
+	const [checkingInTicket, setCheckingInTicket] = useState<string | null>(null)
 
 	// Fetch event statistics and attendees
 	const fetchEventData = async () => {
@@ -225,6 +245,12 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 			checkInTicket(text);
 		}
 	};
+
+	const handleManualCheckIn = async (ticketCode: string) => {
+		setCheckingInTicket(ticketCode);
+		await checkInTicket(ticketCode);
+		setCheckingInTicket(null);
+	}
 
 	const handleManualSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -459,57 +485,25 @@ function EventCheckIn({ eventId, eventName }: EventCheckInProps) {
 					<CardHeader>
 						<div className="flex justify-between items-center">
 							<CardTitle>Attendees</CardTitle>
-							<Button
-								size="sm"
-								variant="ghost"
-								onClick={fetchEventData}
-								disabled={loading}
-							>
+							<Button size="sm" variant="ghost" onClick={fetchEventData} disabled={loading}>
 								<RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
 							</Button>
 						</div>
 					</CardHeader>
 					<CardContent>
-						<div className="max-h-96 overflow-y-auto space-y-2">
-							{attendees.length === 0 ? (
-								<p className="text-center text-muted-foreground py-4">
-									No tickets sold yet
-								</p>
-							) : (
-								attendees.map((ticket) => (
-									<div
-										key={ticket.id}
-										className="flex justify-between items-center p-3 border rounded-lg"
-									>
-										<div>
-											<div className="font-medium">{ticket.attendeeName}</div>
-											<div className="text-sm text-muted-foreground">
-												{ticket.attendeeEmail}
-											</div>
-											<div className="text-xs text-muted-foreground mt-1">
-												{ticket.ticketType} • {ticket.ticketCode}
-											</div>
-										</div>
-										<div className="text-right">
-											<Badge
-												variant={ticket.checkedIn ? "default" : "outline"}
-												className={ticket.checkedIn ? "bg-green-100 text-green-800" : ""}
-											>
-												{ticket.checkedIn ? "Checked In" : "Not Checked In"}
-											</Badge>
-											{ticket.checkedInAt && (
-												<div className="text-xs text-muted-foreground mt-1">
-													{format(new Date(ticket.checkedInAt), 'pp')}
-												</div>
-											)}
-										</div>
-									</div>
-								))
-							)}
-						</div>
+						{attendees.length === 0 ? (
+							<p className="text-center text-muted-foreground py-4">No tickets sold yet</p>
+						) : (
+							<AttendeeTabs
+								attendees={attendees}
+								onManualCheckIn={handleManualCheckIn}
+								checkingInTicket={checkingInTicket}
+							/>
+						)}
 					</CardContent>
 				</Card>
 			)}
+
 		</div>
 	);
 }

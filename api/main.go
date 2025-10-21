@@ -122,6 +122,8 @@ func main() {
 
 	// Payment endpoints
 	api.HandleFunc("/create-payment-intent", handlers.CreatePaymentIntent).Methods("POST")
+	api.HandleFunc("/calculate-tax-shipping", handlers.CalculateTaxAndShipping).Methods("POST", "OPTIONS")
+	api.HandleFunc("/shipping-rates", handlers.GetShippingRates).Methods("GET", "OPTIONS")
 	api.HandleFunc("/create-checkout-session", handlers.CreateCheckoutSession).Methods("POST")
 	api.HandleFunc("/checkout-session", handlers.GetCheckoutSession).Methods("GET", "OPTIONS")
 
@@ -155,17 +157,22 @@ func main() {
 	// Price management endpoints (requires authentication)
 	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/update-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePrice))).Methods("PUT", "OPTIONS")
+	// In main.go, add this line in the price management section (around line 150):
+	api.Handle("/admin/update-price-metadata/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.UpdatePriceMetadata))).Methods("PUT", "OPTIONS")
+
 	api.Handle("/admin/archive-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.ArchivePrice))).Methods("PUT", "OPTIONS")
-	api.Handle("/admin/set-default-price/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/set-default-price", middleware.RequireAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("POST", "OPTIONS")
 
 	// Discount management endpoints (requires authentication)
 	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.CreateCoupon))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/coupons", middleware.RequireAuth(http.HandlerFunc(handlers.ListCoupons))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/coupons/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteCoupon))).Methods("DELETE", "OPTIONS")
 	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePromotionCode))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/promotion-codes", middleware.RequireAuth(http.HandlerFunc(handlers.ListPromotionCodes))).Methods("GET", "OPTIONS")
 
 	// Admin event endpoints (requires authentication)
 	api.Handle("/admin/events/ticket/check-in", middleware.RequireAuth(http.HandlerFunc(handlers.CheckInTicket))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/{eventId}/cleanup-tickets", middleware.RequireAuth(http.HandlerFunc(handlers.CleanupEventTickets))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/attendees", middleware.RequireAuth(http.HandlerFunc(handlers.GetEventAttendees))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/link-products", middleware.RequireAuth(http.HandlerFunc(handlers.LinkProductsToEvent))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/events/{eventId}/products/{productId}", middleware.RequireAuth(http.HandlerFunc(handlers.RemoveProductFromEvent))).Methods("DELETE", "OPTIONS")
@@ -184,6 +191,8 @@ func main() {
 	api.Handle("/admin/submissions/{submissionId}/payment-status", middleware.RequireAuth(http.HandlerFunc(handlers.GetSubmissionPaymentStatus))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/create-payment", middleware.RequireAuth(http.HandlerFunc(handlers.CreateSubmissionPayment))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/submissions/{submissionId}/resend-email", middleware.RequireAuth(http.HandlerFunc(handlers.ResendApprovalEmail))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/update-email", middleware.RequireAuth(http.HandlerFunc(handlers.UpdateSubmissionEmail))).Methods("PUT", "OPTIONS")
+	api.Handle("/admin/submissions/{submissionId}/revoke", middleware.RequireAuth(http.HandlerFunc(handlers.RevokeSubmission))).Methods("POST", "OPTIONS")
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
