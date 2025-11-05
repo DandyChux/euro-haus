@@ -69,15 +69,7 @@ import { MediaListItem } from '~/components/media-list-item';
 import { useQueryClient } from '@tanstack/react-query';
 import { Video } from '~/components/ui/video';
 import { TextContentEditor } from '~/components/ui/text-content-editor';
-
-export interface MediaFile {
-	key: string;
-	url: string;
-	lastModified: string;
-	size: number;
-	type: 'image' | 'video' | 'other';
-	folder: string;
-}
+import { MediaFile } from '~/lib/services/gallery-service';
 
 interface UploadFile {
 	file: File;

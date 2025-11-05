@@ -45,6 +45,18 @@ type DeleteMediaRequest struct {
 	Key string `json:"key"`
 }
 
+// EventFolder represents a folder in the events directory
+type EventFolder struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// ListEventFoldersResponse contains the list of event folders
+type ListEventFoldersResponse struct {
+	Folders []EventFolder `json:"folders"`
+	Total   int           `json:"total"`
+}
+
 // ListMedia returns all media files from the storage
 func ListMedia(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers
@@ -290,6 +302,164 @@ func DeleteMedia(w http.ResponseWriter, r *http.Request) {
 		"message": "File deleted successfully",
 		"key":     req.Key,
 	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// ListEventFolders returns all subfolders under the events/ directory
+func ListEventFolders(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get S3 client from storage service
+	if services.S3Client == nil {
+		log.Printf("S3 client not initialized")
+		http.Error(w, "Storage service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get bucket name from environment
+	bucketName := os.Getenv("SPACES_BUCKET")
+	if bucketName == "" {
+		bucketName = "euro-haus" // fallback
+	}
+
+	// List objects with events/ prefix
+	params := &s3.ListObjectsV2Input{
+		Bucket:    aws.String(bucketName),
+		Prefix:    aws.String("events/"),
+		Delimiter: aws.String("/"),
+	}
+
+	result, err := services.S3Client.ListObjectsV2(context.TODO(), params)
+	if err != nil {
+		log.Printf("Failed to list event folders: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Extract folder names from CommonPrefixes
+	var folders []EventFolder
+	for _, prefix := range result.CommonPrefixes {
+		if prefix.Prefix == nil {
+			continue
+		}
+
+		// Remove "events/" prefix and trailing "/"
+		folderPath := *prefix.Prefix
+		folderName := strings.TrimPrefix(folderPath, "events/")
+		folderName = strings.TrimSuffix(folderName, "/")
+
+		if folderName != "" {
+			folders = append(folders, EventFolder{
+				Name: folderName,
+				Path: folderPath,
+			})
+		}
+	}
+
+	// Return response
+	response := ListEventFoldersResponse{
+		Folders: folders,
+		Total:   len(folders),
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+// UploadEventGallery handles file uploads to event gallery folders
+func UploadEventGallery(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Parse multipart form
+	err := r.ParseMultipartForm(100 << 20) // 100MB max for videos
+	if err != nil {
+		log.Printf("Failed to parse multipart form: %v", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Get the event slug from form data
+	eventSlug := r.FormValue("eventSlug")
+	if eventSlug == "" {
+		http.Error(w, "Event slug is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get the file
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		log.Printf("Failed to get file: %v", err)
+		http.Error(w, "No file provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Construct the gallery folder path
+	galleryFolder := fmt.Sprintf("events/%s/gallery/", eventSlug)
+
+	// Get content type
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = getMimeType(header.Filename)
+	}
+
+	// Upload using the storage service with the gallery folder
+	fileURL, err := services.UploadFile(file, header.Filename, contentType, galleryFolder)
+	if err != nil {
+		log.Printf("Failed to upload file: %v", err)
+		http.Error(w, "Failed to upload file", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract key from URL for the response
+	urlParts := strings.Split(fileURL, "/")
+	key := strings.Join(urlParts[3:], "/")
+
+	// Get file size
+	size := header.Size
+
+	// Create response
+	response := UploadMediaResponse{
+		Success: true,
+		File: MediaFile{
+			Key:          key,
+			URL:          fileURL,
+			LastModified: time.Now(),
+			Size:         size,
+			Type:         getFileType(header.Filename),
+			Folder:       getFolder(key),
+		},
+		Message: "File uploaded to event gallery successfully",
+	}
+
+	log.Printf("Successfully uploaded file to event gallery: %s", key)
 
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { EventProductsManager } from '~/components/admin/event-products-manager';
@@ -12,6 +12,7 @@ import z from 'zod';
 import { Image } from '~/components/ui/image';
 import { ticketService } from '~/lib/services/ticket-service';
 import { AttendeeTabs } from '~/components/attendee-tabs';
+import { EventGalleryUploader } from '~/components/admin/event-gallery-uploader';
 
 export const Route = createFileRoute('/admin/event-details')({
 	validateSearch: z.object({
@@ -144,7 +145,7 @@ function EventDetailsContent() {
 					<TabsTrigger value="overview">Overview</TabsTrigger>
 					<TabsTrigger value="products">Products & Add-ons</TabsTrigger>
 					<TabsTrigger value="attendees">Attendees</TabsTrigger>
-					<TabsTrigger value="settings">Settings</TabsTrigger>
+					<TabsTrigger value="gallery">Event Gallery</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="overview" className="space-y-4">
@@ -224,16 +225,6 @@ function EventDetailsContent() {
 							<CardTitle>Attendee Management</CardTitle>
 						</CardHeader>
 						<CardContent>
-							{/*{attendees?.map((attendee) => (
-								<div key={attendee.id} className="flex justify-between items-center p-3 bg-muted rounded">
-									<div>
-										<span className="font-medium">{attendee.attendeeEmail}</span>
-										<span className="text-sm text-muted-foreground">
-											{attendee.attendeeName}
-										</span>
-									</div>
-								</div>
-							))}*/}
 							<AttendeeTabs
 								attendees={attendees}
 							/>
@@ -241,16 +232,8 @@ function EventDetailsContent() {
 					</Card>
 				</TabsContent>
 
-				<TabsContent value="settings">
-					{/* TODO: Add event settings here */}
-					<Card>
-						<CardHeader>
-							<CardTitle>Event Settings</CardTitle>
-						</CardHeader>
-						<CardContent>
-							<p className="text-muted-foreground">Event settings coming soon...</p>
-						</CardContent>
-					</Card>
+				<TabsContent value="gallery">
+					<EventGalleryUploader currentEventSlug={event.slug} />
 				</TabsContent>
 			</Tabs>
 		</div>

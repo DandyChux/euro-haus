@@ -57,6 +57,10 @@ const navLinks: NavLink[] = [
 		title: 'Catalog',
 		href: '/catalog',
 	},
+	{
+		title: 'Gallery',
+		href: '/gallery',
+	}
 ]
 
 export function Navbar() {

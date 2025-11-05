@@ -9,7 +9,7 @@ import {
 	CheckCircle,
 	FileText
 } from 'lucide-react';
-import type { MediaFile } from '~/routes/admin/media';
+import type { MediaFile } from '~/lib/services/gallery-service';
 import type { ContentPlacement } from '~/lib/schemas/content-placement-schema';
 
 interface MediaCardProps {

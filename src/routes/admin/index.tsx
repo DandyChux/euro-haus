@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { ProtectedRoute } from '~/components/protected-route';
 import { useAuth } from '~/lib/contexts/auth-context';
+import { galleryService } from '~/lib/services/gallery-service';
+import { stripeService } from '~/lib/services/stripe-service';
 
 interface DashboardStats {
 	totalProducts: number;
@@ -37,7 +39,41 @@ interface DashboardStats {
 }
 
 export const Route = createFileRoute('/admin/')({
+	loader: async () => {
+
+		const [products, mediaResponse] = await Promise.all([
+			stripeService.getAllProducts(),
+			galleryService.getAllMedia(),
+		]);
+
+		console.log('Products:', products);
+		console.log('Media:', mediaResponse);
+
+		// Calculate stats
+		const stats: DashboardStats = {
+			totalProducts: products.length,
+			totalEvents: products.filter((p) => Object.keys(p).includes('slug')).length,
+			activeProducts: products.filter((p) => p.inStock).length,
+			featuredItems: products.filter((p) => p.featured).length,
+			mediaFiles: mediaResponse.files?.length || 0,
+		};
+
+		return stats;
+
+	},
 	component: AdminDashboardPage,
+	pendingComponent: () => (
+		<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+			{[...Array(4)].map((_, i) => (
+				<Skeleton key={i} className="h-24" />
+			))}
+		</div>
+	),
+	errorComponent: () => (
+		<div className="col-span-4 text-center text-muted-foreground">
+			Failed to load statistics
+		</div>
+	)
 });
 
 function AdminDashboardPage() {
@@ -50,62 +86,8 @@ function AdminDashboardPage() {
 
 function AdminDashboardContent() {
 	const navigate = useNavigate();
+	const stats = Route.useLoaderData();
 	const { logout } = useAuth();
-	const [stats, setStats] = useState<DashboardStats | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
-
-	// Fetch dashboard statistics
-	const fetchStats = async () => {
-		setIsLoading(true);
-		try {
-			const response = await apiClient.get('/products');
-			const products = response.data.products || [];
-
-			// Calculate stats
-			const stats: DashboardStats = {
-				totalProducts: products.filter((p: any) => p.metadata.type !== 'event').length,
-				totalEvents: products.filter((p: any) => p.metadata.type === 'event').length,
-				activeProducts: products.filter((p: any) => p.active).length,
-				featuredItems: products.filter((p: any) => p.metadata.featured === 'true').length,
-			};
-
-			// Try to fetch media count (if endpoint exists)
-			try {
-				const mediaResponse = await apiClient.get('/admin/media');
-				stats.mediaFiles = mediaResponse.data.files?.length || 0;
-			} catch {
-				// Media endpoint might not be available
-			}
-
-			// Try to fetch pending submissions count
-			try {
-				const submissionsResponse = await apiClient.get('/admin/submissions/pending-count');
-				stats.pendingSubmissions = submissionsResponse.data.count || 0;
-			} catch {
-				// Submissions endpoint might not be available
-			}
-
-			// Try to fetch active coupons count
-			try {
-				const couponsResponse = await apiClient.get('/admin/coupons');
-				const coupons = couponsResponse.data.coupons || [];
-				stats.activeCoupons = coupons.filter((c: any) => c.valid).length;
-			} catch {
-				// Coupons endpoint might not be available
-			}
-
-			setStats(stats);
-		} catch (error) {
-			console.error('Error fetching stats:', error);
-			toast.error('Failed to load dashboard statistics');
-		} finally {
-			setIsLoading(false);
-		}
-	};
-
-	useEffect(() => {
-		fetchStats();
-	}, []);
 
 	const handleLogout = async () => {
 		await logout();
@@ -241,82 +223,70 @@ function AdminDashboardContent() {
 
 				{/* Stats Overview */}
 				<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-					{isLoading ? (
-						[...Array(4)].map((_, i) => (
-							<Skeleton key={i} className="h-24" />
-						))
-					) : stats ? (
-						<>
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Active Products</CardTitle>
-									<ShoppingBag className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">{stats.activeProducts}</div>
-									<p className="text-xs text-muted-foreground">
-										{stats.totalProducts} products, {stats.totalEvents} events
-									</p>
-								</CardContent>
-							</Card>
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+							<CardTitle className="text-sm font-medium">Active Products</CardTitle>
+							<ShoppingBag className="h-4 w-4 text-muted-foreground" />
+						</CardHeader>
+						<CardContent>
+							<div className="text-2xl font-bold">{stats?.activeProducts}</div>
+							<p className="text-xs text-muted-foreground">
+								{stats?.totalProducts} products, {stats?.totalEvents} events
+							</p>
+						</CardContent>
+					</Card>
 
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Featured Items</CardTitle>
-									<TrendingUp className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">{stats.featuredItems}</div>
-									<p className="text-xs text-muted-foreground">
-										Displayed on homepage
-									</p>
-								</CardContent>
-							</Card>
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+							<CardTitle className="text-sm font-medium">Featured Items</CardTitle>
+							<TrendingUp className="h-4 w-4 text-muted-foreground" />
+						</CardHeader>
+						<CardContent>
+							<div className="text-2xl font-bold">{stats?.featuredItems}</div>
+							<p className="text-xs text-muted-foreground">
+								Displayed on homepage
+							</p>
+						</CardContent>
+					</Card>
 
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Active Discounts</CardTitle>
-									<Tag className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">{stats.activeCoupons || 0}</div>
-									<p className="text-xs text-muted-foreground">
-										Coupons available
-									</p>
-								</CardContent>
-							</Card>
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+							<CardTitle className="text-sm font-medium">Active Discounts</CardTitle>
+							<Tag className="h-4 w-4 text-muted-foreground" />
+						</CardHeader>
+						<CardContent>
+							<div className="text-2xl font-bold">{stats?.activeCoupons || 0}</div>
+							<p className="text-xs text-muted-foreground">
+								Coupons available
+							</p>
+						</CardContent>
+					</Card>
 
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Pending Submissions</CardTitle>
-									<Car className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">{stats.pendingSubmissions || 0}</div>
-									<p className="text-xs text-muted-foreground">
-										Vehicle submissions
-									</p>
-								</CardContent>
-							</Card>
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+							<CardTitle className="text-sm font-medium">Pending Submissions</CardTitle>
+							<Car className="h-4 w-4 text-muted-foreground" />
+						</CardHeader>
+						<CardContent>
+							<div className="text-2xl font-bold">{stats?.pendingSubmissions || 0}</div>
+							<p className="text-xs text-muted-foreground">
+								Vehicle submissions
+							</p>
+						</CardContent>
+					</Card>
 
-							<Card>
-								<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-									<CardTitle className="text-sm font-medium">Media Files</CardTitle>
-									<FileImage className="h-4 w-4 text-muted-foreground" />
-								</CardHeader>
-								<CardContent>
-									<div className="text-2xl font-bold">{stats.mediaFiles || 'N/A'}</div>
-									<p className="text-xs text-muted-foreground">
-										Images and videos
-									</p>
-								</CardContent>
-							</Card>
-						</>
-					) : (
-						<div className="col-span-4 text-center text-muted-foreground">
-							Failed to load statistics
-						</div>
-					)}
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+							<CardTitle className="text-sm font-medium">Media Files</CardTitle>
+							<FileImage className="h-4 w-4 text-muted-foreground" />
+						</CardHeader>
+						<CardContent>
+							<div className="text-2xl font-bold">{stats?.mediaFiles || 'N/A'}</div>
+							<p className="text-xs text-muted-foreground">
+								Images and videos
+							</p>
+						</CardContent>
+					</Card>
 				</div>
 
 				{/* Quick Actions */}

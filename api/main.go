@@ -143,6 +143,9 @@ func main() {
 	api.HandleFunc("/events/{eventId}/recommendations", handlers.GetEventMerchandiseRecommendations).Methods("GET", "OPTIONS")
 	api.HandleFunc("/create-event-checkout-session", handlers.CreateEventCheckoutSession).Methods("POST", "OPTIONS")
 
+	// Public media management endpoint
+	api.HandleFunc("/media", handlers.ListMedia).Methods("GET", "OPTIONS")
+
 	// Admin endpoints (requires authentication)
 	// Product management
 	api.Handle("/admin/create-product", middleware.RequireAuth(http.HandlerFunc(handlers.CreateProduct))).Methods("POST", "OPTIONS")
@@ -150,9 +153,10 @@ func main() {
 	api.Handle("/admin/delete-product/{id}", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteProduct))).Methods("DELETE", "OPTIONS")
 
 	// Media management endpoints (requires authentication)
-	api.Handle("/admin/media", middleware.RequireAuth(http.HandlerFunc(handlers.ListMedia))).Methods("GET", "OPTIONS")
 	api.Handle("/admin/media/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadMedia))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/media/delete", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteMedia))).Methods("DELETE", "OPTIONS")
+	api.Handle("/admin/events/folders", middleware.RequireAuth(http.HandlerFunc(handlers.ListEventFolders))).Methods("GET", "OPTIONS")
+	api.Handle("/admin/events/gallery/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadEventGallery))).Methods("POST", "OPTIONS")
 
 	// Price management endpoints (requires authentication)
 	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")

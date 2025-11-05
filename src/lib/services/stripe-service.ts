@@ -7,40 +7,25 @@ export interface AgendaItem {
 	activity: string;
 }
 
-export interface EventFormData {
-	name: string;
-	slug: string;
-	description: string;
-	price: string;
-	capacity: string;
-	location: string;
-	eventDate: string;
-	eventTime: string;
-	organizer: string;
-	status: 'draft' | 'published' | 'sold_out';
-	sponsors: Sponsor[];
-	sponsorTiers?: SponsorTier[];
-	tags?: Array<{ value: string }>;
-	agenda?: AgendaItem[];
-	includes?: Array<{ value: string }>;
-	images?: string[];
-	hasTiers?: boolean;
-	priceTiers?: PriceTier[];
-	maxQuantity?: number;
-}
-
 export interface StripeProduct {
 	id: string;
 	name: string;
 	description: string | null;
 	images: string[];
-	metadata: Record<string, string>;
+	metadata: Record<string, any>;
 	active: boolean;
 	default_price: {
 		id: string;
 		unit_amount: number;
 		currency: string;
 	} | null;
+	prices?: Array<{
+		id: string;
+		unit_amount: number;
+		currency: string;
+		nickname: string | null;
+		metadata: Record<string, string>;
+	}>;
 	created: number;
 	updated: number;
 	linkedProducts?: Product[];
@@ -265,27 +250,28 @@ export const stripeService = {
 		return Promise.all(enrichedBundlesPromises);
 	},
 
-	async getAllProducts(): Promise<ProductOrBundle[]> {
-		try {
-			const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
+	async getAllProducts(): Promise<Product[] | EventProduct[]> {
+		const response = await apiClient.get<{ products: StripeProduct[] }>('/products');
 
-			if (!response.data.products || response.data.products.length === 0) {
-				return [];
-			}
-
-			// Filter out event products for regular product listing
-			return response.data.products
-				.filter(p => p.metadata.type !== 'event')
-				.map(p => {
-					if (p.metadata.type === 'bundle') {
-						return this.transformStripeBundleProduct(p);
-					}
-					return this.transformStripeProduct(p);
-				});
-		} catch (error) {
-			console.error('Failed to fetch products from Stripe:', error);
-			throw new Error('Failed to load products');
+		if (response.status !== 200) {
+			throw new Error(`Failed to fetch products from Stripe: ${response.statusText}`);
 		}
+
+		if (!response.data.products || response.data.products.length === 0) {
+			return [];
+		}
+
+		// Filter out bundle products only (include events and regular products)
+		const productPromises = response.data.products
+			.filter(p => p.metadata.type !== 'bundle')
+			.map(async p => {
+				if (p.metadata.type === 'event') {
+					return await this.transformStripeEventProduct(p);
+				}
+				return this.transformStripeProduct(p);
+			});
+
+		return Promise.all(productPromises);
 	},
 
 	async getAllEvents(includeInactive: boolean = false): Promise<EventProduct[]> {
@@ -318,8 +304,6 @@ export const stripeService = {
 			if (!response.data || !response.data.id) {
 				return null;
 			}
-
-			console.log('Event slug response: ', response.data)
 
 			return this.transformStripeEventProduct(response.data);
 		} catch (error) {
@@ -401,7 +385,7 @@ export const stripeService = {
 				tags = JSON.parse(stripeProduct.metadata.tags);
 			} catch (e) {
 				// If not JSON, treat as comma-separated string
-				tags = stripeProduct.metadata.tags.split(',').map(t => t.trim()).filter(Boolean);
+				tags = stripeProduct.metadata.tags.split(',').map((t: any) => t.trim()).filter(Boolean);
 			}
 		}
 
@@ -477,7 +461,6 @@ export const stripeService = {
 	async transformStripeEventProduct(stripeProduct: StripeProduct): Promise<EventProduct> {
 		// Fetch external metadata if needed
 		const metadata = await fetchExternalMetadata(stripeProduct.metadata);
-		console.log('Metadata:', stripeProduct);
 
 		// Parse available spots
 		const availableSpots = metadata.available_spots
@@ -610,7 +593,6 @@ export const stripeService = {
 	}> {
 		try {
 			const response = await apiClient.get(`/events/${eventId}/linked-products`);
-			console.log('Linked Products response: ', response.data);
 			return response.data;
 		} catch (error) {
 			console.error('Failed to fetch linked products:', error);

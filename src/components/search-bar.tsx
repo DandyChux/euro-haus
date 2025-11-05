@@ -8,20 +8,7 @@ import { Search, X, Package, Calendar } from "lucide-react"
 import { useNavigate } from "@tanstack/react-router"
 import { apiClient } from "~/lib/api"
 import { Image } from "./ui/image"
-
-interface StripeProduct {
-	id: string
-	name: string
-	description: string | null
-	images: string[]
-	metadata: Record<string, string>
-	active: boolean
-	default_price: {
-		id: string
-		unit_amount: number
-		currency: string
-	} | null
-}
+import { StripeProduct } from "~/lib/services/stripe-service"
 
 interface SearchBarProps {
 	onSearch: (query: string) => void

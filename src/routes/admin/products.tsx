@@ -72,27 +72,7 @@ import { EventFormSection } from '~/components/admin/event-form-section';
 import { BundleFormSection } from '~/components/admin/bundle-form-section';
 import { Image } from '~/components/ui/image';
 import { fetchExternalMetadata } from '~/lib/utils';
-
-// Stripe Product interface
-interface StripeProduct {
-	id: string;
-	name: string;
-	description: string | null;
-	images: string[];
-	metadata: Record<string, any>;
-	default_price: {
-		id: string;
-		unit_amount: number;
-		currency: string;
-	} | null;
-	prices?: Array<{
-		id: string;
-		unit_amount: number;
-		currency: string;
-		nickname: string | null;
-		metadata: Record<string, string>;
-	}>;
-}
+import { StripeProduct } from '~/lib/services/stripe-service';
 
 export const Route = createFileRoute('/admin/products')({
 	component: AdminProductsPage,

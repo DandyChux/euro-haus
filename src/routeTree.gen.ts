@@ -15,9 +15,11 @@ import { Route as PaymentImport } from './routes/payment'
 import { Route as CartImport } from './routes/cart'
 import { Route as AboutImport } from './routes/about'
 import { Route as IndexImport } from './routes/index'
+import { Route as GalleryIndexImport } from './routes/gallery/index'
 import { Route as EventsIndexImport } from './routes/events/index'
 import { Route as CatalogIndexImport } from './routes/catalog/index'
 import { Route as AdminIndexImport } from './routes/admin/index'
+import { Route as GallerySlugImport } from './routes/gallery/$slug'
 import { Route as EventsSlugImport } from './routes/events/$slug'
 import { Route as CheckoutSuccessImport } from './routes/checkout/success'
 import { Route as CheckoutRecoverImport } from './routes/checkout/recover'
@@ -60,6 +62,12 @@ const IndexRoute = IndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const GalleryIndexRoute = GalleryIndexImport.update({
+  id: '/gallery/',
+  path: '/gallery/',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const EventsIndexRoute = EventsIndexImport.update({
   id: '/events/',
   path: '/events/',
@@ -75,6 +83,12 @@ const CatalogIndexRoute = CatalogIndexImport.update({
 const AdminIndexRoute = AdminIndexImport.update({
   id: '/admin/',
   path: '/admin/',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const GallerySlugRoute = GallerySlugImport.update({
+  id: '/gallery/$slug',
+  path: '/gallery/$slug',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -305,6 +319,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsSlugImport
       parentRoute: typeof rootRoute
     }
+    '/gallery/$slug': {
+      id: '/gallery/$slug'
+      path: '/gallery/$slug'
+      fullPath: '/gallery/$slug'
+      preLoaderRoute: typeof GallerySlugImport
+      parentRoute: typeof rootRoute
+    }
     '/admin/': {
       id: '/admin/'
       path: '/admin'
@@ -324,6 +345,13 @@ declare module '@tanstack/react-router' {
       path: '/events'
       fullPath: '/events'
       preLoaderRoute: typeof EventsIndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/gallery/': {
+      id: '/gallery/'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof GalleryIndexImport
       parentRoute: typeof rootRoute
     }
   }
@@ -351,9 +379,11 @@ export interface FileRoutesByFullPath {
   '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/gallery/$slug': typeof GallerySlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
+  '/gallery': typeof GalleryIndexRoute
 }
 
 export interface FileRoutesByTo {
@@ -376,9 +406,11 @@ export interface FileRoutesByTo {
   '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/gallery/$slug': typeof GallerySlugRoute
   '/admin': typeof AdminIndexRoute
   '/catalog': typeof CatalogIndexRoute
   '/events': typeof EventsIndexRoute
+  '/gallery': typeof GalleryIndexRoute
 }
 
 export interface FileRoutesById {
@@ -402,9 +434,11 @@ export interface FileRoutesById {
   '/checkout/recover': typeof CheckoutRecoverRoute
   '/checkout/success': typeof CheckoutSuccessRoute
   '/events/$slug': typeof EventsSlugRoute
+  '/gallery/$slug': typeof GallerySlugRoute
   '/admin/': typeof AdminIndexRoute
   '/catalog/': typeof CatalogIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/gallery/': typeof GalleryIndexRoute
 }
 
 export interface FileRouteTypes {
@@ -429,9 +463,11 @@ export interface FileRouteTypes {
     | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
+    | '/gallery/$slug'
     | '/admin'
     | '/catalog'
     | '/events'
+    | '/gallery'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -453,9 +489,11 @@ export interface FileRouteTypes {
     | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
+    | '/gallery/$slug'
     | '/admin'
     | '/catalog'
     | '/events'
+    | '/gallery'
   id:
     | '__root__'
     | '/'
@@ -477,9 +515,11 @@ export interface FileRouteTypes {
     | '/checkout/recover'
     | '/checkout/success'
     | '/events/$slug'
+    | '/gallery/$slug'
     | '/admin/'
     | '/catalog/'
     | '/events/'
+    | '/gallery/'
   fileRoutesById: FileRoutesById
 }
 
@@ -503,9 +543,11 @@ export interface RootRouteChildren {
   CheckoutRecoverRoute: typeof CheckoutRecoverRoute
   CheckoutSuccessRoute: typeof CheckoutSuccessRoute
   EventsSlugRoute: typeof EventsSlugRoute
+  GallerySlugRoute: typeof GallerySlugRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CatalogIndexRoute: typeof CatalogIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
+  GalleryIndexRoute: typeof GalleryIndexRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -528,9 +570,11 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRecoverRoute: CheckoutRecoverRoute,
   CheckoutSuccessRoute: CheckoutSuccessRoute,
   EventsSlugRoute: EventsSlugRoute,
+  GallerySlugRoute: GallerySlugRoute,
   AdminIndexRoute: AdminIndexRoute,
   CatalogIndexRoute: CatalogIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
+  GalleryIndexRoute: GalleryIndexRoute,
 }
 
 export const routeTree = rootRoute
@@ -562,9 +606,11 @@ export const routeTree = rootRoute
         "/checkout/recover",
         "/checkout/success",
         "/events/$slug",
+        "/gallery/$slug",
         "/admin/",
         "/catalog/",
-        "/events/"
+        "/events/",
+        "/gallery/"
       ]
     },
     "/": {
@@ -624,6 +670,9 @@ export const routeTree = rootRoute
     "/events/$slug": {
       "filePath": "events/$slug.tsx"
     },
+    "/gallery/$slug": {
+      "filePath": "gallery/$slug.tsx"
+    },
     "/admin/": {
       "filePath": "admin/index.tsx"
     },
@@ -632,6 +681,9 @@ export const routeTree = rootRoute
     },
     "/events/": {
       "filePath": "events/index.tsx"
+    },
+    "/gallery/": {
+      "filePath": "gallery/index.tsx"
     }
   }
 }

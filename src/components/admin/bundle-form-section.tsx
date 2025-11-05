@@ -30,19 +30,7 @@ import { Badge } from '~/components/ui/badge';
 import { Plus, Trash2, Package, Calculator } from 'lucide-react';
 import { apiClient } from '~/lib/api';
 import { toast } from 'sonner';
-
-interface StripeProduct {
-	id: string;
-	name: string;
-	description: string | null;
-	images: string[];
-	metadata: Record<string, any>;
-	default_price: {
-		id: string;
-		unit_amount: number;
-		currency: string;
-	} | null;
-}
+import { StripeProduct } from '~/lib/services/stripe-service';
 
 interface BundleFormSectionProps {
 	form: UseFormReturn<BundleFormData>;

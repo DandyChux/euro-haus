@@ -46,25 +46,25 @@ export function Footer() {
 						<h3 className="text-lg font-bold">Shop</h3>
 						<ul className="mt-2 space-y-2 text-sm">
 							<li>
-								<a href="/shop/apparel" className="text-muted-foreground hover:text-foreground">
+								<a href="/catalog" className="text-muted-foreground hover:text-foreground">
 									Apparel
 								</a>
 							</li>
-							<li>
+							{/*<li>
 								<a href="/shop/accessories" className="text-muted-foreground hover:text-foreground">
 									Accessories
 								</a>
-							</li>
+							</li>*/}
 							<li>
-								<a href="/shop/tickets" className="text-muted-foreground hover:text-foreground">
+								<a href="/events" className="text-muted-foreground hover:text-foreground">
 									Event Tickets
 								</a>
 							</li>
-							<li>
+							{/*<li>
 								<a href="/shop/gift-cards" className="text-muted-foreground hover:text-foreground">
 									Gift Cards
 								</a>
-							</li>
+							</li>*/}
 						</ul>
 					</div>
 					<div>
@@ -75,21 +75,21 @@ export function Footer() {
 									Events
 								</a>
 							</li>
-							<li>
+							{/*<li>
 								<a href="/community/forum" className="text-muted-foreground hover:text-foreground">
 									Forum
 								</a>
-							</li>
+							</li>*/}
 							<li>
-								<a href="/community/gallery" className="text-muted-foreground hover:text-foreground">
+								<a href="/gallery" className="text-muted-foreground hover:text-foreground">
 									Car Gallery
 								</a>
 							</li>
-							<li>
+							{/*<li>
 								<a href="/videos" className="text-muted-foreground hover:text-foreground">
 									Videos
 								</a>
-							</li>
+							</li>*/}
 						</ul>
 					</div>
 					<div>
