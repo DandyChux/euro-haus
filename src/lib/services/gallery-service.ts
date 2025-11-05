@@ -37,6 +37,16 @@ export interface UploadResponse {
 	message: string;
 }
 
+export interface BatchUploadResponse {
+	success: boolean;
+	files: MediaFile[];
+	totalUploaded: number;
+	totalFailed: number;
+	errors: string[];
+	message: string;
+}
+
+
 export const galleryService = {
 	/**
 	 * Fetches all media files from DigitalOcean Spaces
@@ -151,9 +161,48 @@ export const galleryService = {
 	},
 
 	/**
-	 * Uploads multiple files to an event's gallery folder
-	 */
+		 * Uploads multiple files in a single batch request
+		 */
 	async uploadMultipleToEventGallery(
+		eventSlug: string,
+		files: File[],
+		onProgress?: (progress: number) => void
+	): Promise<MediaFile[]> {
+		const formData = new FormData();
+		formData.append('eventSlug', eventSlug);
+
+		// Append all files with the same field name "files"
+		files.forEach(file => {
+			formData.append('files', file);
+		});
+
+		const response = await apiClient.post<BatchUploadResponse>(
+			'/admin/events/gallery/upload-batch',
+			formData,
+			{
+				headers: {
+					'Content-Type': 'multipart/form-data',
+				},
+				onUploadProgress: (progressEvent) => {
+					if (onProgress && progressEvent.total) {
+						const percentComplete = (progressEvent.loaded / progressEvent.total) * 100;
+						onProgress(percentComplete);
+					}
+				},
+			}
+		);
+
+		if (response.data.errors && response.data.errors.length > 0) {
+			console.warn('Some files failed to upload:', response.data.errors);
+		}
+
+		return response.data.files;
+	},
+
+	/**
+		 * Uploads files sequentially (fallback method)
+		 */
+	async uploadSequentialToEventGallery(
 		eventSlug: string,
 		files: File[],
 		onProgress?: (progress: number) => void

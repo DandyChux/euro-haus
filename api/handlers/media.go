@@ -468,6 +468,112 @@ func UploadEventGallery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// UploadEventGalleryBatch handles multiple file uploads to event gallery folders in a single request
+func UploadEventGalleryBatch(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Parse multipart form with larger max size for multiple files
+	err := r.ParseMultipartForm(500 << 20) // 500MB max for batch uploads
+	if err != nil {
+		log.Printf("Failed to parse multipart form: %v", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Get the event slug from form data
+	eventSlug := r.FormValue("eventSlug")
+	if eventSlug == "" {
+		http.Error(w, "Event slug is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get all files from the "files" field
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		http.Error(w, "No files provided", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("Processing batch upload of %d files for event: %s", len(files), eventSlug)
+
+	// Construct the gallery folder path
+	galleryFolder := fmt.Sprintf("events/%s/gallery/", eventSlug)
+
+	// Upload all files and collect results
+	uploadedFiles := make([]MediaFile, 0, len(files))
+	errors := make([]string, 0)
+
+	for _, fileHeader := range files {
+		// Open the file
+		file, err := fileHeader.Open()
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to open file %s: %v", fileHeader.Filename, err)
+			log.Printf(errMsg)
+			errors = append(errors, errMsg)
+			continue
+		}
+
+		// Get content type
+		contentType := fileHeader.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = getMimeType(fileHeader.Filename)
+		}
+
+		// Upload using the storage service
+		fileURL, err := services.UploadFile(file, fileHeader.Filename, contentType, galleryFolder)
+		file.Close() // Close immediately after upload
+
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to upload file %s: %v", fileHeader.Filename, err)
+			log.Printf(errMsg)
+			errors = append(errors, errMsg)
+			continue
+		}
+
+		// Extract key from URL
+		urlParts := strings.Split(fileURL, "/")
+		key := strings.Join(urlParts[3:], "/")
+
+		// Add to successful uploads
+		uploadedFiles = append(uploadedFiles, MediaFile{
+			Key:          key,
+			URL:          fileURL,
+			LastModified: time.Now(),
+			Size:         fileHeader.Size,
+			Type:         getFileType(fileHeader.Filename),
+			Folder:       getFolder(key),
+		})
+
+		fmt.Printf("Successfully uploaded file: %s", key)
+	}
+
+	// Create response with both successes and errors
+	response := map[string]interface{}{
+		"success":       len(uploadedFiles) > 0,
+		"files":         uploadedFiles,
+		"totalUploaded": len(uploadedFiles),
+		"totalFailed":   len(errors),
+		"errors":        errors,
+		"message":       fmt.Sprintf("Uploaded %d of %d files successfully", len(uploadedFiles), len(files)),
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 // Helper functions
 
 // getFileType determines the file type from the filename

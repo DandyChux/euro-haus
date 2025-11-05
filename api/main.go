@@ -156,7 +156,7 @@ func main() {
 	api.Handle("/admin/media/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadMedia))).Methods("POST", "OPTIONS")
 	api.Handle("/admin/media/delete", middleware.RequireAuth(http.HandlerFunc(handlers.DeleteMedia))).Methods("DELETE", "OPTIONS")
 	api.Handle("/admin/events/folders", middleware.RequireAuth(http.HandlerFunc(handlers.ListEventFolders))).Methods("GET", "OPTIONS")
-	api.Handle("/admin/events/gallery/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadEventGallery))).Methods("POST", "OPTIONS")
+	api.Handle("/admin/events/gallery/upload", middleware.RequireAuth(http.HandlerFunc(handlers.UploadEventGalleryBatch))).Methods("POST", "OPTIONS")
 
 	// Price management endpoints (requires authentication)
 	api.Handle("/admin/create-price", middleware.RequireAuth(http.HandlerFunc(handlers.CreatePrice))).Methods("POST", "OPTIONS")
