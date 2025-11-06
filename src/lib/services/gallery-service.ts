@@ -177,7 +177,7 @@ export const galleryService = {
 		});
 
 		const response = await apiClient.post<BatchUploadResponse>(
-			'/admin/events/gallery/upload-batch',
+			'/admin/events/gallery/upload',
 			formData,
 			{
 				headers: {
