@@ -129,6 +129,9 @@ export function Footer() {
 					</div>
 				</div>
 			</div>
+			<span className='text-sm text-muted-foreground'>
+				Designed & Developed by <a href='https://ceokoroji.dev' className='text-muted-foreground hover:text-foreground underline'>Chukwuma Okoroji</a>
+			</span>
 		</footer>
 	);
 }
