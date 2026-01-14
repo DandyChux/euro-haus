@@ -128,10 +128,12 @@ export function Footer() {
 						</ul>
 					</div>
 				</div>
+				<address>
+					<p className='text-sm text-muted-foreground text-center'>
+						Designed &amp; Developed by <a href='https://ceokoroji.dev' className='text-muted-foreground hover:text-foreground underline'>Chukwuma Okoroji</a>
+					</p>
+				</address>
 			</div>
-			<span className='text-sm text-muted-foreground'>
-				Designed & Developed by <a href='https://ceokoroji.dev' className='text-muted-foreground hover:text-foreground underline'>Chukwuma Okoroji</a>
-			</span>
 		</footer>
 	);
 }
