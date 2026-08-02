@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { addToCart } from "$lib/stores/cart.svelte";
 	import { cn, formatCurrency } from "$lib/utils";
-	import { isBundleProduct, isProductWithVariants } from "$lib/types";
 	import type { PageProps } from "./$types";
 	import { Button } from "$lib/components/ui/button";
+	import {
+		isBundleProduct,
+		isProductWithVariants,
+	} from "$lib/schemas/product";
 
 	let { data }: PageProps = $props();
 
@@ -47,7 +50,7 @@
 
 		addToCart({
 			id: data.product.id,
-			price_id: selectedVariant?.priceId ?? data.product.priceId,
+			price_id: selectedVariant?.price_id ?? data.product.price_id,
 			title: `${data.product.title}${variantLabel}`,
 			description: data.product.description,
 			price: currentPrice,
@@ -130,7 +133,7 @@
 		<div class="space-y-6">
 			<div>
 				<p class="text-sm uppercase tracking-[0.3em]">
-					{data.product.type}
+					{data.product.category}
 				</p>
 				<h1 class="mt-3 text-4xl font-semibold">
 					{data.product.title}
@@ -181,11 +184,11 @@
 				</div>
 			{/if}
 
-			{#if isBundleProduct(data.product) && data.product.bundleItems.length > 0}
+			{#if isBundleProduct(data.product) && data.product.bundle_items.length > 0}
 				<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
 					<h2 class="text-lg font-medium">What’s inside</h2>
 					<ul class="mt-4 space-y-3 text-sm">
-						{#each data.product.bundleItems as item (`${item.productId}:${item.quantity}`)}
+						{#each data.product.bundle_items as item (`${item.productId}:${item.quantity}`)}
 							<li class="flex items-center justify-between gap-4">
 								<span>{item.productName}</span>
 								<span>x{item.quantity}</span>
@@ -240,7 +243,7 @@
 								class="block rounded-2xl border border-white/10 px-4 py-3 text-sm hover:border-white/20 hover:text-primary"
 							>
 								{bundle.title} · Save {formatCurrency(
-									bundle.savings,
+									bundle.discount_value,
 								)}
 							</a>
 						{/each}

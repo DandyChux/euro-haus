@@ -1,6 +1,6 @@
 import type { PageLoad } from "./$types";
 import { getEventByID, getSubmission } from "$lib/services/event";
-import { getDefaultPrice } from "$lib/types";
+import { getDefaultPrice } from "$lib/schemas/price";
 
 function normalize(value?: string) {
 	return (value ?? "").trim().toLowerCase();

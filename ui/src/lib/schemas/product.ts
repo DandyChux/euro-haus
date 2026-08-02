@@ -87,3 +87,9 @@ export function isProductWithVariants(
 ): product is ProductVariants {
 	return "variants" in product;
 }
+
+export function isBundleProduct(
+	product: Product | ProductVariants | BundleProduct,
+): product is BundleProduct {
+	return "bundle_items" in product;
+}

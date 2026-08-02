@@ -27,7 +27,7 @@ COPY ui/src/ ./src/
 COPY ui/static/ ./static/
 
 # Build — output goes to /ui/build
-RUN bun run build || true
+RUN bun run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: Builder — compile the Go binary
