@@ -1,39 +1,20 @@
 services:
-    redis:
-        image: redis:7-alpine
-        container_name: euro-haus-redis
+    postgres:
+        image: postgres:18-alpine
+        container_name: euro-haus-postgres
         restart: unless-stopped
+        env_file:
+            - .env
         ports:
-            - "6379:6379"
+            - "5432:5432"
         volumes:
-            - redis-data:/data
-        command: redis-server --appendonly yes --requirepass eurohaus_dev_password
+            - postgres-data:/var/lib/postgresql
+            - ./migrations:/docker-entrypoint-initdb.d:ro
         healthcheck:
-            test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+            test: ["CMD-SHELL", "pg_isready -U eurohaus -d eurohaus"]
             interval: 10s
             timeout: 5s
             retries: 5
-        networks:
-            - euro-haus-network
-
-    # Optional: Redis UI for easier debugging
-    redis-commander:
-        image: rediscommander/redis-commander:latest
-        container_name: euro-haus-redis-commander
-        restart: unless-stopped
-        environment:
-            - REDIS_HOSTS=local:redis:6379:0:eurohaus_dev_password
-        ports:
-            - "8081:8081"
-        depends_on:
-            - redis
-        networks:
-            - euro-haus-network
 
 volumes:
-    redis-data:
-        driver: local
-
-networks:
-    euro-haus-network:
-        driver: bridge
+    postgres-data:

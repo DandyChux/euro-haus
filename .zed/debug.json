@@ -14,10 +14,8 @@
 		"sourceMaps": true,
 		"build": {
 			"command": "npx",
-			"args": [
-				"tsc"
-			]
-		}
+			"args": ["tsc"],
+		},
 	},
 	{
 		"label": "Launch Go (Delve)",
@@ -25,6 +23,18 @@
 		"program": "${ZED_WORKTREE_ROOT}/api/main.go",
 		"request": "launch",
 		"mode": "debug",
-		"cwd": "${ZED_WORKTREE_ROOT}/api"
-	}
+		"cwd": "${ZED_WORKTREE_ROOT}",
+	},
+	{
+		"label": "Launch Go w/ Air (HMR)",
+		"adapter": "Delve",
+		"program": "${ZED_WORKTREE_ROOT}/cmd/server/main.go",
+		"request": "launch",
+		"mode": "debug",
+		"cwd": "${ZED_WORKTREE_ROOT}",
+		"build": {
+			"command": "air",
+			"args": ["-c", "air.toml"],
+		},
+	},
 ]

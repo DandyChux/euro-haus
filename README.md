@@ -1,54 +1,89 @@
-# React + TypeScript + Vite
+# Euro Haus
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A custom website and internal admin platform built for **Euro Haus**, an
+automotive brand focused on community events, media, and premium merchandise.
 
-Currently, two official plugins are available:
+This repository is shared for **portfolio/review purposes only**. It is not an
+open-source project, and the code is not licensed for reuse, modification, or
+deployment. See [`LICENSE`](./LICENSE).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Overview
 
-## Expanding the ESLint configuration
+Euro Haus is a full-stack web platform designed to support both the public-facing
+brand experience and the internal operational workflows behind it.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+The project combines:
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+- a public website for showcasing the brand
+- event discovery and ticketing flows
+- merchandise browsing and checkout
+- vehicle submission and approval workflows
+- an internal admin dashboard for managing products, events, media, discounts,
+  and submissions
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Rather than being a generic template site, this project was built around real
+business needs and the operational requirements of a live brand.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## What this project includes
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+### Public experience
+- branded landing page and marketing content
+- event listing and event detail pages
+- product catalog and product detail pages
+- cart and checkout flows
+- gallery and media presentation
+- YouTube/content integration
+
+### Business operations
+- admin authentication
+- product and event management
+- coupon and promotion management
+- media library tooling
+- vehicle submission review and approval workflows
+- fulfillment/payment-related admin actions
+
+## Technical scope
+
+This project includes a custom full-stack architecture with:
+
+- **Frontend:** SvelteKit, Svelte 5, TypeScript, Tailwind CSS
+- **Backend:** Go
+- **Database:** PostgreSQL
+- **Payments:** Stripe
+- **Storage / media:** S3-compatible object storage
+- **Email workflows:** Mailgun
+- **Deployment / infrastructure:** Docker, Caddy
+
+## Highlights
+
+Some of the more interesting implementation areas in this codebase include:
+
+- integrating Stripe for both merchandise and event-related purchase flows
+- handling event-specific participant submission workflows
+- building internal admin tools alongside the public site
+- supporting media upload and management for business content
+- structuring a project that serves both marketing and operations needs in one
+  system
+
+## Why this repo is public
+
+This repository is public so potential customers and collaborators
+can review the quality and scope of the work.
+
+However, this project was created for a real business context and is shared for
+**evaluation only**. No rights are granted to copy, reuse, modify, redistribute,
+or deploy any portion of this codebase or its assets.
+
+## Notes
+
+- This repository is **not** intended to be used as a starter, template, or
+  installable product.
+- Some configuration, secrets, and business-specific data are intentionally not
+  included.
+- Public availability of the source does **not** grant permission to use it.
+
+## License
+
+Proprietary. All rights reserved.
+
+See [`LICENSE`](./LICENSE).
