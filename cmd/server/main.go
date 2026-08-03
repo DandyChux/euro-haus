@@ -279,7 +279,9 @@ func main() {
 	}
 	log.Println("Serving static files from: ", staticDir)
 
-	api.Handle("/", middleware.StaticCacheMiddleware(newSPAFileServer(staticDir))).Methods("GET")
+	router.PathPrefix("/").Handler(
+		middleware.StaticCacheMiddleware(newSPAFileServer(staticDir)),
+	).Methods("GET")
 
 	// Setup CORS
 	baseURL := os.Getenv("BASE_URL")
