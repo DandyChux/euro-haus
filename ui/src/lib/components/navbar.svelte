@@ -132,7 +132,7 @@
 		@apply backdrop-blur supports-backdrop-filter:bg-background/30;
 	}
 	.event-bar {
-		height: 34px;
+		height: 35px;
 		padding-inline: 24px;
 		display: flex;
 		align-items: center;

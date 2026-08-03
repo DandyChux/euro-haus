@@ -4,6 +4,10 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	build: {
+		minify: "esbuild",
+		reportCompressedSize: true,
+	},
 	envDir: "..",
 	server: {
 		proxy: {
