@@ -42,7 +42,17 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o euro-haus ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build \
+	-a -installsuffix cgo \
+	-o euro-haus ./cmd/server
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+	-a -installsuffix cgo \
+	-o create-admin ./cmd/create-admin
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+	-a -installsuffix cgo \
+	-o migrate-stripe ./cmd/migrate-stripe
 
 # ---------------------------------------------------------------------------
 # Stage 3: Prod — minimal image with binary + static assets
@@ -53,6 +63,8 @@ WORKDIR /app
 
 # Copy the Go binary
 COPY --from=builder /app/euro-haus .
+COPY --from=builder /app/create-admin .
+COPY --from=builder /app/migrate-stripe .
 
 # Copy the SvelteKit build output
 COPY --from=frontend /ui/build ./static/

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/dandychux/euro-haus/internal/services"
 )
@@ -167,4 +168,48 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(response)
 	}
+}
+
+func CreateAdminUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req services.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Country = "US"
+
+	user, err := services.GetAuthService().CreateAdminUser(
+		r.Context(),
+		&req,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrEmailAlreadyExists):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "An account with that email already exists",
+			})
+		case strings.Contains(err.Error(), "required"),
+			strings.Contains(err.Error(), "password must"):
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"message": err.Error(),
+			})
+		default:
+			log.Printf("Failed to create admin user: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"message": "Unable to create administrator",
+			})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":    user.ID,
+		"email": user.Email,
+		"name":  user.Name,
+	})
 }

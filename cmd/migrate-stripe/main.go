@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"log"
 	"os"
 	"strconv"
@@ -39,6 +40,18 @@ type legacyAgendaItem struct {
 func main() {
 	loadEnvironment()
 
+	stripeProductID := flag.String(
+		"product-id",
+		"",
+		"Stripe product ID to migrate, for example prod_123",
+	)
+
+	flag.Parse()
+
+	if strings.TrimSpace(*stripeProductID) == "" {
+		log.Fatal("the -product-id argument is required")
+	}
+
 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 	if stripe.Key == "" {
 		log.Fatal("STRIPE_SECRET_KEY is required")
@@ -46,14 +59,9 @@ func main() {
 
 	services.InitDB()
 
-	stripeProductID := os.Getenv("MIGRATE_STRIPE_PRODUCT_ID")
-	if stripeProductID == "" {
-		log.Fatal("MIGRATE_STRIPE_PRODUCT_ID is required")
-	}
-
 	ctx := context.Background()
 
-	stripeEvent, err := getStripeEvent(stripeProductID)
+	stripeEvent, err := getStripeEvent(strings.TrimSpace(*stripeProductID))
 	if err != nil {
 		log.Fatalf("unable to retrieve Stripe product: %v", err)
 	}

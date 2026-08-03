@@ -186,7 +186,17 @@ func main() {
 	// Public media management endpoint
 	api.HandleFunc("/media", handlers.ListMedia).Methods("GET")
 
+	// -----------------------------------------
 	// Admin endpoints (requires authentication)
+	// -----------------------------------------
+
+	api.Handle(
+		"/admin/users",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.CreateAdminUser),
+		),
+	).Methods("POST")
+
 	// Product management
 	api.Handle("/admin/create-product", middleware.RequireAdminAuth(http.HandlerFunc(handlers.CreateProduct))).Methods("POST")
 	api.Handle("/admin/update-product/{id}", middleware.RequireAdminAuth(http.HandlerFunc(handlers.UpdateProduct))).Methods("PUT")

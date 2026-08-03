@@ -18,6 +18,7 @@
 		{ href: "/admin/media", label: "Media" },
 		{ href: "/admin/submissions", label: "Submissions" },
 		{ href: "/admin/submission-issues", label: "Submission issues" },
+		{ href: "/admin/users", label: "Users" },
 	];
 
 	function isActive(href: string) {
