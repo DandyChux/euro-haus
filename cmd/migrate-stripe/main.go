@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"log"
 	"os"
@@ -48,7 +47,8 @@ func main() {
 
 	flag.Parse()
 
-	if strings.TrimSpace(*stripeProductID) == "" {
+	productID := strings.TrimSpace(*stripeProductID)
+	if productID == "" {
 		log.Fatal("the -product-id argument is required")
 	}
 
@@ -61,52 +61,33 @@ func main() {
 
 	ctx := context.Background()
 
-	stripeEvent, err := getStripeEvent(strings.TrimSpace(*stripeProductID))
+	stripeProduct, err := getStripeProduct(productID)
 	if err != nil {
 		log.Fatalf("unable to retrieve Stripe product: %v", err)
 	}
 
-	event, err := buildEvent(stripeEvent)
-	if err != nil {
-		log.Fatalf("unable to build event: %v", err)
-	}
-
-	db := services.GetDB()
-
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&event).Error; err != nil {
-			return err
-		}
-
-		if err := migrateSubmissions(
-			tx,
-			event,
-			stripeEvent.ID,
-		); err != nil {
-			return err
-		}
-
-		if err := services.SyncStripeProductPrices(
-			ctx,
-			stripeEvent.ID,
-		); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		log.Fatalf("event migration failed: %v", err)
-	}
-
-	log.Printf(
-		"created event %s (%s)",
-		event.ID,
-		event.Slug,
+	productType := defaultString(
+		stripeProduct.Metadata["type"],
+		"product",
 	)
 
-	log.Println("Existing tickets were intentionally not migrated.")
+	switch productType {
+	case "event":
+		if err := migrateEvent(ctx, stripeProduct); err != nil {
+			log.Fatalf("event migration failed: %v", err)
+		}
+
+	case "product", "bundle":
+		if err := migrateProduct(ctx, stripeProduct, productType); err != nil {
+			log.Fatalf("product migration failed: %v", err)
+		}
+
+	default:
+		log.Fatalf(
+			"unsupported Stripe product type %q; expected event, product, or bundle",
+			productType,
+		)
+	}
 }
 
 func loadEnvironment() {
@@ -122,20 +103,126 @@ func loadEnvironment() {
 	}
 }
 
-func getStripeEvent(productID string) (*stripe.Product, error) {
+func getStripeProduct(productID string) (*stripe.Product, error) {
 	params := &stripe.ProductParams{}
 	params.AddExpand("default_price")
 
-	event, err := product.Get(productID, params)
+	stripeProduct, err := product.Get(productID, params)
 	if err != nil {
 		return nil, err
 	}
 
-	if event.Metadata["type"] != "event" {
-		return nil, errors.New("Stripe product is not marked as an event")
+	return stripeProduct, nil
+}
+
+func migrateEvent(
+	ctx context.Context,
+	stripeProduct *stripe.Product,
+) error {
+	event, err := buildEvent(stripeProduct)
+	if err != nil {
+		return err
 	}
 
-	return event, nil
+	db := services.GetDB()
+
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&event).Error; err != nil {
+			return err
+		}
+
+		if err := migrateSubmissions(
+			tx,
+			event,
+			stripeProduct.ID,
+		); err != nil {
+			return err
+		}
+
+		return services.SyncStripeProductPrices(
+			ctx,
+			stripeProduct.ID,
+		)
+	}); err != nil {
+		return err
+	}
+
+	log.Printf(
+		"created event %s (%s)",
+		event.ID,
+		event.Slug,
+	)
+
+	log.Println("Existing tickets were intentionally not migrated.")
+
+	return nil
+}
+
+func migrateProduct(
+	ctx context.Context,
+	stripeProduct *stripe.Product,
+	productType string,
+) error {
+	localProduct := buildProduct(stripeProduct, productType)
+	db := services.GetDB()
+
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&localProduct).Error; err != nil {
+			return err
+		}
+
+		return services.SyncStripeProductPrices(
+			ctx,
+			stripeProduct.ID,
+		)
+	}); err != nil {
+		return err
+	}
+
+	log.Printf(
+		"created product %s (%s)",
+		localProduct.ID,
+		localProduct.Title,
+	)
+
+	return nil
+}
+
+func buildProduct(
+	stripeProduct *stripe.Product,
+	productType string,
+) models.Product {
+	metadata := stripeProduct.Metadata
+
+	price := int64(0)
+	currency := "usd"
+
+	if stripeProduct.DefaultPrice != nil {
+		price = stripeProduct.DefaultPrice.UnitAmount
+		currency = string(stripeProduct.DefaultPrice.Currency)
+	}
+
+	return models.Product{
+		ID:          stripeProduct.ID,
+		Title:       stripeProduct.Name,
+		Description: stripeProduct.Description,
+		Type:        productType,
+		Images:      models.ProductStringList(stripeProduct.Images),
+
+		Price:          price,
+		Currency:       currency,
+		CompareAtPrice: optionalInt64(metadata["compare_at_price"]),
+
+		IsNew:    metadata["is_new"] == "true",
+		InStock:  stripeProduct.Active && metadata["in_stock"] != "false",
+		Featured: metadata["featured"] == "true",
+
+		Category:    defaultString(metadata["category"], "merchandise"),
+		Subcategory: defaultString(metadata["subcategory"], "general"),
+
+		Tags:        metadataProductStringList(metadata["tags"]),
+		MaxQuantity: optionalInt(metadata["max_quantity"]),
+	}
 }
 
 func buildEvent(stripeEvent *stripe.Product) (models.Event, error) {
@@ -327,6 +414,47 @@ func metadataAgenda(value string) models.EventAgenda {
 
 	if err := json.Unmarshal([]byte(value), &result); err != nil {
 		return models.EventAgenda{}
+	}
+
+	return result
+}
+
+func optionalInt64(value string) *int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+
+	result, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || result < 0 {
+		return nil
+	}
+
+	return &result
+}
+
+func optionalInt(value string) *int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+
+	result, err := strconv.Atoi(value)
+	if err != nil || result < 0 {
+		return nil
+	}
+
+	return &result
+}
+
+func metadataProductStringList(value string) models.ProductStringList {
+	if strings.TrimSpace(value) == "" {
+		return models.ProductStringList{}
+	}
+
+	var result models.ProductStringList
+	if err := json.Unmarshal([]byte(value), &result); err != nil {
+		return models.ProductStringList{}
 	}
 
 	return result
