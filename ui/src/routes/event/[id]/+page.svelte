@@ -451,21 +451,6 @@
 		min-height: 600px;
 		filter: saturate(0.72);
 	}
-	.checkout-message {
-		padding-block: 20px;
-		background: var(--accent);
-	}
-	.checkout-message.success {
-		background: var(--primary);
-		color: var(--background);
-	}
-	.checkout-message :global(.wrap) {
-		display: flex;
-		gap: 30px;
-	}
-	.checkout-message strong {
-		text-transform: uppercase;
-	}
 	.detail-intro {
 		display: grid;
 		grid-template-columns: 320px 1fr;
@@ -626,8 +611,7 @@
 			height: 420px;
 			min-height: 0;
 		}
-		.detail-meta,
-		.checkout-message :global(.wrap) {
+		.detail-meta {
 			flex-direction: column;
 			gap: 15px;
 		}
