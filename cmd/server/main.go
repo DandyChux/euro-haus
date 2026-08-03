@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/dandychux/euro-haus/internal/handlers"
@@ -15,6 +16,49 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/stripe/stripe-go/v82"
 )
+
+// spaFileServer serves static files from the SvelteKit build output directory.
+// If the requested file does not exist on disk, it falls back to serving
+// index.html so that SvelteKit's client-side router can handle the route.
+type spaFileServer struct {
+	staticDir  string
+	fileServer http.Handler
+}
+
+func newSPAFileServer(staticDir string) *spaFileServer {
+	return &spaFileServer{
+		staticDir:  staticDir,
+		fileServer: http.FileServer(http.Dir(staticDir)),
+	}
+}
+
+func (s *spaFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Clean the URL path to prevent directory traversal
+	urlPath := filepath.Clean(r.URL.Path)
+
+	// Build the full file path on disk
+	filePath := filepath.Join(s.staticDir, urlPath)
+
+	// Check if the requested file exists on disk
+	info, err := os.Stat(filePath)
+	if err == nil && !info.IsDir() {
+		// File exists — serve it directly (CSS, JS, images, fonts, etc.)
+		s.fileServer.ServeHTTP(w, r)
+		return
+	}
+
+	// If it's a directory, check for an index.html inside it
+	if err == nil && info.IsDir() {
+		indexPath := filepath.Join(filePath, "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			s.fileServer.ServeHTTP(w, r)
+			return
+		}
+	}
+
+	// File doesn't exist — serve the root index.html (SPA fallback)
+	http.ServeFile(w, r, filepath.Join(s.staticDir, "index.html"))
+}
 
 func init() {
 	// Load environment variables from .env file in development
@@ -227,6 +271,15 @@ func main() {
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")
+
+	// Serve static files from the SvelteKit build output
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = "./ui/build"
+	}
+	log.Println("Serving static files from: ", staticDir)
+
+	api.Handle("/", middleware.StaticCacheMiddleware(newSPAFileServer(staticDir))).Methods("GET")
 
 	// Setup CORS
 	baseURL := os.Getenv("BASE_URL")
