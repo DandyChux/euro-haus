@@ -138,7 +138,6 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) {
 
 	token := authHeader[7:]
 
-	// Get auth service and validate token
 	authService := services.GetAuthService()
 	isValid := authService.ValidateToken(token)
 

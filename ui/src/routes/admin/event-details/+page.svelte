@@ -78,7 +78,7 @@
 		<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
 			<h2 class="text-lg font-medium">Prices</h2>
 
-			{#if data.event.prices.length === 0}
+			{#if data.event.prices?.length === 0}
 				<p class="mt-4 text-sm">
 					This event uses a single default price.
 				</p>

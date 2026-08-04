@@ -10,9 +10,9 @@
 	let { data }: PageProps = $props();
 
 	const getPriceDisplay = (event: Event) => {
-		const activePrices = event.prices.filter((price) => price.active);
+		const activePrices = event.prices?.filter((price) => price.active);
 
-		if (activePrices.length === 0) {
+		if (!activePrices || activePrices.length === 0) {
 			return "Price unavailable";
 		}
 

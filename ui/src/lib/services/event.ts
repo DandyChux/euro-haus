@@ -36,7 +36,7 @@ type EventAPIResponse = {
 	includes: string[];
 	sponsors: Sponsor[];
 
-	prices: Price[];
+	prices?: Price[];
 };
 
 type Fetcher = typeof fetch;
@@ -50,7 +50,7 @@ async function request<T>(
 }
 
 function normalizeEvent(event: EventAPIResponse): Event {
-	if (event.prices.length === 1) {
+	if (event.prices?.length === 1) {
 		event.prices[0].default = true;
 	}
 
@@ -81,7 +81,7 @@ function normalizeEvent(event: EventAPIResponse): Event {
 		includes: event.includes ?? [],
 		sponsors: event.sponsors ?? [],
 
-		prices: event.prices,
+		prices: event.prices ?? [],
 	};
 }
 

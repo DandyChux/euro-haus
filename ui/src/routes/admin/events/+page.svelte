@@ -83,7 +83,7 @@
 							{event.description}
 						</p>
 						<p class="mt-3 text-sm">
-							{#if event.prices.length > 0}
+							{#if event.prices && event.prices.length > 0}
 								{formatCurrency(
 									Math.min(
 										...event.prices
