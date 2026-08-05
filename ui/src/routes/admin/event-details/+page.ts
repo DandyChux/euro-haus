@@ -3,7 +3,7 @@ import type { PageLoad } from "./$types";
 
 import { getEventByID } from "$lib/services/event";
 import { getEventLinkedProducts } from "$lib/services/stripe";
-import type { EventAttendee } from "$lib/types";
+import type { EventAttendee } from "$lib/schemas/event";
 
 export const load: PageLoad = async ({ fetch, url }) => {
 	const eventID = url.searchParams.get("id");
