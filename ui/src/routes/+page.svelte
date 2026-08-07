@@ -85,7 +85,7 @@
 				{#each data.upcomingEvents as event (event.name)}
 					<a
 						class="event-row"
-						href={resolve("/events")}
+						href={resolve(`/event/${event.id}`)}
 						aria-label={`Learn about ${event.name}`}
 					>
 						<div class="event-date">
