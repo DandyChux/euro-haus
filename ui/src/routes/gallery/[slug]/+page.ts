@@ -8,7 +8,7 @@ import {
 
 export const load: PageLoad = async ({ fetch, params, url }) => {
 	const [allEvents, images] = await Promise.all([
-		getAllEvents(fetch),
+		getAllEvents(fetch, true),
 		getEventGallery(fetch, params.slug),
 	]);
 
