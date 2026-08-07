@@ -115,7 +115,7 @@
 		}
 
 		if (
-			price.included_products.length === 0 &&
+			price.included_products?.length === 0 &&
 			data.linked_products.length > 0
 		) {
 			pendingPrice = price;
@@ -299,6 +299,63 @@
 					>
 						Continue to Stripe
 					</button>
+				</div>
+			</section>
+		{/if}
+
+		{#if data.event.sponsors.length > 0}
+			<section
+				class="sponsors-section"
+				aria-labelledby="sponsors-heading"
+			>
+				<div class="wrap sponsors-layout">
+					<div class="sponsors-heading">
+						<p class="eyebrow">Partners</p>
+						<h2 id="sponsors-heading">
+							Our<br /><em>sponsors.</em>
+						</h2>
+					</div>
+
+					<div class="sponsors-grid">
+						{#each data.event.sponsors as sponsor, index (`${sponsor.name}-${index}`)}
+							<article class="sponsor-card">
+								<div class="sponsor-logo">
+									{#if sponsor.logo}
+										<img
+											src={sponsor.logo}
+											alt={`${sponsor.name} logo`}
+										/>
+									{:else}
+										<span aria-hidden="true">
+											{sponsor.name.slice(0, 1)}
+										</span>
+									{/if}
+								</div>
+
+								<div class="sponsor-content">
+									<p class="sponsor-tier">{sponsor.tier}</p>
+									<h3>{sponsor.name}</h3>
+
+									{#if sponsor.description}
+										<p class="sponsor-description">
+											{sponsor.description}
+										</p>
+									{/if}
+
+									{#if sponsor.url}
+										<a
+											href={sponsor.url}
+											target="_blank"
+											rel="noreferrer"
+										>
+											Visit sponsor
+											<span aria-hidden="true">↗</span>
+										</a>
+									{/if}
+								</div>
+							</article>
+						{/each}
+					</div>
 				</div>
 			</section>
 		{/if}
@@ -508,6 +565,127 @@
 		padding: 20px 0;
 		border-bottom: 1px solid var(--border);
 	}
+	.sponsors-section {
+		padding-block: 130px;
+		background: var(--background);
+	}
+
+	.sponsors-layout {
+		display: grid;
+		grid-template-columns: 0.75fr 1.25fr;
+		gap: 100px;
+		align-items: start;
+	}
+
+	.sponsors-heading h2 {
+		margin: 20px 0 0;
+		font-family: var(--font-display);
+		font-size: clamp(72px, 8vw, 145px);
+		font-weight: 800;
+		letter-spacing: -0.05em;
+		line-height: 0.78;
+		text-transform: uppercase;
+	}
+
+	.sponsors-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px;
+	}
+
+	.sponsor-card {
+		display: flex;
+		flex-direction: column;
+		min-height: 320px;
+		padding: 28px;
+		border: 1px solid var(--border);
+		transition:
+			background-color 180ms ease,
+			transform 180ms ease;
+	}
+
+	.sponsor-card:hover {
+		background: color-mix(in srgb, var(--primary) 6%, var(--background));
+		transform: translateY(-4px);
+	}
+
+	.sponsor-logo {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 130px;
+		margin-bottom: 28px;
+		background: var(--secondary);
+		color: var(--background);
+	}
+
+	.sponsor-logo img {
+		width: 100%;
+		height: 100%;
+		padding: 22px;
+		object-fit: contain;
+	}
+
+	.sponsor-logo span {
+		font-family: var(--font-display);
+		font-size: 80px;
+		font-weight: 800;
+		line-height: 1;
+		text-transform: uppercase;
+	}
+
+	.sponsor-content {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.sponsor-tier {
+		margin: 0 0 8px;
+		color: var(--primary);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+
+	.sponsor-card h3 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 36px;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		line-height: 0.9;
+		text-transform: uppercase;
+	}
+
+	.sponsor-description {
+		margin: 18px 0 0;
+		color: var(--muted);
+		font-size: 14px;
+		line-height: 1.5;
+	}
+
+	.sponsor-card a {
+		margin-top: auto;
+		padding-top: 24px;
+		color: var(--foreground);
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.sponsor-card a:hover {
+		color: var(--primary);
+	}
+
+	.sponsor-card a span {
+		margin-left: 6px;
+		color: var(--primary);
+	}
 	.ticket-section {
 		padding-block: 130px;
 		background: var(--secondary);
@@ -629,6 +807,29 @@
 		.detail-highlights {
 			border-top: 0;
 			border-left: 1px solid var(--border);
+		}
+		.sponsors-section {
+			padding-block: 80px;
+		}
+
+		.sponsors-layout {
+			display: block;
+		}
+
+		.sponsors-heading {
+			margin-bottom: 50px;
+		}
+
+		.sponsors-heading h2 {
+			font-size: 76px;
+		}
+
+		.sponsors-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.sponsor-card {
+			min-height: 290px;
 		}
 		.ticket-section {
 			padding-block: 80px;
