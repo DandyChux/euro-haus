@@ -1,7 +1,7 @@
 import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
 
-import { getEventByID } from "$lib/services/event";
+import { getAdminEventByID } from "$lib/services/event";
 import { getEventLinkedProducts } from "$lib/services/stripe";
 import type { EventAttendee } from "$lib/schemas/event";
 
@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		};
 	}
 
-	const event = await getEventByID(fetch, eventID);
+	const event = await getAdminEventByID(fetch, eventID);
 
 	if (!event) {
 		error(404, "Event not found");

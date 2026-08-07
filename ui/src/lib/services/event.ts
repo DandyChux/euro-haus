@@ -115,6 +115,22 @@ export async function getEventByID(
 	}
 }
 
+export async function getAdminEventByID(
+	fetcher: Fetcher,
+	id: string,
+): Promise<Event | null> {
+	try {
+		const response = await request<EventAPIResponse>(
+			fetcher,
+			`/admin/events/${encodeURIComponent(id)}`,
+		);
+
+		return normalizeEvent(response);
+	} catch {
+		return null;
+	}
+}
+
 export async function getUpcomingEvents(fetcher: Fetcher, limit = 3) {
 	const events = await getAllEvents(fetcher);
 	const upcoming = events.filter(

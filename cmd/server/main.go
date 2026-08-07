@@ -242,7 +242,12 @@ func main() {
 			http.HandlerFunc(handlers.CreateEvent),
 		),
 	).Methods("POST")
-
+	api.Handle(
+		"/admin/events/{id}",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.GetAdminEventByID),
+		),
+	).Methods("GET")
 	api.Handle(
 		"/admin/events/{id}",
 		middleware.RequireAdminAuth(

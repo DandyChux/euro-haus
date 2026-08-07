@@ -1037,6 +1037,31 @@ func GetEventByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func GetAdminEventByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	eventID := mux.Vars(r)["id"]
+	if eventID == "" {
+		http.Error(w, "Missing event ID", http.StatusBadRequest)
+		return
+	}
+
+	event, err := findEventByID(r.Context(), eventID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+
+	if err != nil {
+		log.Printf("Error retrieving event %s: %v", eventID, err)
+		http.Error(w, "Error retrieving event", http.StatusInternalServerError)
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(eventToResponse(event)); err != nil {
+		log.Printf("Error encoding event %s: %v", eventID, err)
+	}
+}
 
 func getEventStripeProduct(event models.Event) (*stripe.Product, error) {
 	params := &stripe.ProductParams{}
