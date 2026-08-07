@@ -21,7 +21,7 @@
 		selectedEvent === "all"
 			? data.albums
 			: data.albums.filter(
-					(album: EventGallery) => album.id === selectedEvent,
+					(album: EventGallery) => album.event_slug === selectedEvent,
 				),
 	);
 	let pageCount = $derived(
@@ -111,21 +111,25 @@
 							? "All events"
 							: (data.albums.find(
 									(album: EventGallery) =>
-										album.id === selectedEvent,
-								)?.eventName ?? "All events")}</Select.Trigger
+										album.event_slug === selectedEvent,
+								)?.event_name ?? "All events")}</Select.Trigger
 					>
-					<Select.Content
-						><Select.Group
-							><Select.Label>Event archive</Select.Label
-							><Select.Item value="all" label="All events"
-								>All events</Select.Item
-							>{#each data.albums as album (album.id)}<Select.Item
-									value={album.id}
-									label={album.eventName}
-									>{album.eventName}</Select.Item
-								>{/each}</Select.Group
-						></Select.Content
-					>
+					<Select.Content>
+						<Select.Group>
+							<Select.Label>Event archive</Select.Label>
+							<Select.Item value="all" label="All events">
+								All events
+							</Select.Item>
+							{#each data.albums as album (album.event_slug)}
+								<Select.Item
+									value={album.event_slug}
+									label={album.event_name}
+								>
+									{album.event_name}
+								</Select.Item>
+							{/each}
+						</Select.Group>
+					</Select.Content>
 				</Select.Root>
 			</div>
 			<p aria-live="polite">
@@ -135,8 +139,8 @@
 		</section>
 
 		<section class="album-list wrap" aria-label="Event albums">
-			{#each visibleAlbums as album, albumIndex (album.id)}
-				<article class="album" id={album.id}>
+			{#each visibleAlbums as album, albumIndex (album.event_slug)}
+				<article class="album" id={album.event_slug}>
 					<header class="album-header">
 						<div class="album-number" aria-hidden="true">
 							{String(
@@ -149,7 +153,7 @@
 							<Badge variant="outline"
 								>{album.images.length} photos</Badge
 							>
-							<h2>{album.eventName}</h2>
+							<h2>{album.event_name}</h2>
 						</div>
 						<div class="album-details">
 							<p>{album.description}</p>
@@ -188,7 +192,9 @@
 						<p>Previewing 6 of {album.images.length} photographs</p>
 						<a
 							class={buttonVariants({ variant: "outline" })}
-							href={resolve("/gallery/[id]", { id: album.id })}
+							href={resolve("/gallery/[slug]", {
+								slug: album.event_slug,
+							})}
 							>View full album <span aria-hidden="true">→</span
 							></a
 						>

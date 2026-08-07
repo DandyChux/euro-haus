@@ -4,9 +4,8 @@
 	import { Badge } from "$lib/components/ui/badge";
 	import { buttonVariants } from "$lib/components/ui/button";
 	import { formatDate } from "$lib/utils";
-	import type { PageProps } from "./$types";
 
-	let { data }: PageProps = $props();
+	let { data } = $props();
 
 	function pageSearch(pageNumber: number) {
 		return pageNumber > 1 ? `?page=${pageNumber}` : "";
@@ -90,8 +89,8 @@
 						size: "sm",
 						class: data.currentPage === 1 ? "disabled" : "",
 					})}
-					href={resolve("/gallery/[id]", {
-						id: data.event?.id ?? "",
+					href={resolve("/gallery/[slug]", {
+						slug: data.event?.slug ?? "",
 					}) + pageSearch(data.currentPage - 1)}
 					aria-disabled={data.currentPage === 1}
 					tabindex={data.currentPage === 1 ? -1 : undefined}
@@ -107,8 +106,8 @@
 										: "outline",
 								size: "icon-sm",
 							})}
-							href={resolve("/gallery/[id]", {
-								id: data.event?.id ?? "",
+							href={resolve("/gallery/[slug]", {
+								slug: data.event?.slug ?? "",
 							}) + pageSearch(pageNumber)}
 							aria-current={pageNumber === data.currentPage
 								? "page"
@@ -126,8 +125,8 @@
 								? "disabled"
 								: "",
 					})}
-					href={resolve("/gallery/[id]", {
-						id: data.event?.id ?? "",
+					href={resolve("/gallery/[slug]", {
+						slug: data.event?.slug ?? "",
 					}) + pageSearch(data.currentPage + 1)}
 					aria-disabled={data.currentPage === data.pageCount}
 					tabindex={data.currentPage === data.pageCount
