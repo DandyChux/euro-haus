@@ -342,7 +342,7 @@
 	}
 
 	function generateSlug() {
-		$formData.slug = `${$formData.name}-${$formData.date.slice(0, 10)}`
+		$formData.slug = `${$formData.name}`
 			.toLowerCase()
 			.normalize("NFKD")
 			.replace(/[^a-z0-9]+/g, "-")

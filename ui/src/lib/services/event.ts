@@ -166,7 +166,7 @@ export async function getAllEventGalleries(
 
 	return events
 		.map((event) => {
-			const prefix = `events/${event.id}/gallery/`;
+			const prefix = `events/${event.slug}/gallery/`;
 			const images = media
 				.filter(
 					(file) =>
