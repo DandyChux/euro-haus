@@ -5,11 +5,11 @@
 
 start-server:
 	@echo "Starting server..."
-	@cd api && air -c air.toml
+	@air -c air.toml
 
 start-db:
 	@echo "Starting database..."
-	@docker compose up -d redis
+	@docker compose up -d postgres
 
 # Build the application
 build:

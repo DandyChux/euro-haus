@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>Your Ticket for {{.EventName}}</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+			}
+			.container {
+				max-width: 600px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			.header {
+				text-align: center;
+				margin-bottom: 30px;
+			}
+			.ticket {
+				border: 1px solid #ddd;
+				border-radius: 8px;
+				padding: 20px;
+				margin-bottom: 20px;
+			}
+			.qr-code {
+				text-align: center;
+				margin: 20px 0;
+			}
+			.event-details {
+				margin: 20px 0;
+			}
+			.footer {
+				text-align: center;
+				font-size: 12px;
+				color: #777;
+				margin-top: 30px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>Your Event Ticket</h1>
+			</div>
+
+			<div class="ticket">
+				<h2>{{.EventName}}</h2>
+
+				<div class="event-details">
+					<p><strong>Date:</strong> {{.EventDate}}</p>
+					<p><strong>Location:</strong> {{.Location}}</p>
+					<p><strong>Ticket Quantity:</strong> {{.Quantity}}</p>
+					<p><strong>Ticket ID:</strong> {{.TicketToken}}</p>
+				</div>
+
+				<div class="qr-code">
+					<p>Scan this QR code at the event for check-in:</p>
+					<img
+						src="data:image/png;base64,{{.QRCode}}"
+						alt="QR Code"
+						style="max-width: 200px"
+					/>
+				</div>
+
+				<p>
+					Please bring this ticket (printed or on your phone) to the
+					event for check-in.
+				</p>
+			</div>
+
+			<div class="footer">
+				<p>Thank you for your purchase!</p>
+				<p>Euro Haus Events</p>
+				<p>
+					For questions or assistance, please contact us at
+					info@theeurohaus.com
+				</p>
+			</div>
+		</div>
+	</body>
+</html>

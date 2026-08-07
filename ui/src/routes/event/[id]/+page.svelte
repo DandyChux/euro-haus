@@ -1,0 +1,652 @@
+<script lang="ts">
+	import { untrack } from "svelte";
+	import { resolve } from "$app/paths";
+	import Newsletter from "$lib/components/newsletter.svelte";
+	import { Button } from "$lib/components/ui/button";
+	import { Label } from "$lib/components/ui/label";
+	import * as RadioGroup from "$lib/components/ui/radio-group";
+	import * as Select from "$lib/components/ui/select";
+	import { formatDate } from "$lib/utils";
+	import {
+		getPriceAmount,
+		getPriceName,
+		priceIsSoldOut,
+		type Price,
+	} from "$lib/schemas/price";
+	import apiClient from "$lib/api";
+	import type { VehicleSubmission } from "$lib/schemas/event";
+	import VehicleSubmissionForm from "$lib/components/vehicle-submission-form.svelte";
+
+	let { data } = $props();
+
+	type CheckoutState = "idle" | "submission" | "merchandise" | "loading";
+
+	let checkoutState = $state<CheckoutState>("idle");
+	let pendingPrice = $state<Price | null>(null);
+	let quantity = $state("1");
+
+	let selectedAddOns = $state<Array<{ price_id: string; quantity: number }>>(
+		[],
+	);
+
+	let selectedPriceID = $state(
+		untrack(
+			() =>
+				data.event.prices.find(
+					(price) => price.id && !priceIsSoldOut(price),
+				)?.id ??
+				data.event.prices.find((price) => price.id && price.default)
+					?.id ??
+				data.event.prices.find((price) => price.id)?.id ??
+				"",
+		),
+	);
+
+	let selectedPrice = $derived(
+		data.event.prices.find((price) => price.id === selectedPriceID),
+	);
+
+	async function startStripeCheckout() {
+		if (!selectedPrice || !selectedPrice.id) {
+			console.error("Event price is missing an ID", {
+				selectedPriceID,
+				prices: data.event.prices,
+			});
+
+			checkoutState = "idle";
+			return;
+		}
+
+		if (selectedPrice.requires_submission) {
+			checkoutState = "submission";
+			return;
+		}
+
+		if (data.event.status === "sold_out") {
+			return;
+		}
+
+		checkoutState = "loading";
+
+		try {
+			const response = await fetch("/api/create-event-checkout-session", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					eventId: data.event.id,
+					price_id: selectedPrice.id,
+					quantity: Number(quantity),
+					addOnProducts: selectedAddOns,
+				}),
+			});
+
+			if (!response.ok) {
+				throw new Error(await response.text());
+			}
+
+			const result = (await response.json()) as {
+				url?: string;
+				sessionId?: string;
+			};
+
+			if (!result.url) {
+				throw new Error("Stripe Checkout URL was not returned");
+			}
+
+			window.location.assign(result.url);
+		} catch (error) {
+			console.error("Unable to create Stripe Checkout session", error);
+			checkoutState = "idle";
+		}
+	}
+
+	function handleTierSelection(price: Price) {
+		if (price.sold_out) {
+			return;
+		}
+
+		selectedPriceID = price.id;
+
+		if (price.requires_submission) {
+			checkoutState = "submission";
+			return;
+		}
+
+		if (
+			price.included_products.length === 0 &&
+			data.linked_products.length > 0
+		) {
+			pendingPrice = price;
+			checkoutState = "merchandise";
+			return;
+		}
+
+		void startStripeCheckout();
+	}
+
+	async function completeVehicleSubmission(
+		submission: VehicleSubmission,
+	): Promise<void> {
+		if (!selectedPrice) {
+			throw new Error("No ticket price selected");
+		}
+
+		checkoutState = "loading";
+
+		const result = await apiClient.post<{
+			session_id: string;
+			session_url: string;
+			requires_approval: boolean;
+		}>("/create-participant-checkout", {
+			submission_id: submission.id,
+			price_id: selectedPrice.id,
+			event_name: data.event.name,
+			quantity: Number(quantity),
+		});
+
+		if (!result.session_url) {
+			throw new Error("Checkout URL was not returned");
+		}
+
+		window.location.assign(result.session_url);
+	}
+</script>
+
+<svelte:head>
+	<title>{data.event.name} | Euro Haus</title>
+	<meta
+		name="description"
+		content={`${data.event.description} View event details and purchase tickets.`}
+	/>
+</svelte:head>
+
+<div id="top">
+	<main>
+		<section class="detail-hero">
+			<div class="wrap detail-hero-copy">
+				<a class="back-link" href={resolve("/events")}>← All events</a>
+				<p class="eyebrow light">
+					Event · {formatDate(data.event.date, {
+						dateStyle: "short",
+					})}
+				</p>
+				<h1>{data.event.name}</h1>
+				<div class="detail-meta">
+					<p>{formatDate(data.event.date)}</p>
+					<p>{data.event.venue}</p>
+					<p>{data.event.location}</p>
+				</div>
+			</div>
+			<img
+				src={data.event.images[0]}
+				alt={`European cars at ${data.event.name}`}
+			/>
+		</section>
+
+		<section class="detail-intro wrap section-pad">
+			<div>
+				<p class="section-label"><span>01</span> About the event</p>
+			</div>
+			<div>
+				<h2>{data.event.description}</h2>
+				<p>{data.event.long_description}</p>
+			</div>
+		</section>
+
+		<section class="detail-grid wrap">
+			<div class="detail-schedule">
+				<p class="eyebrow">Schedule</p>
+				{#each data.event.agenda as item (item.time)}
+					<div>
+						<time>{item.time}</time>
+						<p>{item.activity}</p>
+					</div>
+				{/each}
+			</div>
+			<div class="detail-highlights">
+				<p class="eyebrow">Included</p>
+				<ul>
+					{#each data.event.includes as highlight (highlight)}<li>
+							{highlight}
+						</li>{/each}
+				</ul>
+			</div>
+		</section>
+
+		{#if checkoutState === "submission"}
+			<section class="submission-panel wrap" aria-live="polite">
+				<VehicleSubmissionForm
+					eventId={data.event.id}
+					eventSlug={data.event.slug}
+					priceId={selectedPrice?.id ?? ""}
+					ticketTier={selectedPrice
+						? getPriceName(selectedPrice)
+						: "Vehicle entry"}
+					ticketPrice={selectedPrice
+						? getPriceAmount(selectedPrice)
+						: 0}
+					ticketQuantity={Number(quantity)}
+					onsucceed={completeVehicleSubmission}
+					oncancel={() => {
+						checkoutState = "idle";
+					}}
+				/>
+			</section>
+		{:else if checkoutState === "merchandise" && pendingPrice}
+			<section class="checkout-panel wrap" aria-live="polite">
+				<h2>Add event merchandise?</h2>
+				<p>
+					Choose any available merchandise before continuing to
+					Stripe.
+				</p>
+
+				{#each data.linked_products as product (product.id)}
+					<label class="merchandise-option">
+						<input
+							type="checkbox"
+							onchange={(event) => {
+								if (!product.price_id) {
+									return;
+								}
+
+								if (event.currentTarget.checked) {
+									selectedAddOns = [
+										...selectedAddOns,
+										{
+											price_id: product.price_id,
+											quantity: 1,
+										},
+									];
+								} else {
+									selectedAddOns = selectedAddOns.filter(
+										(item) =>
+											item.price_id !== product.price_id,
+									);
+								}
+							}}
+						/>
+
+						<span>
+							<strong>{product.title}</strong>
+							<small>{product.description}</small>
+						</span>
+					</label>
+				{/each}
+
+				<div class="checkout-actions">
+					<button
+						type="button"
+						onclick={() => {
+							selectedAddOns = [];
+							checkoutState = "idle";
+						}}
+					>
+						Skip
+					</button>
+
+					<button
+						type="button"
+						onclick={() => {
+							if (!pendingPrice) {
+								return;
+							}
+
+							selectedPriceID = pendingPrice.id;
+							void startStripeCheckout();
+						}}
+					>
+						Continue to Stripe
+					</button>
+				</div>
+			</section>
+		{/if}
+
+		<section class="ticket-section" id="tickets">
+			<div class="wrap ticket-layout">
+				<div class="ticket-heading">
+					<p class="eyebrow light">Secure your place</p>
+					<h2>Choose your<br /><em>ticket.</em></h2>
+					<p>
+						Payments are processed securely by Stripe. Ticket
+						availability is limited by event capacity.
+					</p>
+				</div>
+				<div class="ticket-panel">
+					<RadioGroup.Root
+						class="ticket-options"
+						name="ticket-choice"
+						bind:value={selectedPriceID}
+					>
+						{#each data.event.prices as price (price.id)}
+							<Label
+								class={`${selectedPriceID === price.id ? "active" : ""} ${
+									priceIsSoldOut(price) ? "unavailable" : ""
+								}`}
+								for={`price-${price.id}`}
+							>
+								<RadioGroup.Item
+									id={`price-${price.id}`}
+									value={price.id}
+									disabled={priceIsSoldOut(price)}
+								/>
+
+								<span>
+									<strong>{getPriceName(price)}</strong>
+
+									{#if price.description}
+										<small>{price.description}</small>
+									{/if}
+								</span>
+
+								<b>${getPriceAmount(price).toFixed(2)}</b>
+							</Label>
+						{/each}
+					</RadioGroup.Root>
+					<form
+						onsubmit={(event) => {
+							event.preventDefault();
+							void startStripeCheckout();
+						}}
+					>
+						<input
+							type="hidden"
+							name="ticketId"
+							value={selectedPriceID}
+						/>
+						<div class="quantity-field">
+							<Label for="quantity">Quantity</Label><Select.Root
+								type="single"
+								name="quantity"
+								bind:value={quantity}
+								><Select.Trigger id="quantity"
+									>{quantity}</Select.Trigger
+								><Select.Content
+									><Select.Group
+										><Select.Label>Quantity</Select.Label
+										>{#each [1, 2, 3, 4, 5, 6, 7, 8] as amount (amount)}<Select.Item
+												value={String(amount)}
+												label={String(amount)}
+												>{amount}</Select.Item
+											>{/each}</Select.Group
+									></Select.Content
+								></Select.Root
+							>
+						</div>
+						<div class="ticket-total">
+							<span>Total</span>
+							<strong>
+								${selectedPrice
+									? (
+											getPriceAmount(selectedPrice) *
+											Number(quantity)
+										).toFixed(2)
+									: "0.00"}
+							</strong>
+						</div>
+						<Button
+							type="submit"
+							disabled={!selectedPrice ||
+								checkoutState === "loading" ||
+								data.event.status === "sold_out"}
+						>
+							{checkoutState === "loading"
+								? "Opening Stripe…"
+								: "Continue to Stripe"}
+							<span aria-hidden="true">↗</span>
+						</Button>
+						<p class="secure-note">
+							Secure, hosted checkout. Prices shown in USD.
+						</p>
+					</form>
+				</div>
+			</div>
+		</section>
+		<Newsletter />
+	</main>
+</div>
+
+<style>
+	.detail-hero {
+		padding-top: 110px;
+		background: var(--foreground);
+		color: var(--background);
+	}
+	.detail-hero-copy {
+		padding-bottom: 65px;
+	}
+	.back-link {
+		display: inline-block;
+		margin-bottom: 65px;
+		color: color-mix(in srgb, var(--background) 65%, var(--primary));
+		font-size: 11px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+	}
+	.detail-hero h1 {
+		max-width: 1200px;
+		margin: 20px 0 55px;
+		font-family: var(--font-display);
+		font-size: clamp(100px, 12vw, 210px);
+		font-weight: 800;
+		letter-spacing: -0.06em;
+		line-height: 0.72;
+		text-transform: uppercase;
+	}
+	.detail-meta {
+		display: flex;
+		gap: 35px;
+	}
+	.detail-meta p {
+		margin: 0;
+		padding-left: 14px;
+		border-left: 2px solid var(--accent);
+		font-size: 12px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.detail-hero > img {
+		height: 68vh;
+		min-height: 600px;
+		filter: saturate(0.72);
+	}
+	.detail-intro {
+		display: grid;
+		grid-template-columns: 320px 1fr;
+		gap: 70px;
+	}
+	.detail-intro h2 {
+		max-width: 950px;
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: clamp(50px, 5.5vw, 92px);
+		letter-spacing: -0.04em;
+		line-height: 0.95;
+		text-transform: uppercase;
+	}
+	.detail-intro > div:last-child > p {
+		max-width: 730px;
+		margin: 40px 0 0;
+		color: var(--muted);
+		font-size: 17px;
+	}
+	.detail-grid {
+		display: grid;
+		grid-template-columns: 1.1fr 0.9fr;
+		padding-bottom: 130px;
+	}
+	.detail-schedule,
+	.detail-highlights {
+		padding: 55px;
+		border: 1px solid var(--border);
+	}
+	.detail-highlights {
+		border-left: 0;
+	}
+	.detail-schedule > div {
+		display: grid;
+		grid-template-columns: 100px 1fr;
+		gap: 30px;
+		padding: 20px 0;
+		border-bottom: 1px solid var(--border);
+	}
+	.detail-schedule time {
+		color: var(--primary);
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.detail-schedule p {
+		margin: 0;
+	}
+	.detail-highlights ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.detail-highlights li {
+		padding: 20px 0;
+		border-bottom: 1px solid var(--border);
+	}
+	.ticket-section {
+		padding-block: 130px;
+		background: var(--secondary);
+		color: var(--background);
+	}
+	.ticket-layout {
+		display: grid;
+		grid-template-columns: 0.8fr 1.2fr;
+		gap: 100px;
+	}
+	.ticket-heading h2 {
+		margin: 25px 0;
+		font-family: var(--font-display);
+		font-size: clamp(80px, 8vw, 145px);
+		letter-spacing: -0.05em;
+		line-height: 0.78;
+		text-transform: uppercase;
+	}
+	.ticket-panel {
+		padding: 20px;
+		background: var(--background);
+		color: var(--foreground);
+	}
+	:global(.ticket-options [data-slot="label"]) {
+		display: grid;
+		grid-template-columns: 28px 1fr auto;
+		gap: 18px;
+		align-items: center;
+		padding: 25px;
+		border: 1px solid var(--border);
+		border-bottom: 0;
+		cursor: pointer;
+	}
+	:global(.ticket-options [data-slot="label"].active) {
+		border-color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 8%, var(--background));
+	}
+	:global(.ticket-options [data-slot="label"].unavailable) {
+		opacity: 0.45;
+	}
+	:global(.ticket-options [data-slot="label"] > span) {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+	:global(.ticket-options small),
+	.secure-note {
+		color: var(--muted);
+	}
+	:global(.ticket-options b) {
+		font-family: var(--font-display);
+		font-size: 28px;
+	}
+	.ticket-panel form {
+		padding: 28px;
+		border: 1px solid var(--border);
+	}
+	.quantity-field,
+	.ticket-total {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.quantity-field :global([data-slot="select-trigger"]) {
+		width: 96px;
+	}
+	.ticket-total {
+		padding: 28px 0;
+	}
+	.ticket-total strong {
+		font-family: var(--font-display);
+		font-size: 48px;
+	}
+	.ticket-panel :global(.button) {
+		width: 100%;
+		border: 0;
+		cursor: pointer;
+	}
+	.secure-note {
+		font-size: 10px;
+		text-align: center;
+	}
+	.submission-panel {
+		padding-block: 100px;
+		background:
+			radial-gradient(
+				circle at 10% 10%,
+				color-mix(in srgb, var(--primary) 12%, transparent),
+				transparent 35%
+			),
+			var(--secondary);
+	}
+	@media (max-width: 800px) {
+		.detail-hero {
+			padding-top: 70px;
+		}
+		.detail-hero h1 {
+			font-size: 76px;
+		}
+		.detail-hero > img {
+			height: 420px;
+			min-height: 0;
+		}
+		.detail-meta {
+			flex-direction: column;
+			gap: 15px;
+		}
+		.detail-intro,
+		.ticket-layout {
+			display: block;
+		}
+		.detail-intro h2 {
+			font-size: 52px;
+		}
+		.detail-grid {
+			display: block;
+			padding-bottom: 80px;
+		}
+		.detail-highlights {
+			border-top: 0;
+			border-left: 1px solid var(--border);
+		}
+		.ticket-section {
+			padding-block: 80px;
+		}
+		.ticket-heading {
+			margin-bottom: 50px;
+		}
+		.ticket-heading h2 {
+			font-size: 72px;
+		}
+		.ticket-panel {
+			padding: 10px;
+		}
+		:global(.ticket-options [data-slot="label"]) {
+			padding: 20px 15px;
+		}
+		.submission-panel {
+			padding-block: 50px;
+		}
+	}
+</style>
