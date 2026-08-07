@@ -17,9 +17,12 @@ export const priceSchema = z.object({
 	most_popular: z.boolean(),
 	requires_approval: z.boolean(),
 	requires_submission: z.boolean(),
-	included_products: z.array(z.custom<IncludedProduct>()),
+	included_products: z
+		.array(z.custom<IncludedProduct>())
+		.nullish()
+		.default([]),
 	quantity: z.number().optional(),
-	sold_out: z.boolean(),
+	sold_out: z.boolean().nullish().default(false),
 });
 
 export const priceEditSchema = priceSchema.pick({

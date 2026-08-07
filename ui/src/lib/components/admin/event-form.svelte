@@ -1250,6 +1250,25 @@
 										</div>
 									{/snippet}
 								</Form.Control>
+
+								<Form.Control>
+									{#snippet children({ props })}
+										<div class="flex items-center gap-2">
+											<Checkbox
+												{...props}
+												checked={$formData.prices[index]
+													.sold_out ?? false}
+												onCheckedChange={(value) =>
+													($formData.prices[
+														index
+													].sold_out =
+														value === true)}
+											/>
+
+											<Form.Label>Sold out</Form.Label>
+										</div>
+									{/snippet}
+								</Form.Control>
 							</div>
 						</Card>
 					{/if}
