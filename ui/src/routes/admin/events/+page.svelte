@@ -102,17 +102,17 @@
 
 					<div class="flex flex-wrap gap-3">
 						<a
-							href={`/admin/event-details?id=${encodeURIComponent(event.id)}`}
-							class="rounded-full bg-white px-4 py-2 text-sm"
+							href={`/admin/events/${encodeURIComponent(event.id)}`}
+							class={buttonVariants({ variant: "circle" })}
 						>
-							Manage event
+							Edit event
 						</a>
 
 						<a
 							href={`/event/${encodeURIComponent(event.id)}`}
 							target="_blank"
 							rel="noreferrer"
-							class="rounded-full border border-white/10 px-4 py-2 text-sm"
+							class={buttonVariants({ variant: "circle" })}
 						>
 							View live
 						</a>

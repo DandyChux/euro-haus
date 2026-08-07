@@ -3,11 +3,11 @@ import { error } from "@sveltejs/kit";
 import { superValidate } from "sveltekit-superforms";
 import { zod4 } from "sveltekit-superforms/adapters";
 
-import { getEventByID } from "$lib/services/event";
+import { getAdminEventByID } from "$lib/services/event";
 import { eventSchema } from "$lib/schemas/event";
 
 export const load: PageLoad = async ({ fetch, params }) => {
-	const event = await getEventByID(fetch, params.id);
+	const event = await getAdminEventByID(fetch, params.id);
 
 	if (!event) {
 		throw error(404, "Event not found");
