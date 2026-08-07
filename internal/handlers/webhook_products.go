@@ -170,8 +170,16 @@ func sendBundledProductsEmail(email, name string, products []map[string]interfac
 		BodyHTML: emailHTML,
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending bundled products email: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue bundled products email for %s: %v",
+			email,
+			err,
+		)
 	}
 }
 

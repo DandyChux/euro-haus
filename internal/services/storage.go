@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,20 +25,39 @@ var S3Client *s3.Client
 
 // InitS3Client initializes the S3 client for DigitalOcean Spaces
 func InitS3Client() {
-	access_key_id := os.Getenv("SPACES_ACCESS_KEY")
-	secret_key := os.Getenv("SPACES_SECRET_KEY")
-	// token := os.Getenv("SPACES_TOKEN")
-	region := os.Getenv("SPACES_REGION")
-	spaces_endpoint := os.Getenv("SPACES_ENDPOINT")
+	accessKeyID := strings.TrimSpace(os.Getenv("SPACES_ACCESS_KEY"))
+	secretKey := strings.TrimSpace(os.Getenv("SPACES_SECRET_KEY"))
+	region := strings.TrimSpace(os.Getenv("SPACES_REGION"))
+	endpoint := strings.TrimSpace(os.Getenv("SPACES_ENDPOINT"))
+	bucket := strings.TrimSpace(os.Getenv("SPACES_BUCKET"))
+
+	switch {
+		case accessKeyID == "":
+			log.Fatal("SPACES_ACCESS_KEY is required")
+		case secretKey == "":
+			log.Fatal("SPACES_SECRET_KEY is required")
+		case region == "":
+			log.Fatal("SPACES_REGION is required")
+		case endpoint == "":
+			log.Fatal("SPACES_ENDPOINT is required")
+		case bucket == "":
+			log.Fatal("SPACES_BUCKET is required")
+	}
+
+	baseEndpoint := endpoint
+	if !strings.HasPrefix(baseEndpoint, "http://") &&
+		!strings.HasPrefix(baseEndpoint, "https://") {
+		baseEndpoint = "https://" + baseEndpoint
+	}
 
 	s3Config := &aws.Config{
 		Credentials: credentials.NewStaticCredentialsProvider(
-			access_key_id,
-			secret_key,
+			accessKeyID,
+			secretKey,
 			"",
 		),
 		Region:       region,
-		BaseEndpoint: aws.String(fmt.Sprintf("https://%s", spaces_endpoint)),
+		BaseEndpoint: aws.String(baseEndpoint),
 	}
 
 	S3Client = s3.NewFromConfig(*s3Config)
@@ -45,6 +65,10 @@ func InitS3Client() {
 
 // UploadFile uploads a file to DigitalOcean Spaces
 func UploadFile(fileData io.Reader, filename string, contentType string, folder string) (string, error) {
+	if S3Client == nil {
+		return "", fmt.Errorf("Spaces client is not initialized")
+	}
+
 	// Generate a unique filename
 	ext := filepath.Ext(filename)
 	basename := strings.TrimSuffix(filepath.Base(filename), ext)
@@ -79,9 +103,16 @@ func UploadFile(fileData io.Reader, filename string, contentType string, folder 
 
 	key := folder + uniqueFilename
 
+	bucket := strings.TrimSpace(os.Getenv("SPACES_BUCKET"))
+	endpoint := strings.TrimRight(strings.TrimSpace(os.Getenv("SPACES_ENDPOINT")), "/")
+
+	if bucket == "" || endpoint == "" {
+		return "", fmt.Errorf("Spaces bucket and endpoint are required")
+	}
+
 	// Upload to DigitalOcean Spaces
 	_, err := S3Client.PutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket:        aws.String(os.Getenv("SPACES_BUCKET")),
+		Bucket:        aws.String(bucket),
 		Key:           aws.String(key),
 		Body:          bytes.NewReader(buf.Bytes()),
 		ContentLength: aws.Int64(int64(buf.Len())),
@@ -94,9 +125,10 @@ func UploadFile(fileData io.Reader, filename string, contentType string, folder 
 	}
 
 	// Return the public URL
-	fileURL := fmt.Sprintf("https://%s.%s/%s",
-		os.Getenv("SPACES_BUCKET"),
-		os.Getenv("SPACES_ENDPOINT"),
+	fileURL := fmt.Sprintf(
+		"https://%s.%s/%s",
+		bucket,
+		strings.TrimPrefix(endpoint, "https://"),
 		key,
 	)
 

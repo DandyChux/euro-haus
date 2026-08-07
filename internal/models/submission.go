@@ -12,54 +12,90 @@ import (
 // VehicleSubmission – replaces submission:<id> and submissions:* sets
 // ------------------------------------------------------------
 type VehicleSubmission struct {
-	ID                             string `gorm:"type:uuid;primaryKey"`
-	EventID                        string `gorm:"not null;index:idx_submissions_event"`
-	EventSlug                      string
-	ParticipantName                string `gorm:"not null"`
-	ParticipantEmail               string `gorm:"not null;index:idx_submissions_email"`
-	ParticipantPhone               string
-	VehicleYear                    string
-	VehicleMake                    string
-	VehicleModel                   string
-	VehicleDescription             string
-	VehicleModifications           string
-	Images                         datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
-	Status                         string         `gorm:"not null;default:pending;index:idx_submissions_status"`
-	SubmittedAt                    time.Time      `gorm:"not null"`
-	ReviewedAt                     *time.Time
-	ReviewedBy                     string
-	ReviewNotes                    string
-	CheckoutSessionID              string `gorm:"index:idx_submissions_checkout"`
-	PaymentIntentID                string
-	PriceID                        string `gorm:"index:idx_submissions_price"`
-	ApprovalEmailSentAt            *time.Time
-	RequiresApproval               bool `gorm:"not null;default:true"`
-	ApprovalEmailResent            bool `gorm:"not null;default:false"`
-	TicketID                       string `gorm:"index:idx_submissions_ticket"`
-	TicketEmailSentAt              *time.Time
-	EmailUpdatedAt                 *time.Time
-	PreviousEmail                  string
-	EmailResentCount               int `gorm:"not null;default:0"`
-	RevokedAt                      *time.Time
-	RevokedBy                      string
-	RevocationReason               string
-	CreatedAt                      time.Time `gorm:"autoCreateTime"`
-	UpdatedAt                      time.Time `gorm:"autoUpdateTime"`
+	ID string `gorm:"type:varchar(64);primaryKey"`
+
+	EventID   string `gorm:"type:uuid;not null;index:idx_submissions_event"`
+	EventSlug string
+
+	ParticipantName  string `gorm:"not null"`
+	ParticipantEmail string `gorm:"not null;index:idx_submissions_email"`
+	ParticipantPhone string
+
+	VehicleYear          string
+	VehicleMake          string
+	VehicleModel         string
+	VehicleDescription   string
+	VehicleModifications string
+
+	Images datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
+
+	Status      string    `gorm:"not null;default:pending;index:idx_submissions_status"`
+	SubmittedAt time.Time `gorm:"not null"`
+
+	ReviewedAt   *time.Time
+	ReviewedBy   string
+	ReviewNotes  string
+
+	CheckoutSessionID  string     `gorm:"index:idx_submissions_checkout"`
+	CheckoutCreatedAt  *time.Time
+	CheckoutCompleted  bool
+	CheckoutCompletedAt *time.Time
+
+	PaymentIntentID             string
+	PaymentSucceededBeforeApproval bool
+	PaymentSucceededAt          *time.Time
+	PaymentCaptured             bool
+	PaymentCapturedAt           *time.Time
+
+	PriceID       string `gorm:"index:idx_submissions_price"`
+	PromotionCode string
+
+	RequiresApproval bool
+	AwaitingApproval bool
+
+	ApprovalEmailSent   bool
+	ApprovalEmailSentAt *time.Time
+	ApprovalEmailResent bool
+
+	TicketID          string     `gorm:"index:idx_submissions_ticket"`
+	TicketCreatedAt   *time.Time
+	TicketEmailSent   bool
+	TicketEmailSentAt *time.Time
+
+	EmailUpdatedAt   *time.Time
+	PreviousEmail    string
+	EmailResentCount int
+
+	RefundID        string
+	RefundAmount    float64
+	RefundIssuedAt  *time.Time
+
+	RevokedAt        *time.Time
+	RevokedBy        string
+	RevocationReason string
+
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-func (VehicleSubmission) TableName() string { return "vehicle_submissions" }
+func (VehicleSubmission) TableName() string {
+	return "vehicle_submissions"
+}
 
-func (v *VehicleSubmission) BeforeCreate(tx *gorm.DB) (err error) {
+func (v *VehicleSubmission) BeforeCreate(tx *gorm.DB) error {
 	if v.ID == "" {
 		id, err := uuid.NewV7()
 		if err != nil {
 			return err
 		}
+
 		v.ID = id.String()
 	}
+
 	if v.SubmittedAt.IsZero() {
-		v.SubmittedAt = time.Now()
+		v.SubmittedAt = time.Now().UTC()
 	}
+
 	return nil
 }
 
@@ -77,32 +113,56 @@ type VehicleSubmissionDTO struct {
 	VehicleModel         string   `json:"vehicle_model"`
 	VehicleDescription   string   `json:"vehicle_description,omitempty"`
 	VehicleModifications string   `json:"vehicle_modifications,omitempty"`
-	Images               []string `json:"images"`
-	Status               string   `json:"status"`
-	SubmittedAt          string   `json:"submitted_at"`
-	ReviewedAt           string   `json:"reviewed_at,omitempty"`
-	ReviewedBy           string   `json:"reviewed_by,omitempty"`
-	ReviewNotes          string   `json:"review_notes,omitempty"`
-	CheckoutSessionID    string   `json:"checkout_session_id,omitempty"`
-	PaymentIntentID      string   `json:"payment_intent_id,omitempty"`
-	PriceID              string   `json:"price_id,omitempty"`
-	TicketID           string `json:"ticket_id,omitempty"`
-	CreatedAt            string   `json:"created_at"`
-	ApprovalEmailSentAt  string   `json:"approval_email_sent_at,omitempty"`
 
-	// Issue endpoint fields.
+	Images []string `json:"images"`
+
+	Status      string `json:"status"`
+	SubmittedAt string `json:"submitted_at"`
+
+	ReviewedAt  string `json:"reviewed_at,omitempty"`
+	ReviewedBy  string `json:"reviewed_by,omitempty"`
+	ReviewNotes string `json:"review_notes,omitempty"`
+
+	CheckoutSessionID   string `json:"checkout_session_id,omitempty"`
+	CheckoutCreatedAt   string `json:"checkout_created_at,omitempty"`
+	CheckoutCompleted   bool   `json:"checkout_completed"`
+	CheckoutCompletedAt string `json:"checkout_completed_at,omitempty"`
+
+	PaymentIntentID                string `json:"payment_intent_id,omitempty"`
+	PaymentSucceededBeforeApproval bool   `json:"payment_succeeded_before_approval"`
+	PaymentSucceededAt             string `json:"payment_succeeded_at,omitempty"`
+	PaymentCaptured                bool   `json:"payment_captured"`
+	PaymentCapturedAt              string `json:"payment_captured_at,omitempty"`
+
+	PriceID       string `json:"price_id,omitempty"`
+	PromotionCode string `json:"promotion_code,omitempty"`
+
+	RequiresApproval bool `json:"requires_approval"`
+	AwaitingApproval bool `json:"awaiting_approval"`
+
+	ApprovalEmailSent   bool   `json:"approval_email_sent"`
+	ApprovalEmailSentAt string `json:"approval_email_sent_at,omitempty"`
+	ApprovalEmailResent bool   `json:"approval_email_resent"`
+
+	TicketID          string `json:"ticket_id,omitempty"`
+	TicketCreatedAt   string `json:"ticket_created_at,omitempty"`
+	TicketEmailSent   bool   `json:"ticket_email_sent"`
+	TicketEmailSentAt string `json:"ticket_email_sent_at,omitempty"`
+
+	CreatedAt string `json:"created_at"`
+
+	EmailUpdatedAt   string `json:"email_updated_at,omitempty"`
+	PreviousEmail    string `json:"previous_email,omitempty"`
+	EmailResentCount int    `json:"email_resent_count"`
+
+	RefundID       string  `json:"refund_id,omitempty"`
+	RefundAmount   float64 `json:"refund_amount,omitempty"`
+	RefundIssuedAt string  `json:"refund_issued_at,omitempty"`
+
+	RevokedAt        string `json:"revoked_at,omitempty"`
+	RevokedBy        string `json:"revoked_by,omitempty"`
+	RevocationReason string `json:"revocation_reason,omitempty"`
+
 	Issues  []string `json:"issues,omitempty"`
 	HasIssue bool     `json:"has_issue,omitempty"`
-
-	RequiresApproval  bool   `json:"-"`
-	ApprovalEmailResent bool `json:"-"`
-	TicketEmailSentAt  string `json:"-"`
-	PreviousEmail      string `json:"-"`
-	EmailUpdatedAt     string `json:"-"`
-	EmailResentCount   int    `json:"-"`
-
-	RevokedAt          string `json:"-"`
-	RevokedBy          string `json:"-"`
-	RevocationReason   string `json:"-"`
-
 }

@@ -12,6 +12,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -254,6 +255,89 @@ func insertParticipantTicket(
 	return token, nil
 }
 
+func insertParticipantTicketTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	submission *models.VehicleSubmissionDTO,
+	eventName string,
+	checkoutSessionID string,
+	paymentIntentID string,
+	ticketType string,
+	quantity int,
+) (string, error) {
+	if tx == nil {
+		return "", fmt.Errorf("database transaction is nil")
+	}
+
+	if submission == nil {
+		return "", fmt.Errorf("submission is nil")
+	}
+
+	if quantity <= 0 {
+		quantity = 1
+	}
+
+	if ticketType == "" {
+		ticketType = "Participant"
+	}
+
+	if eventName == "" {
+		eventName = "Euro Haus Event"
+	}
+
+	token := generateUniqueToken()
+
+	vehicleDetails := fmt.Sprintf(
+		"%s %s %s",
+		submission.VehicleYear,
+		submission.VehicleMake,
+		submission.VehicleModel,
+	)
+
+	err := tx.WithContext(ctx).Exec(`
+		INSERT INTO tickets (
+			token,
+			event_id,
+			stripe_product_id,
+			stripe_checkout_session_id,
+			stripe_payment_intent_id,
+			customer_email,
+			customer_name,
+			quantity,
+			purchase_date,
+			checked_in,
+			event_name,
+			ticket_type,
+			submission_id,
+			vehicle_details,
+			approved_participant,
+			status
+		)
+		VALUES (
+			?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, ?, TRUE, 'active'
+		)
+	`,
+		token,
+		submission.EventID,
+		submission.EventID,
+		submissionNullableString(checkoutSessionID),
+		submissionNullableString(paymentIntentID),
+		submission.ParticipantEmail,
+		submission.ParticipantName,
+		quantity,
+		eventName,
+		ticketType,
+		submission.ID,
+		vehicleDetails,
+	).Error
+
+	if err != nil {
+		return "", fmt.Errorf("insert participant ticket: %w", err)
+	}
+
+	return token, nil
+}
+
 // isSubmissionEligibleForRecovery checks if a submission should have a recovery session created
 func isSubmissionEligibleForRecovery(submission *models.VehicleSubmissionDTO) (bool, string) {
 	sess, err := services.GetSubmissionPayment(submission.PaymentIntentID)
@@ -356,8 +440,16 @@ func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
 		BodyHTML: generatePaymentSuccessHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending payment confirmation email: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue payment confirmation email for %s: %v",
+			customerEmail,
+			err,
+		)
 	}
 }
 
@@ -375,19 +467,25 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 	}
 
 	if submission.Status != "approved" {
-		log.Printf("WARNING: Payment succeeded for unapproved submission %s (status: %s). Not creating ticket.",
-			submissionID, submission.Status)
-
 		err := db.WithContext(ctx).Exec(`
 			UPDATE vehicle_submissions
 			SET payment_succeeded_before_approval = TRUE,
-			    payment_intent_id = ?,
-			    payment_succeeded_at = NOW()
+				payment_intent_id = ?,
+				payment_succeeded_at = NOW()
 			WHERE id = ?
-		`, pi.ID, submissionID).Error
+		`,
+			pi.ID,
+			submissionID,
+		).Error
+
 		if err != nil {
-			log.Printf("Failed to mark submission %s as paid before approval: %v", submissionID, err)
+			log.Printf(
+				"Failed to record payment before approval for submission %s: %v",
+				submissionID,
+				err,
+			)
 		}
+
 		return
 	}
 
@@ -404,80 +502,94 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 
 	approvalEmailSent := submission.ApprovalEmailSentAt != ""
 
-	evtTicket, err := services.GetTicketByID(ctx, submission.TicketID)
-	if err != nil {
-		log.Printf("Failed to get ticket: %v", err)
-		return
-	}
-
-	ticketToken, err := insertParticipantTicket(ctx, submission, evt.Name, submission.CheckoutSessionID, pi.ID, evtTicket.TicketType, 1)
-	if err != nil {
-		log.Printf("Failed to create ticket for submission %s: %v", submissionID, err)
-		return
-	}
-
-	err = db.WithContext(ctx).Exec(`
-		UPDATE vehicle_submissions
-		SET ticket_id = ?,
-		    payment_intent_id = ?,
-		    ticket_created_at = NOW()
-		WHERE id = ?
-	`, ticketToken, pi.ID, submissionID).Error
-	if err != nil {
-		log.Printf("Failed to update submission %s after ticket creation: %v", submissionID, err)
-	}
-
-	sendParticipantTicketEmail(submission, ticketToken, evt.Name)
-
-	err = db.WithContext(ctx).Exec(`
-		UPDATE vehicle_submissions
-		SET ticket_email_sent = TRUE,
-			ticket_email_sent_at = NOW()
-		WHERE id = ?
-	`, submissionID).Error
-	if err != nil {
-		log.Printf("Failed to mark ticket email sent for submission %s: %v", submissionID, err)
-	}
-
-	log.Printf("Successfully created and sent ticket %s for approved participant submission %s",
-		ticketToken, submissionID)
-
-	if !approvalEmailSent {
-		vehicleDetails := fmt.Sprintf("%s %s %s",
-			submission.VehicleYear,
-			submission.VehicleMake,
-			submission.VehicleModel)
-
-		emailData := map[string]interface{}{
-			"ParticipantName": submission.ParticipantName,
-			"VehicleDetails":  vehicleDetails,
-			"EventID":         submission.EventID,
-			"TicketCode":      ticketToken,
-			"ReviewNotes":     submission.ReviewNotes,
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ticketToken, err := insertParticipantTicketTx(
+			ctx,
+			tx,
+			submission,
+			evt.Name,
+			submission.CheckoutSessionID,
+			pi.ID,
+			"Participant",
+			1,
+		)
+		if err != nil {
+			return err
 		}
 
-		msg := &services.EmailMessage{
-			To:           []string{submission.ParticipantEmail},
-			Subject:      "Your Vehicle Submission Has Been Approved + Ticket - Euro Haus",
-			TemplateID:   "submission-approved-with-ticket",
-			TemplateData: emailData,
-			BodyHTML:     generateApprovalWithTicketEmailHTML(emailData),
+		if err := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET ticket_id = ?,
+				payment_intent_id = ?,
+				ticket_created_at = NOW()
+			WHERE id = ?
+		`,
+			ticketToken,
+			pi.ID,
+			submissionID,
+		).Error; err != nil {
+			return fmt.Errorf(
+				"update submission after ticket creation: %w",
+				err,
+			)
 		}
 
-		if err := services.SendEmail(msg); err != nil {
-			log.Printf("Error sending approval email: %v", err)
-		} else {
-			err := db.WithContext(ctx).Exec(`
-				UPDATE vehicle_submissions
-				SET approval_email_sent = TRUE,
-				    approval_email_sent_at = NOW()
-				WHERE id = ?
-			`, submissionID).Error
-			if err != nil {
-				log.Printf("Failed to update approval email state for submission %s: %v", submissionID, err)
+		ticketMessage, err := buildParticipantTicketEmail(
+			submission,
+			ticketToken,
+			evt.Name,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := services.QueueEmailTx(
+			ctx,
+			tx,
+			submissionID,
+			ticketMessage,
+		); err != nil {
+			return fmt.Errorf(
+				"enqueue participant ticket email: %w",
+				err,
+			)
+		}
+
+		if !approvalEmailSent {
+			approvalMessage := buildApprovalWithTicketEmail(
+				submission,
+				ticketToken,
+			)
+
+			if err := services.QueueEmailTx(
+				ctx,
+				tx,
+				submissionID,
+				approvalMessage,
+			); err != nil {
+				return fmt.Errorf(
+					"enqueue approval-with-ticket email: %w",
+					err,
+				)
 			}
 		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf(
+			"Failed to create ticket and enqueue ticket emails for submission %s: %v",
+			submissionID,
+			err,
+		)
+		return
 	}
+
+	log.Printf(
+		"Created ticket and queued ticket emails for submission %s",
+		submissionID,
+	)
 }
 
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
@@ -511,24 +623,20 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 						checkoutSession.PaymentIntent.ID
 				}
 
-				err := services.GetDB().
-					WithContext(ctx).
-					Exec(`
-						UPDATE vehicle_submissions
-						SET checkout_session_id = ?,
-						    payment_intent_id = ?,
-						    checkout_completed = TRUE,
-						    awaiting_approval = TRUE,
-						    checkout_completed_at = NOW()
-						WHERE id = ?
-					`,
-						checkoutSession.ID,
-						submissionNullableString(
-							paymentIntentID,
-						),
-						participantSubmission.ID,
-					).
-					Error
+				db := services.GetDB()
+				err = db.WithContext(ctx).Exec(`
+					UPDATE vehicle_submissions
+					SET checkout_session_id = ?,
+						payment_intent_id = ?,
+						checkout_completed = TRUE,
+						awaiting_approval = TRUE,
+						checkout_completed_at = NOW()
+					WHERE id = ?
+				`,
+					checkoutSession.ID,
+					submissionNullableString(paymentIntentID),
+					participantSubmission.ID,
+				).Error
 
 				if err != nil {
 					log.Printf(
@@ -661,8 +769,16 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		BodyHTML:     generateOrderConfirmationHTML(orderData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending order confirmation email: %v", err)
+	if err := services.QueueEmail(
+		ctx,
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue order confirmation email for session %s: %v",
+			fullSession.ID,
+			err,
+		)
 	}
 
 	fmt.Printf("Order processed for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
@@ -689,15 +805,23 @@ func handleParticipantCheckout(checkoutSession stripe.CheckoutSession, submissio
 	err = db.WithContext(ctx).Exec(`
 		UPDATE vehicle_submissions
 		SET checkout_session_id = ?,
-		    payment_intent_id = ?,
+			payment_intent_id = ?
 		WHERE id = ?
-	`, checkoutSession.ID, submissionNullableString(paymentIntentID), submissionID).Error
+	`,
+		checkoutSession.ID,
+		submissionNullableString(paymentIntentID),
+		submissionID,
+	).Error
 	if err != nil {
 		log.Printf("Error updating submission payment details: %v", err)
 	}
 
-	if submission.TicketEmailSentAt != "" {
-		log.Printf("Ticket already exists for submission %s: %s", submissionID, submission.ID)
+	if submission.TicketID != "" {
+		log.Printf(
+			"Ticket already exists for submission %s: %s",
+			submissionID,
+			submission.TicketID,
+		)
 		return
 	}
 
@@ -706,41 +830,73 @@ func handleParticipantCheckout(checkoutSession stripe.CheckoutSession, submissio
 		eventName = "Euro Haus Event"
 	}
 
-	ticketToken, err := insertParticipantTicket(
-		ctx,
-		submission,
-		eventName,
-		checkoutSession.ID,
-		paymentIntentID,
-		"Participant",
-		1,
-	)
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ticketToken, err := insertParticipantTicketTx(
+			ctx,
+			tx,
+			submission,
+			eventName,
+			checkoutSession.ID,
+			paymentIntentID,
+			"Participant",
+			1,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET ticket_id = ?,
+				ticket_created_at = NOW()
+			WHERE id = ?
+		`,
+			ticketToken,
+			submissionID,
+		).Error; err != nil {
+			return fmt.Errorf(
+				"update submission with ticket ID: %w",
+				err,
+			)
+		}
+
+		ticketMessage, err := buildParticipantTicketEmail(
+			submission,
+			ticketToken,
+			eventName,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := services.QueueEmailTx(
+			ctx,
+			tx,
+			submissionID,
+			ticketMessage,
+		); err != nil {
+			return fmt.Errorf(
+				"enqueue participant ticket email: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Printf("Error storing ticket: %v", err)
+		log.Printf(
+			"Failed to create ticket and queue ticket email for submission %s: %v",
+			submissionID,
+			err,
+		)
 		return
 	}
 
-	err = db.WithContext(ctx).Exec(`
-		UPDATE vehicle_submissions
-		SET ticket_id = ?,
-		    ticket_created_at = NOW()
-		WHERE id = ?
-	`, ticketToken, submissionID).Error
-	if err != nil {
-		log.Printf("Failed to update submission with ticket ID: %v", err)
-	}
-
-	sendParticipantTicketEmail(submission, ticketToken, eventName)
-
-	err = db.WithContext(ctx).Exec(`
-		UPDATE vehicle_submissions
-		SET ticket_email_sent = TRUE,
-		    ticket_email_sent_at = NOW()
-		WHERE id = ?
-	`, submissionID).Error
-	if err != nil {
-		log.Printf("Failed to mark ticket email sent: %v", err)
-	}
+	log.Printf(
+		"Created ticket and queued ticket email for submission %s",
+		submissionID,
+	)
 }
 
 func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
@@ -791,8 +947,16 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 		BodyHTML: generatePaymentFailedHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending payment failure email: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue payment failure email for %s: %v",
+			customerEmail,
+			err,
+		)
 	}
 }
 
@@ -1049,11 +1213,24 @@ func sendRefundNotificationEmail(customerEmail, customerName, eventName string, 
 		TemplateID: "ticket-refunded",
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending refund notification email to %s: %v", customerEmail, err)
-	} else {
-		log.Printf("Sent refund notification to %s for %d tickets", customerEmail, len(ticketTokens))
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue refund notification email to %s: %v",
+			customerEmail,
+			err,
+		)
+		return
 	}
+
+	log.Printf(
+		"Queued refund notification to %s for %d tickets",
+		customerEmail,
+		len(ticketTokens),
+	)
 }
 
 // generateRefundNotificationHTML generates the HTML for refund notification emails
@@ -1189,8 +1366,16 @@ func sendManualRecoveryEmail(customerEmail string, submissionData *models.Vehicl
 		BodyHTML:     generateManualRecoveryHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending manual recovery email for submission %s: %v", submissionID, err)
+	if err := services.QueueEmail(
+		context.Background(),
+		submissionID,
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue manual recovery email for submission %s: %v",
+			submissionID,
+			err,
+		)
 	}
 }
 
@@ -1220,8 +1405,16 @@ func sendFinalAbandonmentEmail(customerEmail string, submissionData *models.Vehi
 		BodyHTML:     generateAbandonmentHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending abandonment email: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		submissionData.ID,
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue abandonment email for submission %s: %v",
+			submissionData.ID,
+			err,
+		)
 	}
 }
 
@@ -1242,8 +1435,16 @@ func handleRegularAbandonedCart(checkoutSession stripe.CheckoutSession, customer
 		BodyHTML:     generateAbandonedCartHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending abandoned cart email: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		checkoutSession.ID,
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue abandoned cart email for session %s: %v",
+			checkoutSession.ID,
+			err,
+		)
 	}
 }
 
@@ -1727,8 +1928,16 @@ func sendLowStockAlert(p *stripe.Price, remainingStock int) {
 		BodyHTML: generateLowStockAlertHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending low stock alert: %v", err)
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue low stock alert for product %s: %v",
+			prod.ID,
+			err,
+		)
 	}
 }
 
@@ -1835,7 +2044,7 @@ func processStockUpdates(checkoutSession *stripe.CheckoutSession) {
 			productType := localProduct.Type
 
 			switch productType {
-				case "event":
+			case "event":
 				event, err := findEventByStripeProductID(
 					context.Background(),
 					lineItem.Price.Product.ID,
@@ -1966,7 +2175,6 @@ func eventNameForStripeProduct(ctx context.Context, stripeProductID string) stri
 	return event.Name
 }
 
-
 // storeTicketPurchase stores ticket info in Redis after purchase
 func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineItem) {
 	if session.Metadata != nil {
@@ -2043,133 +2251,258 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	eventID := lineItem.Price.Product.ID
 	eventName := eventNameForStripeProduct(context.Background(), eventID)
 
-	err = db.WithContext(ctx).Exec(`
-		INSERT INTO tickets (
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lineItem.Price == nil || lineItem.Price.Product == nil {
+			return fmt.Errorf(
+				"ticket purchase %s has no product information",
+				session.ID,
+			)
+		}
+
+		qrCode, err := generateQRCode(token)
+		if err != nil {
+			return fmt.Errorf("generate ticket QR code: %w", err)
+		}
+
+		err = tx.Exec(`
+			INSERT INTO tickets (
+				token,
+				event_id,
+				stripe_product_id,
+				stripe_checkout_session_id,
+				stripe_payment_intent_id,
+				customer_email,
+				customer_name,
+				quantity,
+				purchase_date,
+				checked_in,
+				event_name,
+				ticket_type,
+				submission_id,
+				status
+			)
+			VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, 'active'
+			)
+		`,
 			token,
-			event_id,
-			stripe_product_id,
-			stripe_checkout_session_id,
-			stripe_payment_intent_id,
-			customer_email,
-			customer_name,
-			quantity,
-			purchase_date,
-			checked_in,
-			event_name,
-			ticket_type,
-			submission_id,
-			status
-		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, 'active'
+			eventID,
+			productID,
+			session.ID,
+			submissionNullableString(paymentIntentID),
+			customerEmail,
+			customerName,
+			lineItem.Quantity,
+			eventName,
+			ticketType,
+			submissionNullableString(submissionID),
+		).Error
+
+		if err != nil {
+			return fmt.Errorf("insert ticket in Postgres: %w", err)
+		}
+
+		eventDetails := map[string]interface{}{
+			"name":     lineItem.Price.Product.Name,
+			"metadata": lineItem.Price.Product.Metadata,
+			"quantity": lineItem.Quantity,
+		}
+
+		message, err := services.BuildTicketEmail(
+			customerEmail,
+			customerName,
+			token,
+			eventDetails,
+			qrCode,
 		)
-	`,
-		token,
-		eventID,
-		productID,
-		session.ID,
-		submissionNullableString(paymentIntentID),
-		customerEmail,
-		customerName,
-		lineItem.Quantity,
-		eventName,
-		ticketType,
-		submissionNullableString(submissionID),
-	).Error
+		if err != nil {
+			return fmt.Errorf("build ticket email: %w", err)
+		}
+
+		if err := services.QueueEmailTx(
+			ctx,
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf("enqueue ticket email: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Printf("Error storing ticket in Postgres: %v", err)
+		log.Printf(
+			"Failed to create ticket and queue ticket email for session %s: %v",
+			session.ID,
+			err,
+		)
 		return
 	}
 
-	qrCode, err := generateQRCode(token)
-	if err != nil {
-		log.Printf("Error generating QR code: %v", err)
-	}
-
-	eventDetails := map[string]interface{}{
-		"name":     lineItem.Price.Product.Name,
-		"metadata": lineItem.Price.Product.Metadata,
-		"quantity": lineItem.Quantity,
-	}
-
-	err = services.SendTicketEmail(customerEmail, customerName, token, eventDetails, qrCode)
-	if err != nil {
-		log.Printf("Error sending ticket email: %v", err)
-	}
-
-	fmt.Printf("Successfully created ticket %s for customer %s", token, customerEmail)
+	fmt.Printf(
+		"Created ticket %s and queued ticket email for customer %s",
+		token,
+		customerEmail,
+	)
 }
 
-// sendParticipantTicketEmail sends a special ticket email for approved vehicle participants
-func sendParticipantTicketEmail(submissionData *models.VehicleSubmissionDTO, ticketToken string, eventName string) {
-	// Generate QR code
-	qrCodeURL, err := generateQRCode(ticketToken)
-	if err != nil {
-		log.Printf("Error generating QR code: %v", err)
-		return
+func buildParticipantTicketEmail(
+	submission *models.VehicleSubmissionDTO,
+	ticketToken string,
+	eventName string,
+) (*services.EmailMessage, error) {
+	if submission == nil {
+		return nil, fmt.Errorf("submission is nil")
 	}
 
-	vehicleDetails := fmt.Sprintf("%s %s %s",
-		submissionData.VehicleYear,
-		submissionData.VehicleMake,
-		submissionData.VehicleModel)
+	qrCodeURL, err := generateQRCode(ticketToken)
+	if err != nil {
+		return nil, fmt.Errorf("generate QR code: %w", err)
+	}
+
+	vehicleDetails := fmt.Sprintf(
+		"%s %s %s",
+		submission.VehicleYear,
+		submission.VehicleMake,
+		submission.VehicleModel,
+	)
 
 	emailData := map[string]interface{}{
-		"CustomerName":   submissionData.ParticipantName,
+		"CustomerName":   submission.ParticipantName,
 		"EventName":      eventName,
 		"TicketCode":     ticketToken,
 		"QRCodeURL":      qrCodeURL,
 		"VehicleDetails": vehicleDetails,
 		"TicketType":     "Event Participant",
-		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
+		"CheckInURL": fmt.Sprintf(
+			"%s/events/checkin?ticket=%s",
+			strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+			url.QueryEscape(ticketToken),
+		),
 	}
 
-	// Generate ticket HTML
 	ticketHTML := fmt.Sprintf(`
 		<html>
 		<body style="font-family: Arial, sans-serif; color: #333;">
 			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-				<h1 style="color: #007bff;">Your Event Participant Ticket</h1>
-				<p>Dear %s,</p>
-				<p>Congratulations! Your registration as an event participant is complete. Your vehicle has been approved:</p>
-				<p style="font-size: 18px; font-weight: bold;">%s</p>
+				<h1 style="color: #007bff;">
+					Your Event Participant Ticket
+				</h1>
 
-				<div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
+				<p>Dear %s,</p>
+
+				<p>
+					Your vehicle registration is complete and your vehicle
+					has been approved:
+				</p>
+
+				<p style="font-size: 18px; font-weight: bold;">
+					%s
+				</p>
+
+				<div style="
+					background-color: #f8f9fa;
+					padding: 20px;
+					border-radius: 10px;
+					margin: 20px 0;
+				">
 					<h2>Event Details</h2>
 					<p><strong>Event:</strong> %s</p>
 					<p><strong>Ticket Type:</strong> Event Participant</p>
-					<p><strong>Ticket Code:</strong> <span style="font-family: monospace; font-size: 18px;">%s</span></p>
+					<p>
+						<strong>Ticket Code:</strong>
+						<span style="font-family: monospace; font-size: 18px;">
+							%s
+						</span>
+					</p>
 				</div>
 
 				<div style="text-align: center; margin: 30px 0;">
-					<img src="%s" alt="QR Code" style="width: 200px; height: 200px;">
-					<p style="font-size: 12px; color: #666;">Show this QR code at check-in</p>
+					<img
+						src="%s"
+						alt="QR Code"
+						style="width: 200px; height: 200px;"
+					>
+					<p style="font-size: 12px; color: #666;">
+						Show this QR code at check-in
+					</p>
 				</div>
 
 				<h3>Important Information for Participants:</h3>
+
 				<ul>
-					<li>Please arrive at least 30 minutes before the event start time</li>
-					<li>Have your vehicle clean and ready for display</li>
-					<li>Bring this ticket (printed or on your phone) for check-in</li>
-					<li>Follow all event guidelines and instructions from staff</li>
+					<li>
+						Please arrive at least 30 minutes before the event
+						start time.
+					</li>
+					<li>
+						Have your vehicle clean and ready for display.
+					</li>
+					<li>
+						Bring this ticket, printed or on your phone.
+					</li>
+					<li>
+						Follow all event guidelines and staff instructions.
+					</li>
 				</ul>
 
-				<p>We're excited to have you showcase your vehicle at our event!</p>
-				<p>Best regards,<br>The Euro Haus Events Team</p>
+				<p>
+					We're excited to have you showcase your vehicle at our event!
+				</p>
+
+				<p>
+					Best regards,<br>
+					The Euro Haus Events Team
+				</p>
 			</div>
 		</body>
 		</html>
-	`, emailData["CustomerName"], vehicleDetails, emailData["EventName"], emailData["TicketCode"], emailData["QRCodeURL"])
+	`,
+		submission.ParticipantName,
+		vehicleDetails,
+		eventName,
+		ticketToken,
+		qrCodeURL,
+	)
 
-	msg := &services.EmailMessage{
-		To:           []string{submissionData.ParticipantEmail},
-		Subject:      fmt.Sprintf("Event Participant Ticket - %s", eventName),
+	return &services.EmailMessage{
+		To: []string{submission.ParticipantEmail},
+		Subject: fmt.Sprintf(
+			"Event Participant Ticket - %s",
+			eventName,
+		),
 		TemplateID:   "participant-ticket",
 		TemplateData: emailData,
 		BodyHTML:     ticketHTML,
+	}, nil
+}
+
+func buildApprovalWithTicketEmail(
+	submission *models.VehicleSubmissionDTO,
+	ticketToken string,
+) *services.EmailMessage {
+	vehicleDetails := fmt.Sprintf(
+		"%s %s %s",
+		submission.VehicleYear,
+		submission.VehicleMake,
+		submission.VehicleModel,
+	)
+
+	emailData := map[string]interface{}{
+		"ParticipantName": submission.ParticipantName,
+		"VehicleDetails":  vehicleDetails,
+		"EventID":         submission.EventID,
+		"TicketCode":      ticketToken,
+		"ReviewNotes":     submission.ReviewNotes,
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending participant ticket email: %v", err)
+	return &services.EmailMessage{
+		To:           []string{submission.ParticipantEmail},
+		Subject:      "Your Vehicle Submission Has Been Approved + Ticket - Euro Haus",
+		TemplateID:   "submission-approved-with-ticket",
+		TemplateData: emailData,
+		BodyHTML:     generateApprovalWithTicketEmailHTML(emailData),
 	}
 }
 
@@ -2196,8 +2529,16 @@ func sendGenericRecoveryEmail(customerEmail string, submissionID string) {
 		BodyHTML: generateSubmissionRecoveryHTML(emailData),
 	}
 
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending recovery email for submission %s: %v", submissionID, err)
+	if err := services.QueueEmail(
+		context.Background(),
+		submissionID,
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue recovery email for submission %s: %v",
+			submissionID,
+			err,
+		)
 	}
 }
 

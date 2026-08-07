@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -227,5 +229,16 @@ func sendShippingNotification(fulfillmentData map[string]string, trackingNumber,
 		BodyHTML: emailHTML,
 	}
 
-	services.SendEmail(msg)
+	if err := services.QueueEmail(
+		context.Background(),
+		"",
+		msg,
+	); err != nil {
+		log.Printf(
+			"Failed to queue shipping notification for order %s: %v",
+			fulfillmentData["order_id"],
+			err,
+		)
+	}
+
 }

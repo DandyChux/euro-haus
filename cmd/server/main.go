@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -84,6 +85,11 @@ func init() {
 
 	// Initialize Postgres
 	services.InitDB()
+
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	defer cancelWorker()
+
+	services.StartEmailJobWorker(workerCtx)
 
 	// Initialize event listeners
 	handlers.InitEventListeners()

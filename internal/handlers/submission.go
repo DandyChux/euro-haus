@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -41,36 +42,58 @@ func submissionFormatNullTime(t sql.NullTime) string {
 	return t.Time.Format(time.RFC3339)
 }
 
-// CreateSubmission handles vehicle submission with image uploads
+// CreateSubmission handles vehicle submission with image uploads.
 func CreateSubmission(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseMultipartForm(50 << 20)
-	if err != nil {
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		http.Error(w, "Failed to parse form data", http.StatusBadRequest)
 		return
 	}
 
-	submission := models.VehicleSubmissionDTO{
-		ID:                   generateSubmissionID(),
-		EventID:              r.FormValue("event_id"),
-		EventSlug:            r.FormValue("event_slug"),
-		ParticipantName:      r.FormValue("participant_name"),
-		ParticipantEmail:     r.FormValue("participant_email"),
-		ParticipantPhone:     r.FormValue("participant_phone"),
-		VehicleYear:          r.FormValue("vehicle_year"),
-		VehicleMake:          r.FormValue("vehicle_make"),
-		VehicleModel:         r.FormValue("vehicle_model"),
-		VehicleDescription:   r.FormValue("vehicle_description"),
-		VehicleModifications: r.FormValue("vehicle_modifications"),
-		Status:               "pending",
-		SubmittedAt:          time.Now().Format(time.RFC3339),
-		Images:               []string{},
+	eventID := strings.TrimSpace(r.FormValue("event_id"))
+	if eventID == "" {
+		http.Error(w, "Event ID is required", http.StatusBadRequest)
+		return
 	}
 
-	priceID := r.FormValue("price_id")
-	submission.PriceID = priceID
+	// Resolve the event before uploading anything. The event slug used for
+	// storage must come from the database, not from the client request.
+	event, err := findEventByID(r.Context(), eventID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
 
-	if submission.EventID == "" || submission.ParticipantName == "" || submission.ParticipantEmail == "" ||
-		submission.VehicleYear == "" || submission.VehicleMake == "" || submission.VehicleModel == "" {
+	if err != nil {
+		log.Printf("Failed to resolve event %s: %v", eventID, err)
+		http.Error(w, "Unable to retrieve event", http.StatusInternalServerError)
+		return
+	}
+
+	priceID := strings.TrimSpace(r.FormValue("price_id"))
+
+	submission := models.VehicleSubmissionDTO{
+		ID:                   generateSubmissionID(),
+		EventID:              event.ID,
+		EventSlug:            event.Slug,
+		ParticipantName:      strings.TrimSpace(r.FormValue("participant_name")),
+		ParticipantEmail:     strings.TrimSpace(r.FormValue("participant_email")),
+		ParticipantPhone:     strings.TrimSpace(r.FormValue("participant_phone")),
+		VehicleYear:          strings.TrimSpace(r.FormValue("vehicle_year")),
+		VehicleMake:          strings.TrimSpace(r.FormValue("vehicle_make")),
+		VehicleModel:         strings.TrimSpace(r.FormValue("vehicle_model")),
+		VehicleDescription:   strings.TrimSpace(r.FormValue("vehicle_description")),
+		VehicleModifications: strings.TrimSpace(r.FormValue("vehicle_modifications")),
+		Status:               "pending",
+		SubmittedAt:          time.Now().UTC().Format(time.RFC3339),
+		Images:               []string{},
+		PriceID:              priceID,
+	}
+
+	if submission.ParticipantName == "" ||
+		submission.ParticipantEmail == "" ||
+		submission.VehicleYear == "" ||
+		submission.VehicleMake == "" ||
+		submission.VehicleModel == "" {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
 		return
 	}
@@ -81,6 +104,12 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DigitalOcean Spaces uses object keys, not real folders. This creates
+	// keys like:
+	//
+	// events/summer-show/SUB-123-ABC123/car-1234abcd.jpg
+	folder := fmt.Sprintf("events/%s/%s", event.Slug, submission.ID)
+
 	for i, fileHeader := range files {
 		if i >= 5 {
 			break
@@ -88,32 +117,60 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 
 		file, err := fileHeader.Open()
 		if err != nil {
-			log.Printf("Error opening file: %v", err)
-			continue
-		}
-		defer file.Close()
-
-		fileBytes, err := io.ReadAll(file)
-		if err != nil {
-			log.Printf("Error reading file: %v", err)
+			log.Printf(
+				"Failed to open uploaded image %q: %v",
+				fileHeader.Filename,
+				err,
+			)
 			continue
 		}
 
-		contentType := fileHeader.Header.Get("Content-Type")
+		fileBytes, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+
+		if readErr != nil {
+			log.Printf(
+				"Failed to read uploaded image %q: %v",
+				fileHeader.Filename,
+				readErr,
+			)
+			continue
+		}
+
+		if closeErr != nil {
+			log.Printf(
+				"Failed to close uploaded image %q: %v",
+				fileHeader.Filename,
+				closeErr,
+			)
+		}
+
+		if len(fileBytes) == 0 {
+			log.Printf(
+				"Skipping empty uploaded image %q",
+				fileHeader.Filename,
+			)
+			continue
+		}
+
+		contentType := strings.TrimSpace(fileHeader.Header.Get("Content-Type"))
 		if contentType == "" {
-			contentType = "image/jpeg"
+			contentType = http.DetectContentType(fileBytes)
 		}
-
-		folder := fmt.Sprintf("events/%s/%s/", submission.EventSlug, submission.ID)
 
 		imageURL, err := services.UploadFile(
-			strings.NewReader(string(fileBytes)),
+			bytes.NewReader(fileBytes),
 			fileHeader.Filename,
 			contentType,
 			folder,
 		)
 		if err != nil {
-			log.Printf("Error uploading image: %v", err)
+			log.Printf(
+				"Failed to upload image %q for submission %s: %v",
+				fileHeader.Filename,
+				submission.ID,
+				err,
+			)
 			continue
 		}
 
@@ -121,7 +178,11 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(submission.Images) == 0 {
-		http.Error(w, "Failed to upload any images", http.StatusInternalServerError)
+		http.Error(
+			w,
+			"Failed to upload any images",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -130,111 +191,142 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 
 	imagesJSON, err := json.Marshal(submission.Images)
 	if err != nil {
-		http.Error(w, "Failed to encode images", http.StatusInternalServerError)
+		http.Error(
+			w,
+			"Failed to encode uploaded images",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	db := services.GetDB()
-
-	event, err := findEventByID(r.Context(), r.FormValue("eventId"))
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		http.Error(w, "Event not found", http.StatusNotFound)
+	if db == nil {
+		log.Printf(
+			"Database is unavailable while storing submission %s",
+			submission.ID,
+		)
+		http.Error(
+			w,
+			"Unable to store submission",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
-	if err != nil {
-		http.Error(w, "Unable to retrieve event", http.StatusInternalServerError)
-		return
-	}
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		err := tx.Exec(`
+			INSERT INTO vehicle_submissions (
+				id,
+				event_id,
+				event_slug,
+				participant_name,
+				participant_email,
+				participant_phone,
+				vehicle_year,
+				vehicle_make,
+				vehicle_model,
+				vehicle_description,
+				vehicle_modifications,
+				images,
+				status,
+				submitted_at,
+				price_id,
+				requires_approval
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			submission.ID,
+			submission.EventID,
+			submission.EventSlug,
+			submission.ParticipantName,
+			submission.ParticipantEmail,
+			submissionNullableString(submission.ParticipantPhone),
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+			submissionNullableString(submission.VehicleDescription),
+			submissionNullableString(submission.VehicleModifications),
+			imagesJSON,
+			submission.Status,
+			time.Now().UTC(),
+			submissionNullableString(priceID),
+			requiresApproval,
+		).Error
 
-	submission.EventID = event.ID
-	submission.EventSlug = event.Slug
-
-
-	err = db.WithContext(r.Context()).Exec(`
-		INSERT INTO vehicle_submissions (
-			id,
-			event_id,
-			event_slug,
-			participant_name,
-			participant_email,
-			participant_phone,
-			vehicle_year,
-			vehicle_make,
-			vehicle_model,
-			vehicle_description,
-			vehicle_modifications,
-			images,
-			status,
-			submitted_at,
-			price_id,
-			requires_approval
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		submission.ID,
-		submission.EventID,
-		submission.EventSlug,
-		submission.ParticipantName,
-		submission.ParticipantEmail,
-		submissionNullableString(submission.ParticipantPhone),
-		submission.VehicleYear,
-		submission.VehicleMake,
-		submission.VehicleModel,
-		submissionNullableString(submission.VehicleDescription),
-		submissionNullableString(submission.VehicleModifications),
-		imagesJSON,
-		submission.Status,
-		time.Now().UTC(),
-		submissionNullableString(priceID),
-		requiresApproval,
-	).Error
-	if err != nil {
-		http.Error(w, "Failed to store submission", http.StatusInternalServerError)
-		return
-	}
-
-	if !requiresApproval {
-		if submission.CheckoutSessionID != "" {
-			paymentCaptured, paymentProcessing, captureErr := captureSubmissionPayment(submission.ID)
-			if captureErr != nil {
-				log.Printf("Could not capture payment for auto-approved submission %s: %v", submission.ID, captureErr)
-			}
-			if paymentCaptured || paymentProcessing {
-				fmt.Printf("Auto-approved submission %s with payment captured/processing. Webhook will handle the rest.\n", submission.ID)
-			}
-		} else if priceID != "" {
-			paymentLink, err := createSubmissionPaymentLink(submission)
-			if err != nil {
-				log.Printf("Error creating payment link for auto-approved submission: %v", err)
-				baseURL := os.Getenv("BASE_URL")
-				if baseURL == "" {
-					baseURL = "https://eurohaus.shop"
-				}
-				paymentLink = fmt.Sprintf("%s/events/%s?submission=%s", baseURL, submission.EventID, submission.ID)
-			}
-
-			go sendApprovalEmail(submission, paymentLink)
-
-			err = db.WithContext(r.Context()).Exec(`
-				UPDATE vehicle_submissions
-				SET approval_email_sent_at = NOW()
-				WHERE id = ?
-			`, submission.ID).Error
-			if err != nil {
-				log.Printf("Failed to mark approval email sent for submission %s: %v", submission.ID, err)
-			}
-
-			submission.ApprovalEmailSentAt = time.Now().Format(time.RFC3339)
-
-			fmt.Printf("Auto-approved submission %s - sent approval email with payment link\n", submission.ID)
+		if err != nil {
+			return fmt.Errorf("insert vehicle submission: %w", err)
 		}
-	} else {
-		go sendSubmissionConfirmationEmail(submission)
-		fmt.Printf("Created pending submission %s and sent confirmation email\n", submission.ID)
+
+		if requiresApproval {
+			message := buildSubmissionConfirmationEmail(submission)
+
+			return services.QueueEmailTx(
+				r.Context(),
+				tx,
+				submission.ID,
+				message,
+			)
+		}
+
+		if priceID == "" {
+			return nil
+		}
+
+		paymentLink, err := createSubmissionPaymentLink(submission)
+		if err != nil {
+			log.Printf(
+				"Failed to create payment link for auto-approved submission %s: %v",
+				submission.ID,
+				err,
+			)
+
+			baseURL := os.Getenv("BASE_URL")
+			if baseURL == "" {
+				baseURL = "https://eurohaus.shop"
+			}
+
+			paymentLink = fmt.Sprintf(
+				"%s/events/%s?submission=%s",
+				strings.TrimRight(baseURL, "/"),
+				url.PathEscape(submission.EventSlug),
+				url.QueryEscape(submission.ID),
+			)
+		}
+
+		message := buildApprovalEmail(submission, paymentLink)
+
+		return services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submission.ID,
+			message,
+		)
+	})
+
+	if err != nil {
+		log.Printf(
+			"Failed to store submission %s and enqueue email: %v",
+			submission.ID,
+			err,
+		)
+
+		http.Error(
+			w,
+			"Failed to store submission",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(submission)
+
+	if err := json.NewEncoder(w).Encode(submission); err != nil {
+		log.Printf(
+			"Failed to encode submission response %s: %v",
+			submission.ID,
+			err,
+		)
+	}
 }
 
 // GetEventSubmissions retrieves all submissions for an event
@@ -292,14 +384,20 @@ func GetSubmission(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(submission)
 }
 
-// ApproveSubmission approves a vehicle submission and captures payment
 func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	var req struct {
 		Notes string `json:"notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+	// An empty request body is allowed because notes are optional.
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil &&
+			!errors.Is(err, io.EOF) {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
 	}
 
 	submission, err := getSubmissionByID(submissionID)
@@ -309,33 +407,154 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if submission.Status == "approved" {
-		log.Printf("Submission %s is already approved", submissionID)
-		http.Error(w, "Submission is already approved", http.StatusBadRequest)
+		http.Error(
+			w,
+			"Submission is already approved",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
+	if submission.Status == "denied" || submission.Status == "revoked" {
+		http.Error(
+			w,
+			"Submission cannot be approved from its current status",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	submission.Status = "approved"
+	submission.ReviewNotes = strings.TrimSpace(req.Notes)
+
+	paymentLink := ""
+
+	// If an unpaid checkout already exists, reuse it.
+	if submission.CheckoutSessionID != "" {
+		params := &stripe.CheckoutSessionParams{}
+
+		checkoutSession, getErr := session.Get(
+			submission.CheckoutSessionID,
+			params,
+		)
+
+		if getErr != nil {
+			log.Printf(
+				"Failed to retrieve checkout session %s: %v",
+				submission.CheckoutSessionID,
+				getErr,
+			)
+		} else if checkoutSession.PaymentStatus != "paid" {
+			paymentLink = checkoutSession.URL
+		}
+	}
+
+	// If no usable payment link exists, create one.
+	if paymentLink == "" &&
+		submission.TicketID == "" &&
+		submission.PaymentIntentID == "" {
+		paymentLink, err = createSubmissionPaymentLink(*submission)
+		if err != nil {
+			log.Printf(
+				"Failed to create payment link for approved submission %s: %v",
+				submissionID,
+				err,
+			)
+
+			baseURL := os.Getenv("BASE_URL")
+			if baseURL == "" {
+				baseURL = "https://eurohaus.shop"
+			}
+
+			paymentLink = fmt.Sprintf(
+				"%s/events/%s?submission=%s",
+				strings.TrimRight(baseURL, "/"),
+				url.PathEscape(submission.EventSlug),
+				url.QueryEscape(submission.ID),
+			)
+		}
+	}
+
 	db := services.GetDB()
-	err = db.WithContext(r.Context()).Exec(`
+
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'approved',
 				reviewed_at = NOW(),
 				reviewed_by = 'admin',
 				review_notes = ?
 			WHERE id = ?
-		`, submissionNullableString(req.Notes), submissionID).Error
+				AND status NOT IN ('approved', 'revoked')
+		`,
+			submissionNullableString(submission.ReviewNotes),
+			submissionID,
+		)
+
+		if result.Error != nil {
+			return fmt.Errorf(
+				"update approved submission: %w",
+				result.Error,
+			)
+		}
+
+		if result.RowsAffected != 1 {
+			return fmt.Errorf(
+				"submission %s was changed by another request",
+				submissionID,
+			)
+		}
+
+		// If a ticket already exists, the payment webhook has already
+		// handled ticket delivery. Do not enqueue a duplicate approval email.
+		if submission.TicketID != "" {
+			return nil
+		}
+
+		message := buildApprovalEmail(
+			*submission,
+			paymentLink,
+		)
+
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf(
+				"enqueue approval email: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		http.Error(w, "Failed to update submission", http.StatusInternalServerError)
+		log.Printf(
+			"Failed to approve submission %s: %v",
+			submissionID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to approve submission",
+			http.StatusInternalServerError,
+		)
 		return
 	}
-
-	fmt.Printf("Submission %s approved by admin", submissionID)
 
 	paymentCaptured := false
 	paymentProcessing := false
 
+	// Capture manually-authorized payment after approval.
 	if submission.CheckoutSessionID != "" {
 		var captureErr error
-		paymentCaptured, paymentProcessing, captureErr = captureSubmissionPayment(submissionID)
+
+		paymentCaptured, paymentProcessing, captureErr =
+			captureSubmissionPayment(submissionID)
+
 		if captureErr != nil {
 			log.Printf(
 				"Payment capture failed for submission %s: %v",
@@ -345,27 +564,55 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fmt.Printf("Submission %s approved. Payment status: captured=%v, processing=%v. Email will be sent upon payment completion.", submissionID, paymentCaptured, paymentProcessing)
-
-	updatedSubmission, _ := getSubmissionByID(submissionID)
+	updatedSubmission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(
+			w,
+			"Submission approved but could not be retrieved",
+			http.StatusInternalServerError,
+		)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"submission":      updatedSubmission,
-		"paymentCaptured": paymentCaptured,
-		"message":         "Submission approved successfully. Payment is being processed and confirmation email will be sent shortly.",
-	})
+
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"submission":        updatedSubmission,
+		"paymentCaptured":   paymentCaptured,
+		"paymentProcessing": paymentProcessing,
+		"message":           "Submission approved successfully. Email delivery has been queued.",
+	}); err != nil {
+		log.Printf(
+			"Failed to encode approval response for %s: %v",
+			submissionID,
+			err,
+		)
+	}
 }
 
-// DenySubmission denies a vehicle submission
 func DenySubmission(w http.ResponseWriter, r *http.Request) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	var req struct {
 		Notes string `json:"notes"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Review notes are required for denial", http.StatusBadRequest)
+		http.Error(
+			w,
+			"Review notes are required for denial",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	req.Notes = strings.TrimSpace(req.Notes)
+	if req.Notes == "" {
+		http.Error(
+			w,
+			"Review notes are required for denial",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -375,26 +622,73 @@ func DenySubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	submission.ReviewNotes = req.Notes
+	submission.Status = "denied"
+
 	db := services.GetDB()
-	err = db.WithContext(r.Context()).Exec(`
+
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'denied',
 				reviewed_at = NOW(),
 				reviewed_by = 'admin',
 				review_notes = ?
 			WHERE id = ?
-		`, submissionNullableString(req.Notes), submissionID).Error
+		`,
+			req.Notes,
+			submissionID,
+		).Error; err != nil {
+			return fmt.Errorf("update denied submission: %w", err)
+		}
+
+		message := buildDenialEmail(*submission, req.Notes)
+
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf("enqueue denial email: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		http.Error(w, "Failed to update submission", http.StatusInternalServerError)
+		log.Printf(
+			"Failed to deny submission %s: %v",
+			submissionID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to update submission",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
-	go sendDenialEmail(*submission, req.Notes)
-
-	updatedSubmission, _ := getSubmissionByID(submissionID)
+	updatedSubmission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(
+			w,
+			"Submission was updated but could not be retrieved",
+			http.StatusInternalServerError,
+		)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedSubmission)
+
+	if err := json.NewEncoder(w).Encode(updatedSubmission); err != nil {
+		log.Printf(
+			"Failed to encode denied submission %s: %v",
+			submissionID,
+			err,
+		)
+	}
 }
 
 // GetPendingSubmissionsCount returns the count of pending submissions
@@ -452,7 +746,7 @@ func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
 				Quantity: stripe.Int64(1),
 			},
 		},
-		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(
 			fmt.Sprintf(
 				"%s/checkout/success?session_id={CHECKOUT_SESSION_ID}&event_id=%s",
@@ -538,7 +832,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 				Quantity: stripe.Int64(req.Quantity),
 			},
 		},
-		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(
 			fmt.Sprintf(
 				"%s/checkout/pending?submission_id=%s&event_id=%s",
@@ -624,14 +918,19 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 
 	db := services.GetDB()
 	err = db.WithContext(r.Context()).Exec(`
-			UPDATE vehicle_submissions
-			SET checkout_session_id = ?,
-				price_id = ?,
-				requires_approval = ?,
-				checkout_created_at = NOW(),
-				promotion_code = ?
-			WHERE id = ?
-		`, s.ID, submissionNullableString(req.PriceID), requiresApproval, submissionNullableString(req.PromotionCode), req.SubmissionID).Error
+		UPDATE vehicle_submissions
+		SET checkout_session_id = ?,
+			price_id = ?,
+			requires_approval = ?,
+			checkout_created_at = NOW(),
+			promotion_code = ?
+		WHERE id = ?
+	`, s.ID,
+		submissionNullableString(req.PriceID),
+		requiresApproval,
+		submissionNullableString(req.PromotionCode),
+		req.SubmissionID,
+	).Error
 	if err != nil {
 		log.Printf("Error updating submission with checkout session: %v", err)
 	}
@@ -664,7 +963,7 @@ func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := PaymentStatus{
-		HasPayment:  false,
+		HasPayment: false,
 	}
 
 	if submission.CheckoutSessionID != "" {
@@ -699,8 +998,10 @@ func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// CreateSubmissionPayment manually creates a payment for an approved submission
-func CreateSubmissionPayment(w http.ResponseWriter, r *http.Request) {
+func CreateSubmissionPayment(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	var req struct {
@@ -713,6 +1014,8 @@ func CreateSubmissionPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.PriceID = strings.TrimSpace(req.PriceID)
+
 	submission, err := getSubmissionByID(submissionID)
 	if err != nil {
 		http.Error(w, "Submission not found", http.StatusNotFound)
@@ -720,20 +1023,37 @@ func CreateSubmissionPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if submission.Status != "approved" {
-		http.Error(w, "Submission must be approved first", http.StatusBadRequest)
+		http.Error(
+			w,
+			"Submission must be approved first",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
 	params := &stripe.CheckoutSessionParams{
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Mode: stripe.String(
+			string(stripe.CheckoutSessionModePayment),
+		),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
 				Price:    stripe.String(req.PriceID),
 				Quantity: stripe.Int64(1),
 			},
 		},
-		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/success?session_id={CHECKOUT_SESSION_ID}", os.Getenv("BASE_URL"))),
-		CancelURL:  stripe.String(fmt.Sprintf("%s/event/%s", os.Getenv("BASE_URL"), submission.EventID)),
+		SuccessURL: stripe.String(
+			fmt.Sprintf(
+				"%s/checkout/success?session_id={CHECKOUT_SESSION_ID}",
+				strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+			),
+		),
+		CancelURL: stripe.String(
+			fmt.Sprintf(
+				"%s/event/%s",
+				strings.TrimRight(os.Getenv("BASE_URL"), "/"),
+				url.PathEscape(submission.EventID),
+			),
+		),
 		Metadata: map[string]string{
 			"submission_id": submission.ID,
 			"event_id":      submission.EventID,
@@ -743,37 +1063,94 @@ func CreateSubmissionPayment(w http.ResponseWriter, r *http.Request) {
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
 	}
 
-	s, err := session.New(params)
+	checkoutSession, err := session.New(params)
 	if err != nil {
-		log.Printf("Error creating checkout session: %v", err)
-		http.Error(w, "Failed to create payment session", http.StatusInternalServerError)
+		log.Printf(
+			"Failed to create payment session for submission %s: %v",
+			submissionID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to create payment session",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	db := services.GetDB()
-	err = db.WithContext(r.Context()).Exec(`
+
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET checkout_session_id = ?,
 				price_id = ?,
-				approval_email_sent_at = NOW(),
+				checkout_created_at = NOW()
 			WHERE id = ?
-	`, s.ID, submissionNullableString(req.PriceID), submissionID).Error
+		`,
+			checkoutSession.ID,
+			submissionNullableString(req.PriceID),
+			submissionID,
+		).Error; err != nil {
+			return fmt.Errorf(
+				"update submission checkout session: %w",
+				err,
+			)
+		}
+
+		message := buildApprovalEmail(
+			*submission,
+			checkoutSession.URL,
+		)
+
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf(
+				"enqueue approval email: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Printf("Error updating submission with checkout session: %v", err)
+		log.Printf(
+			"Failed to update submission %s and enqueue approval email: %v",
+			submissionID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to create submission payment",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
-	sendApprovalEmail(*submission, s.URL)
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
-		"sessionUrl": s.URL,
-		"sessionId":  s.ID,
-	})
+		"sessionUrl": checkoutSession.URL,
+		"sessionId":  checkoutSession.ID,
+	}); err != nil {
+		log.Printf(
+			"Failed to encode payment response for submission %s: %v",
+			submissionID,
+			err,
+		)
+	}
 }
 
-// ResendApprovalEmail resends the approval email for a submission
-func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
+func ResendApprovalEmail(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	submission, err := getSubmissionByID(submissionID)
@@ -783,7 +1160,11 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if submission.Status != "approved" {
-		http.Error(w, "Submission must be approved to resend email", http.StatusBadRequest)
+		http.Error(
+			w,
+			"Submission must be approved to resend email",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -791,39 +1172,90 @@ func ResendApprovalEmail(w http.ResponseWriter, r *http.Request) {
 
 	if submission.CheckoutSessionID != "" {
 		params := &stripe.CheckoutSessionParams{}
-		sess, err := session.Get(submission.CheckoutSessionID, params)
-		if err == nil {
-			if sess.PaymentStatus != "paid" && sess.URL != "" {
-				paymentLink = sess.URL
-			} else if sess.PaymentStatus == "paid" {
-				paymentLink = ""
-			}
+
+		checkoutSession, getErr := session.Get(
+			submission.CheckoutSessionID,
+			params,
+		)
+
+		if getErr != nil {
+			log.Printf(
+				"Failed to retrieve checkout session %s: %v",
+				submission.CheckoutSessionID,
+				getErr,
+			)
+		} else if checkoutSession.PaymentStatus != "paid" {
+			paymentLink = checkoutSession.URL
 		}
 	}
 
 	if paymentLink == "" {
-		paymentLink, _ = createSubmissionPaymentLink(*submission)
+		paymentLink, err = createSubmissionPaymentLink(*submission)
+		if err != nil {
+			log.Printf(
+				"Failed to create replacement payment link for %s: %v",
+				submissionID,
+				err,
+			)
+		}
 	}
 
-	sendApprovalEmail(*submission, paymentLink)
+	message := buildApprovalEmail(*submission, paymentLink)
 
 	db := services.GetDB()
-	err = db.Exec(`
-		UPDATE vehicle_submissions
-			SET approval_email_sent_at = NOW(),
+
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf("enqueue approval resend: %w", err)
+		}
+
+		if err := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET approval_email_resent = TRUE,
 				email_resent_count = COALESCE(email_resent_count, 0) + 1
 			WHERE id = ?
-		`, submissionID).Error
+		`, submissionID).Error; err != nil {
+			return fmt.Errorf(
+				"update approval resend state: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		log.Printf("Failed to update approval email resend state for submission %s: %v", submissionID, err)
+		log.Printf(
+			"Failed to enqueue approval resend for %s: %v",
+			submissionID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to queue approval email",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":     true,
-		"message":     "Approval email resent successfully",
+		"message":     "Approval email queued successfully",
 		"paymentLink": paymentLink != "",
-	})
+	}); err != nil {
+		log.Printf(
+			"Failed to encode resend response for %s: %v",
+			submissionID,
+			err,
+		)
+	}
 }
 
 // GetAllSubmissionsWithIssues retrieves submissions that have issues
@@ -921,7 +1353,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			if submission.PaymentIntentID != "" {
+			if submission.PaymentIntentID != "" && submission.TicketID == "" {
 				hasIssue = true
 				issues = append(issues, "no_ticket_created")
 				fmt.Printf("Submission %s has payment but no ticket", submissionID)
@@ -978,17 +1410,17 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			r.URL.Query().Get("all") == "true" ||
 			r.URL.Query().Get("include_id") == submissionID
 
-			if hasIssue || forceInclude {
-				issueSubmission := *submission
+		if hasIssue || forceInclude {
+			issueSubmission := *submission
 
-				issueSubmission.Issues = issues
-				issueSubmission.HasIssue = hasIssue
+			issueSubmission.Issues = issues
+			issueSubmission.HasIssue = hasIssue
 
-				issueSubmissions = append(
-					issueSubmissions,
-					issueSubmission,
-				)
-			}
+			issueSubmissions = append(
+				issueSubmissions,
+				issueSubmission,
+			)
+		}
 	}
 
 	fmt.Printf("Found %d submissions with issues", len(issueSubmissions))
@@ -1044,9 +1476,6 @@ func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
 
 	updatedSubmission, _ := getSubmissionByID(submissionID)
 
-	params := &stripe.CheckoutSessionParams{}
-	sess, err := session.Get(submission.CheckoutSessionID, params)
-
 	response := map[string]interface{}{
 		"success":    true,
 		"message":    fmt.Sprintf("Email updated from %s to %s", oldEmail, req.NewEmail),
@@ -1054,43 +1483,81 @@ func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ResendEmail && submission.Status == "approved" {
-		emailsSent := []string{}
+		paymentIsPaid := false
+		paymentLink := ""
 
-		if sess.PaymentStatus != "paid" {
-			paymentLink, _ := createSubmissionPaymentLink(*updatedSubmission)
-			sendApprovalEmail(*updatedSubmission, paymentLink)
-			emailsSent = append(emailsSent, "approval")
-			log.Printf("Sent approval email with payment link to %s for submission %s", req.NewEmail, submissionID)
-		} else {
-			sendApprovalEmail(*updatedSubmission, "")
-			emailsSent = append(emailsSent, "approval")
-			log.Printf("Sent approval email to %s for submission %s", req.NewEmail, submissionID)
-		}
+		if submission.CheckoutSessionID != "" {
+			params := &stripe.CheckoutSessionParams{}
 
-		err = db.Exec(`
-			UPDATE vehicle_submissions
-				approval_email_sent_at = NOW(),
-				email_resent_count = COALESCE(email_resent_count, 0) + 1
-			WHERE id = ?
-		`, submissionID).Error
-		if err != nil {
-			log.Printf("Failed to update approval email resend state for submission %s: %v", submissionID, err)
-		}
+			checkoutSession, getErr := session.Get(
+				submission.CheckoutSessionID,
+				params,
+			)
 
-		response["email_resent"] = true
-		response["emails_sent"] = emailsSent
-
-		if len(emailsSent) > 0 {
-			emailType := emailsSent[0]
-			if emailType == "approval" {
-				response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+			if getErr != nil {
+				log.Printf(
+					"Failed to retrieve checkout session %s: %v",
+					submission.CheckoutSessionID,
+					getErr,
+				)
 			} else {
-				response["message"] = fmt.Sprintf("Email updated from %s to %s and approval email resent", oldEmail, req.NewEmail)
+				paymentIsPaid = checkoutSession.PaymentStatus == "paid"
+
+				if !paymentIsPaid {
+					paymentLink = checkoutSession.URL
+				}
 			}
 		}
 
-		updatedSubmission, _ = getSubmissionByID(submissionID)
-		response["submission"] = updatedSubmission
+		if !paymentIsPaid && paymentLink == "" {
+			paymentLink, _ = createSubmissionPaymentLink(
+				*updatedSubmission,
+			)
+		}
+
+		message := buildApprovalEmail(
+			*updatedSubmission,
+			paymentLink,
+		)
+
+		err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := services.QueueEmailTx(
+				r.Context(),
+				tx,
+				submissionID,
+				message,
+			); err != nil {
+				return fmt.Errorf(
+					"enqueue updated approval email: %w",
+					err,
+				)
+			}
+
+			return tx.Exec(`
+				UPDATE vehicle_submissions
+				SET approval_email_resent = TRUE,
+					email_resent_count = COALESCE(email_resent_count, 0) + 1
+				WHERE id = ?
+			`, submissionID).Error
+		})
+
+		if err != nil {
+			log.Printf(
+				"Failed to queue updated approval email for %s: %v",
+				submissionID,
+				err,
+			)
+			response["email_resent"] = false
+			response["email_error"] = "Failed to queue approval email"
+		} else {
+			response["email_resent"] = true
+			response["emails_queued"] = []string{"approval"}
+			response["message"] = fmt.Sprintf(
+				"Email updated from %s to %s and approval email queued",
+				oldEmail,
+				req.NewEmail,
+			)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1130,7 +1597,7 @@ func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
 		"submission_revoked": false,
 		"ticket_invalidated": false,
 		"payment_refunded":   false,
-		"errors":            []string{},
+		"errors":             []string{},
 	}
 
 	if submission.PaymentIntentID != "" {
@@ -1169,25 +1636,70 @@ func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
 
 	result["ticket_invalidated"] = true
 
-	err = db.WithContext(r.Context()).Exec(`
-		UPDATE vehicle_submissions
-		SET status = 'revoked',
-		    revoked_at = NOW(),
-		    revoked_by = 'admin',
-		    revocation_reason = ?
-		WHERE id = ?
-	`, req.Reason, submissionID).Error
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET status = 'revoked',
+				revoked_at = NOW(),
+				revoked_by = 'admin',
+				revocation_reason = ?
+			WHERE id = ?
+				AND status = 'approved'
+		`,
+			req.Reason,
+			submissionID,
+		)
+
+		if result.Error != nil {
+			return fmt.Errorf(
+				"update revoked submission: %w",
+				result.Error,
+			)
+		}
+
+		if result.RowsAffected != 1 {
+			return fmt.Errorf(
+				"submission %s is no longer approved",
+				submissionID,
+			)
+		}
+
+		message := buildRevocationEmail(
+			*submission,
+			req.Reason,
+		)
+
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf(
+				"enqueue revocation email: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		errMsg := fmt.Sprintf("Failed to update submission status: %v", err)
-		log.Printf("Error updating submission %s: %v", submissionID, err)
-		result["errors"] = append(result["errors"].([]string), errMsg)
-		http.Error(w, errMsg, http.StatusInternalServerError)
+		log.Printf(
+			"Failed to revoke submission and queue email %s: %v",
+			submissionID,
+			err,
+		)
+
+		http.Error(
+			w,
+			"Failed to revoke submission",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
-	result["submissionRevoked"] = true
-
-	sendRevocationEmail(*submission, req.Reason)
+	result["submission_revoked"] = true
 
 	updatedSubmission, _ := getSubmissionByID(submissionID)
 	result["submission"] = updatedSubmission
@@ -1219,12 +1731,21 @@ func getSubmissionByID(
 	db := services.GetDB()
 
 	var (
-		imagesJSON          []byte
-		submittedAt         time.Time
+		imagesJSON []byte
+
+		submittedAt time.Time
+		createdAt   time.Time
+
 		reviewedAt          sql.NullTime
+		checkoutCreatedAt   sql.NullTime
+		checkoutCompletedAt sql.NullTime
+		paymentSucceededAt  sql.NullTime
+		paymentCapturedAt   sql.NullTime
 		approvalEmailSentAt sql.NullTime
+		ticketCreatedAt     sql.NullTime
 		ticketEmailSentAt   sql.NullTime
 		emailUpdatedAt      sql.NullTime
+		refundIssuedAt      sql.NullTime
 		revokedAt           sql.NullTime
 	)
 
@@ -1244,21 +1765,49 @@ func getSubmissionByID(
 			COALESCE(vehicle_description, ''),
 			COALESCE(vehicle_modifications, ''),
 			COALESCE(images, '[]'::jsonb),
+
 			status,
 			submitted_at,
+			created_at,
+
 			reviewed_at,
 			COALESCE(reviewed_by, ''),
 			COALESCE(review_notes, ''),
+
 			COALESCE(checkout_session_id, ''),
+			checkout_created_at,
+			COALESCE(checkout_completed, FALSE),
+			checkout_completed_at,
+
 			COALESCE(payment_intent_id, ''),
+			COALESCE(payment_succeeded_before_approval, FALSE),
+			payment_succeeded_at,
+			COALESCE(payment_captured, FALSE),
+			payment_captured_at,
+
 			COALESCE(price_id, ''),
+			COALESCE(promotion_code, ''),
+
+			COALESCE(requires_approval, TRUE),
+			COALESCE(awaiting_approval, FALSE),
+
+			COALESCE(approval_email_sent, FALSE),
 			approval_email_sent_at,
-			COALESCE(requires_approval, true),
-			COALESCE(approval_email_resent, false),
+			COALESCE(approval_email_resent, FALSE),
+
+			COALESCE(ticket_id, ''),
+			ticket_created_at,
+			COALESCE(ticket_email_sent, FALSE),
 			ticket_email_sent_at,
-			COALESCE(previous_email, ''),
+
 			email_updated_at,
+			COALESCE(previous_email, ''),
 			COALESCE(email_resent_count, 0),
+
+			COALESCE(refund_id, ''),
+			COALESCE(refund_amount, 0),
+			refund_issued_at,
+
 			revoked_at,
 			COALESCE(revoked_by, ''),
 			COALESCE(revocation_reason, '')
@@ -1277,21 +1826,49 @@ func getSubmissionByID(
 		&submission.VehicleDescription,
 		&submission.VehicleModifications,
 		&imagesJSON,
+
 		&submission.Status,
 		&submittedAt,
+		&createdAt,
+
 		&reviewedAt,
 		&submission.ReviewedBy,
 		&submission.ReviewNotes,
+
 		&submission.CheckoutSessionID,
+		&checkoutCreatedAt,
+		&submission.CheckoutCompleted,
+		&checkoutCompletedAt,
+
 		&submission.PaymentIntentID,
+		&submission.PaymentSucceededBeforeApproval,
+		&paymentSucceededAt,
+		&submission.PaymentCaptured,
+		&paymentCapturedAt,
+
 		&submission.PriceID,
-		&approvalEmailSentAt,
+		&submission.PromotionCode,
+
 		&submission.RequiresApproval,
+		&submission.AwaitingApproval,
+
+		&submission.ApprovalEmailSent,
+		&approvalEmailSentAt,
 		&submission.ApprovalEmailResent,
+
+		&submission.TicketID,
+		&ticketCreatedAt,
+		&submission.TicketEmailSent,
 		&ticketEmailSentAt,
-		&submission.PreviousEmail,
+
 		&emailUpdatedAt,
+		&submission.PreviousEmail,
 		&submission.EmailResentCount,
+
+		&submission.RefundID,
+		&submission.RefundAmount,
+		&refundIssuedAt,
+
 		&revokedAt,
 		&submission.RevokedBy,
 		&submission.RevocationReason,
@@ -1309,16 +1886,20 @@ func getSubmissionByID(
 		submission.Images = []string{}
 	}
 
-	submission.SubmittedAt = submittedAt.Format(time.RFC3339)
+	submission.SubmittedAt = submittedAt.UTC().Format(time.RFC3339)
+	submission.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+
 	submission.ReviewedAt = submissionFormatNullTime(reviewedAt)
-	submission.ApprovalEmailSentAt =
-		submissionFormatNullTime(approvalEmailSentAt)
-	submission.TicketEmailSentAt =
-		submissionFormatNullTime(ticketEmailSentAt)
-	submission.EmailUpdatedAt =
-		submissionFormatNullTime(emailUpdatedAt)
-	submission.RevokedAt =
-		submissionFormatNullTime(revokedAt)
+	submission.CheckoutCreatedAt = submissionFormatNullTime(checkoutCreatedAt)
+	submission.CheckoutCompletedAt = submissionFormatNullTime(checkoutCompletedAt)
+	submission.PaymentSucceededAt = submissionFormatNullTime(paymentSucceededAt)
+	submission.PaymentCapturedAt = submissionFormatNullTime(paymentCapturedAt)
+	submission.ApprovalEmailSentAt = submissionFormatNullTime(approvalEmailSentAt)
+	submission.TicketCreatedAt = submissionFormatNullTime(ticketCreatedAt)
+	submission.TicketEmailSentAt = submissionFormatNullTime(ticketEmailSentAt)
+	submission.EmailUpdatedAt = submissionFormatNullTime(emailUpdatedAt)
+	submission.RefundIssuedAt = submissionFormatNullTime(refundIssuedAt)
+	submission.RevokedAt = submissionFormatNullTime(revokedAt)
 
 	return submission, nil
 }
@@ -1449,168 +2030,104 @@ func createSubmissionPaymentLink(submission models.VehicleSubmissionDTO) (string
 
 // Email functions
 
-// sendSubmissionTicketEmail sends a ticket email for an approved submission
-func sendSubmissionTicketEmail(submissionData map[string]string, ticketToken string, eventName string) {
-	// Generate QR code
-	qrCodeURL, err := generateQRCode(ticketToken)
-	if err != nil {
-		log.Printf("Error generating QR code: %v", err)
-		return
-	}
-
-	vehicleDetails := fmt.Sprintf("%s %s %s",
-		submissionData["vehicle_year"],
-		submissionData["vehicle_make"],
-		submissionData["vehicle_model"])
-
-	customerEmail := submissionData["participant_email"]
-	customerName := submissionData["participant_name"]
-
-	emailData := map[string]interface{}{
-		"CustomerName":   customerName,
-		"EventName":      eventName,
-		"TicketCode":     ticketToken,
-		"QRCodeURL":      qrCodeURL,
-		"VehicleDetails": vehicleDetails,
-		"TicketType":     "Event Participant",
-		"CheckInURL":     fmt.Sprintf("%s/events/checkin?ticket=%s", os.Getenv("BASE_URL"), ticketToken),
-	}
-
-	// Generate ticket HTML
-	ticketHTML := fmt.Sprintf(`
-		<html>
-		<body style="font-family: Arial, sans-serif; color: #333;">
-			<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-				<h1 style="color: #007bff;">Your Event Participant Ticket</h1>
-				<p>Dear %s,</p>
-				<p>Congratulations! Your registration as an event participant is complete. Your vehicle has been approved:</p>
-				<p style="font-size: 18px; font-weight: bold;">%s</p>
-
-				<div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0;">
-					<h2>Event Details</h2>
-					<p><strong>Event:</strong> %s</p>
-					<p><strong>Ticket Type:</strong> Event Participant</p>
-					<p><strong>Ticket Code:</strong> <span style="font-family: monospace; font-size: 18px;">%s</span></p>
-				</div>
-
-				<div style="text-align: center; margin: 30px 0;">
-					<img src="%s" alt="QR Code" style="width: 200px; height: 200px;">
-					<p style="font-size: 12px; color: #666;">Show this QR code at check-in</p>
-				</div>
-
-				<h3>Important Information for Participants:</h3>
-				<ul>
-					<li>Please arrive at least 30 minutes before the event start time</li>
-					<li>Have your vehicle clean and ready for display</li>
-					<li>Bring this ticket (printed or on your phone) for check-in</li>
-					<li>Follow all event guidelines and instructions from staff</li>
-				</ul>
-
-				<p>We're excited to have you showcase your vehicle at our event!</p>
-				<p>Best regards,<br>The Euro Haus Events Team</p>
-			</div>
-		</body>
-		</html>
-	`, customerName, vehicleDetails, eventName, ticketToken, qrCodeURL)
-
-	msg := &services.EmailMessage{
-		To:           []string{customerEmail},
-		Subject:      fmt.Sprintf("Event Participant Ticket - %s", eventName),
-		TemplateID:   "participant-ticket",
-		TemplateData: emailData,
-		BodyHTML:     ticketHTML,
-	}
-
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending participant ticket email: %v", err)
-	} else {
-		log.Printf("Successfully sent ticket email to %s for ticket %s", customerEmail, ticketToken)
-	}
-}
-
-func sendSubmissionConfirmationEmail(submission models.VehicleSubmissionDTO) {
+func buildSubmissionConfirmationEmail(
+	submission models.VehicleSubmissionDTO,
+) *services.EmailMessage {
 	emailData := map[string]interface{}{
 		"ParticipantName": submission.ParticipantName,
-		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-		"EventID":         submission.EventID,
-		"SubmissionID":    submission.ID,
-		"SubmittedAt":     submission.SubmittedAt,
+		"VehicleDetails": fmt.Sprintf(
+			"%s %s %s",
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+		),
+		"EventID":      submission.EventID,
+		"SubmissionID": submission.ID,
+		"SubmittedAt":  submission.SubmittedAt,
 	}
 
-	msg := &services.EmailMessage{
+	return &services.EmailMessage{
 		To:           []string{submission.ParticipantEmail},
 		Subject:      "Vehicle Submission Received - Euro Haus",
 		TemplateID:   "submission-received",
 		TemplateData: emailData,
 		BodyHTML:     generateSubmissionConfirmationHTML(emailData),
 	}
-
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending submission confirmation email: %v", err)
-	}
 }
 
-func sendApprovalEmail(submission models.VehicleSubmissionDTO, paymentLink string) {
+func buildApprovalEmail(
+	submission models.VehicleSubmissionDTO,
+	paymentLink string,
+) *services.EmailMessage {
 	emailData := map[string]interface{}{
 		"ParticipantName": submission.ParticipantName,
-		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-		"EventID":         submission.EventID,
-		"PaymentLink":     paymentLink,
-		"ReviewNotes":     submission.ReviewNotes,
+		"VehicleDetails": fmt.Sprintf(
+			"%s %s %s",
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+		),
+		"EventID":     submission.EventID,
+		"PaymentLink": paymentLink,
+		"ReviewNotes": submission.ReviewNotes,
 	}
 
-	msg := &services.EmailMessage{
+	return &services.EmailMessage{
 		To:           []string{submission.ParticipantEmail},
 		Subject:      "Vehicle Submission Approved - Complete Your Registration",
 		TemplateID:   "submission-approved",
 		TemplateData: emailData,
 		BodyHTML:     generateApprovalEmailHTML(emailData),
 	}
-
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending approval email: %v", err)
-	}
 }
 
-func sendDenialEmail(submission models.VehicleSubmissionDTO, reason string) {
+func buildDenialEmail(
+	submission models.VehicleSubmissionDTO,
+	reason string,
+) *services.EmailMessage {
 	emailData := map[string]interface{}{
 		"ParticipantName": submission.ParticipantName,
-		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-		"EventID":         submission.EventID,
-		"DenialReason":    reason,
+		"VehicleDetails": fmt.Sprintf(
+			"%s %s %s",
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+		),
+		"EventID":      submission.EventID,
+		"DenialReason": reason,
 	}
 
-	msg := &services.EmailMessage{
+	return &services.EmailMessage{
 		To:           []string{submission.ParticipantEmail},
 		Subject:      "Vehicle Submission Update - Euro Haus",
 		TemplateID:   "submission-denied",
 		TemplateData: emailData,
 		BodyHTML:     generateDenialEmailHTML(emailData),
 	}
-
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending denial email: %v", err)
-	}
 }
 
-func sendRevocationEmail(submission models.VehicleSubmissionDTO, reason string) {
+func buildRevocationEmail(
+	submission models.VehicleSubmissionDTO,
+	reason string,
+) *services.EmailMessage {
 	emailData := map[string]interface{}{
 		"ParticipantName": submission.ParticipantName,
-		"VehicleDetails":  fmt.Sprintf("%s %s %s", submission.VehicleYear, submission.VehicleMake, submission.VehicleModel),
-		"EventID":         submission.EventID,
-		"DenialReason":    reason,
+		"VehicleDetails": fmt.Sprintf(
+			"%s %s %s",
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+		),
+		"EventID":      submission.EventID,
+		"DenialReason": reason,
 	}
 
-	msg := &services.EmailMessage{
+	return &services.EmailMessage{
 		To:           []string{submission.ParticipantEmail},
 		Subject:      "Vehicle Submission Update - Euro Haus",
 		TemplateID:   "submission-denied",
 		TemplateData: emailData,
 		BodyHTML:     generateDenialEmailHTML(emailData),
-	}
-
-	if err := services.SendEmail(msg); err != nil {
-		log.Printf("Error sending revocation email: %v", err)
 	}
 }
 
