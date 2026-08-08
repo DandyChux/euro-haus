@@ -1145,7 +1145,7 @@ func GetEventPrices(w http.ResponseWriter, r *http.Request) {
 // CleanupEventTickets cleans up tickets
 func CleanupEventTickets(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	eventID := vars["eventId"]
+	eventID := vars["id"]
 
 	if eventID == "" {
 		http.Error(w, "Missing eventId parameter", http.StatusBadRequest)
@@ -1220,7 +1220,16 @@ func InvalidateTicket(ticketToken string, reason string) error {
 func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	eventID := mux.Vars(r)["eventId"]
+	eventID := mux.Vars(r)["id"]
+
+	if strings.TrimSpace(eventID) == "" {
+		http.Error(
+			w,
+			"Missing event ID",
+			http.StatusBadRequest,
+		)
+		return
+	}
 
 	var req TierProductsRequest
 
@@ -1320,11 +1329,7 @@ func GetEventLinkedProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
-	eventID := vars["eventId"]
-
-	// Get the event
-	eventParams := &stripe.ProductParams{}
-	eventParams.AddExpand("default_price")
+	eventID := vars["id"]
 
 	event, err := findActiveEventByID(r.Context(), eventID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1476,7 +1481,7 @@ func RemoveProductFromEvent(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
-	eventID := vars["eventId"]
+	eventID := vars["id"]
 	productID := vars["productId"]
 
 	if eventID == "" || productID == "" {
