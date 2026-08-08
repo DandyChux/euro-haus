@@ -46,8 +46,8 @@
 		data.event.prices.find((price) => price.id === selectedPriceID),
 	);
 
-	async function startStripeCheckout() {
-		if (!selectedPrice || !selectedPrice.id) {
+	async function startStripeCheckout(price: Price | undefined) {
+		if (!price || !price.id) {
 			console.error("Event price is missing an ID", {
 				selectedPriceID,
 				prices: data.event.prices,
@@ -57,7 +57,8 @@
 			return;
 		}
 
-		if (selectedPrice.requires_submission) {
+		if (price.requires_submission) {
+			pendingPrice = price;
 			checkoutState = "submission";
 			return;
 		}
@@ -69,33 +70,33 @@
 		checkoutState = "loading";
 
 		try {
-			const response = await fetch("/api/create-event-checkout-session", {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-				},
-				body: JSON.stringify({
-					eventId: data.event.id,
-					price_id: selectedPrice.id,
-					quantity: Number(quantity),
-					addOnProducts: selectedAddOns,
-				}),
+			// const response = await fetch("/api/create-event-checkout-session", {
+			// 	method: "POST",
+			// 	headers: {
+			// 		"content-type": "application/json",
+			// 	},
+			// 	body: JSON.stringify({
+			// 		eventId: data.event.id,
+			// 		price_id: price.id,
+			// 		quantity: Number(quantity),
+			// 		addon_products: selectedAddOns,
+			// 	}),
+			// });
+			const response = await apiClient.post<{
+				url?: string;
+				session_id?: string;
+			}>("/create-event-checkout-session", {
+				event_id: data.event.id,
+				price_id: price.id,
+				quantity: Number(quantity),
+				addon_products: selectedAddOns,
 			});
 
-			if (!response.ok) {
-				throw new Error(await response.text());
-			}
-
-			const result = (await response.json()) as {
-				url?: string;
-				sessionId?: string;
-			};
-
-			if (!result.url) {
+			if (!response.url) {
 				throw new Error("Stripe Checkout URL was not returned");
 			}
 
-			window.location.assign(result.url);
+			window.location.assign(response.url);
 		} catch (error) {
 			console.error("Unable to create Stripe Checkout session", error);
 			checkoutState = "idle";
@@ -294,7 +295,7 @@
 							}
 
 							selectedPriceID = pendingPrice.id;
-							void startStripeCheckout();
+							void startStripeCheckout(selectedPrice);
 						}}
 					>
 						Continue to Stripe
@@ -404,7 +405,7 @@
 					<form
 						onsubmit={(event) => {
 							event.preventDefault();
-							void startStripeCheckout();
+							void startStripeCheckout(selectedPrice);
 						}}
 					>
 						<input
