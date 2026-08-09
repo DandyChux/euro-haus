@@ -722,9 +722,9 @@ func GetPendingSubmissionsCount(w http.ResponseWriter, r *http.Request) {
 // CreateSubmissionCheckout creates a checkout session for an approved submission
 func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SubmissionID string `json:"submissionId"`
-		PriceID      string `json:"priceId"`
-		EventName    string `json:"eventName"`
+		SubmissionID string `json:"submission_id"`
+		PriceID      string `json:"price_id"`
+		EventName    string `json:"event_name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

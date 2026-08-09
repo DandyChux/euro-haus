@@ -257,8 +257,8 @@
 		{#if checkoutState === "submission" && pendingPrice}
 			<section class="submission-panel wrap" aria-live="polite">
 				<VehicleSubmissionForm
+					data={{ form: data.form }}
 					eventId={data.event.id}
-					eventSlug={data.event.slug}
 					priceId={pendingPrice.id}
 					ticketTier={getPriceName(pendingPrice)}
 					ticketPrice={getPriceAmount(pendingPrice)}

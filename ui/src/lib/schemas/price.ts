@@ -22,6 +22,7 @@ export const priceSchema = z.object({
 		.nullish()
 		.default([]),
 	quantity: z.number().optional(),
+	stock_quantity: z.number().int().nonnegative().nullish(),
 	sold_out: z.boolean().nullish().default(false),
 });
 
