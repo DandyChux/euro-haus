@@ -1754,7 +1754,7 @@ func getSubmissionByID(
 		imagesJSON []byte
 
 		submittedAt time.Time
-		createdAt   time.Time
+		createdAt   sql.NullTime
 
 		reviewedAt          sql.NullTime
 		checkoutCreatedAt   sql.NullTime
@@ -1907,7 +1907,7 @@ func getSubmissionByID(
 	}
 
 	submission.SubmittedAt = submittedAt.UTC().Format(time.RFC3339)
-	submission.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	submission.CreatedAt = submissionFormatNullTime(createdAt)
 
 	submission.ReviewedAt = submissionFormatNullTime(reviewedAt)
 	submission.CheckoutCreatedAt = submissionFormatNullTime(checkoutCreatedAt)
