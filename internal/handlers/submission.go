@@ -818,7 +818,19 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 
 	submission, err := getSubmissionByID(req.SubmissionID)
 	if err != nil {
-		http.Error(w, "Submission not found", http.StatusNotFound)
+		log.Printf(
+			"Failed to load submission %q for participant checkout: %v",
+			req.SubmissionID,
+			err,
+		)
+
+		if errors.Is(err, sql.ErrNoRows) ||
+			err.Error() == "submission not found" {
+			http.Error(w, "Submission not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "Failed to load submission", http.StatusInternalServerError)
 		return
 	}
 
