@@ -8,27 +8,34 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Card } from "$lib/components/ui/card";
 	import { Textarea } from "$lib/components/ui/textarea";
-
-	interface Props {
-		eventId: string;
-		eventName: string;
-	}
+	import { formatDate } from "$lib/utils";
 
 	interface SubmissionsResponse {
 		submissions?: VehicleSubmission[];
 	}
 
-	let { eventId, eventName }: Props = $props();
+	interface Props {
+		eventName: string;
+		submissions: VehicleSubmission[];
+		loading?: boolean;
+		errorMessage?: string;
+		onSubmissionUpdated?: () => void | Promise<void>;
+	}
 
-	let submissions = $state<VehicleSubmission[]>([]);
+	let {
+		eventName,
+		submissions = [],
+		loading = false,
+		errorMessage = "",
+		onSubmissionUpdated,
+	}: Props = $props();
+
 	let selectedSubmission = $state<VehicleSubmission | null>(null);
 
 	let activeTab = $state<"pending" | "reviewed">("pending");
 	let currentImageIndex = $state(0);
 
-	let loading = $state(true);
 	let processing = $state(false);
-	let errorMessage = $state("");
 
 	let action = $state<"approve" | "deny" | null>(null);
 	let actionNotes = $state("");
@@ -44,36 +51,6 @@
 	const visibleSubmissions = $derived(
 		activeTab === "pending" ? pendingSubmissions : reviewedSubmissions,
 	);
-
-	onMount(() => {
-		void loadSubmissions();
-	});
-
-	function formatDate(value?: string): string {
-		if (!value) return "—";
-
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: "medium",
-		}).format(new Date(value));
-	}
-
-	async function loadSubmissions() {
-		loading = true;
-		errorMessage = "";
-
-		try {
-			const response = await apiClient.get<SubmissionsResponse>(
-				`/admin/submissions/${eventId}`,
-			);
-
-			submissions = response.submissions ?? [];
-		} catch (error) {
-			console.error("Failed to load submissions:", error);
-			errorMessage = "Failed to load submissions.";
-		} finally {
-			loading = false;
-		}
-	}
 
 	function openSubmission(submission: VehicleSubmission) {
 		selectedSubmission = submission;
@@ -133,7 +110,7 @@
 			);
 
 			closeSubmission();
-			await loadSubmissions();
+			await onSubmissionUpdated?.();
 		} catch (error) {
 			console.error("Failed to update submission:", error);
 			toast.error(
@@ -241,7 +218,9 @@
 
 							<p class="text-sm text-muted-foreground">
 								Submitted
-								{formatDate(submission.submitted_at)}
+								{formatDate(submission.submitted_at, {
+									dateStyle: "medium",
+								})}
 							</p>
 						</Card>
 					</button>
@@ -344,7 +323,9 @@
 
 						<p class="text-sm text-muted-foreground">
 							Submitted
-							{formatDate(selectedSubmission.submitted_at)}
+							{formatDate(selectedSubmission.submitted_at, {
+								dateStyle: "medium",
+							})}
 						</p>
 					</div>
 				</div>

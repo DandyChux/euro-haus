@@ -2,8 +2,9 @@
 	import { onMount } from "svelte";
 	import { apiClient } from "$lib/api";
 	import { formatDate } from "$lib/utils";
-	import type { VehicleSubmission } from "$lib/types";
+	import type { VehicleSubmission } from "$lib/schemas/event";
 	import type { PageProps } from "./$types";
+	import SubmissionReview from "$lib/components/admin/submission-review.svelte";
 
 	let { data }: PageProps = $props();
 
@@ -38,37 +39,6 @@
 					: "Unable to load submissions.";
 		} finally {
 			isLoading = false;
-		}
-	}
-
-	async function approveSubmission(id: string) {
-		const notes = window.prompt("Optional approval notes", "") ?? "";
-
-		try {
-			await apiClient.put(`/admin/submissions/${id}/approve`, { notes });
-			actionMessage = "Submission approved.";
-			await loadSubmissions();
-		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "Unable to approve submission.";
-		}
-	}
-
-	async function denySubmission(id: string) {
-		const notes = window.prompt("Reason for denial");
-		if (!notes) return;
-
-		try {
-			await apiClient.put(`/admin/submissions/${id}/deny`, { notes });
-			actionMessage = "Submission denied.";
-			await loadSubmissions();
-		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "Unable to deny submission.";
 		}
 	}
 
@@ -163,51 +133,13 @@
 		</div>
 	{:else}
 		<div class="space-y-4">
-			{#each submissions as submission (submission.id)}
-				<article
-					class="rounded-3xl border border-white/10 bg-white/5 p-5"
-				>
-					<div
-						class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
-					>
-						<div>
-							<p class="text-lg font-medium">
-								{submission.vehicle_year}
-								{submission.vehicle_make}
-								{submission.vehicle_model}
-							</p>
-							<p class="mt-1 text-sm">
-								{submission.participant_name} · {submission.participant_email}
-							</p>
-							<p class="mt-3 text-xs uppercase tracking-[0.2em]">
-								Status: {submission.status}
-							</p>
-							{#if submission.review_notes}
-								<p class="mt-3 text-sm">
-									{submission.review_notes}
-								</p>
-							{/if}
-						</div>
-
-						<div class="flex flex-wrap gap-3">
-							<button
-								class="rounded-full border border-white/10 px-4 py-2 text-sm"
-								onclick={() =>
-									void approveSubmission(submission.id)}
-							>
-								Approve
-							</button>
-							<button
-								class="rounded-full border border-destructive/30 px-4 py-2 text-sm text-destructive"
-								onclick={() =>
-									void denySubmission(submission.id)}
-							>
-								Deny
-							</button>
-						</div>
-					</div>
-				</article>
-			{/each}
+			<SubmissionReview
+				eventName={activeEvent?.name ?? ""}
+				{submissions}
+				loading={isLoading}
+				{errorMessage}
+				onSubmissionUpdated={loadSubmissions}
+			/>
 		</div>
 	{/if}
 </section>
