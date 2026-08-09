@@ -46,22 +46,40 @@
 		data.event.prices.find((price) => price.id === selectedPriceID),
 	);
 
-	async function startStripeCheckout() {
-		if (!selectedPrice || !selectedPrice.id) {
-			console.error("Event price is missing an ID", {
+	function getSelectedPrice(): Price | undefined {
+		return data.event.prices.find((price) => price.id === selectedPriceID);
+	}
+
+	function openCheckout(): void {
+		const price = getSelectedPrice();
+
+		console.log("CHECKOUT DEBUG", {
+			selectedPriceID,
+			price,
+			requires_submission: price?.requires_submission,
+			requiresSubmissionType: typeof price?.requires_submission,
+		});
+
+		if (!price?.id) {
+			console.error("No ticket price selected", {
 				selectedPriceID,
 				prices: data.event.prices,
 			});
-
-			checkoutState = "idle";
 			return;
 		}
 
-		if (selectedPrice.requires_submission) {
+		// String(...) handles incorrectly serialized production values such as
+		// "true" while remaining compatible with the correct boolean response.
+		if (String(price.requires_submission) === "true") {
+			pendingPrice = price;
 			checkoutState = "submission";
 			return;
 		}
 
+		void createStripeCheckout(price);
+	}
+
+	async function createStripeCheckout(price: Price): Promise<void> {
 		if (data.event.status === "sold_out") {
 			return;
 		}
@@ -69,61 +87,25 @@
 		checkoutState = "loading";
 
 		try {
-			const response = await fetch("/api/create-event-checkout-session", {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-				},
-				body: JSON.stringify({
-					eventId: data.event.id,
-					price_id: selectedPrice.id,
-					quantity: Number(quantity),
-					addOnProducts: selectedAddOns,
-				}),
+			const response = await apiClient.post<{
+				url?: string;
+				session_id?: string;
+			}>("/create-event-checkout-session", {
+				eventId: data.event.id,
+				price_id: price.id,
+				quantity: Number(quantity),
+				addOnProducts: selectedAddOns,
 			});
 
-			if (!response.ok) {
-				throw new Error(await response.text());
-			}
-
-			const result = (await response.json()) as {
-				url?: string;
-				sessionId?: string;
-			};
-
-			if (!result.url) {
+			if (!response.url) {
 				throw new Error("Stripe Checkout URL was not returned");
 			}
 
-			window.location.assign(result.url);
+			window.location.assign(response.url);
 		} catch (error) {
 			console.error("Unable to create Stripe Checkout session", error);
 			checkoutState = "idle";
 		}
-	}
-
-	function handleTierSelection(price: Price) {
-		if (price.sold_out) {
-			return;
-		}
-
-		selectedPriceID = price.id;
-
-		if (price.requires_submission) {
-			checkoutState = "submission";
-			return;
-		}
-
-		if (
-			price.included_products.length === 0 &&
-			data.linked_products.length > 0
-		) {
-			pendingPrice = price;
-			checkoutState = "merchandise";
-			return;
-		}
-
-		void startStripeCheckout();
 	}
 
 	async function completeVehicleSubmission(
@@ -215,21 +197,75 @@
 			</div>
 		</section>
 
-		{#if checkoutState === "submission"}
+		{#if data.event.sponsors.length > 0}
+			<section
+				class="sponsors-section"
+				aria-labelledby="sponsors-heading"
+			>
+				<div class="wrap sponsors-layout">
+					<div class="sponsors-heading">
+						<p class="eyebrow">Partners</p>
+						<h2 id="sponsors-heading">
+							Our<br /><em>sponsors.</em>
+						</h2>
+					</div>
+
+					<div class="sponsors-grid">
+						{#each data.event.sponsors as sponsor, index (`${sponsor.name}-${index}`)}
+							<article class="sponsor-card">
+								<div class="sponsor-logo">
+									{#if sponsor.logo}
+										<img
+											src={sponsor.logo}
+											alt={`${sponsor.name} logo`}
+										/>
+									{:else}
+										<span aria-hidden="true">
+											{sponsor.name.slice(0, 1)}
+										</span>
+									{/if}
+								</div>
+
+								<div class="sponsor-content">
+									<p class="sponsor-tier">{sponsor.tier}</p>
+									<h3>{sponsor.name}</h3>
+
+									{#if sponsor.description}
+										<p class="sponsor-description">
+											{sponsor.description}
+										</p>
+									{/if}
+
+									{#if sponsor.url}
+										<a
+											href={sponsor.url}
+											target="_blank"
+											rel="noreferrer"
+										>
+											Visit sponsor
+											<span aria-hidden="true">↗</span>
+										</a>
+									{/if}
+								</div>
+							</article>
+						{/each}
+					</div>
+				</div>
+			</section>
+		{/if}
+
+		{#if checkoutState === "submission" && pendingPrice}
 			<section class="submission-panel wrap" aria-live="polite">
 				<VehicleSubmissionForm
 					eventId={data.event.id}
 					eventSlug={data.event.slug}
-					priceId={selectedPrice?.id ?? ""}
-					ticketTier={selectedPrice
-						? getPriceName(selectedPrice)
-						: "Vehicle entry"}
-					ticketPrice={selectedPrice
-						? getPriceAmount(selectedPrice)
-						: 0}
+					priceId={pendingPrice.id}
+					ticketTier={getPriceName(pendingPrice)}
+					ticketPrice={getPriceAmount(pendingPrice)}
 					ticketQuantity={Number(quantity)}
 					onsucceed={completeVehicleSubmission}
 					oncancel={() => {
+						pendingPrice = null;
 						checkoutState = "idle";
 					}}
 				/>
@@ -293,8 +329,7 @@
 								return;
 							}
 
-							selectedPriceID = pendingPrice.id;
-							void startStripeCheckout();
+							void createStripeCheckout(pendingPrice);
 						}}
 					>
 						Continue to Stripe
@@ -344,12 +379,7 @@
 							</Label>
 						{/each}
 					</RadioGroup.Root>
-					<form
-						onsubmit={(event) => {
-							event.preventDefault();
-							void startStripeCheckout();
-						}}
-					>
+					<div>
 						<input
 							type="hidden"
 							name="ticketId"
@@ -386,8 +416,9 @@
 							</strong>
 						</div>
 						<Button
-							type="submit"
-							disabled={!selectedPrice ||
+							type="button"
+							onclick={openCheckout}
+							disabled={!getSelectedPrice() ||
 								checkoutState === "loading" ||
 								data.event.status === "sold_out"}
 						>
@@ -399,7 +430,7 @@
 						<p class="secure-note">
 							Secure, hosted checkout. Prices shown in USD.
 						</p>
-					</form>
+					</div>
 				</div>
 			</div>
 		</section>
@@ -507,6 +538,127 @@
 	.detail-highlights li {
 		padding: 20px 0;
 		border-bottom: 1px solid var(--border);
+	}
+	.sponsors-section {
+		padding-block: 130px;
+		background: var(--background);
+	}
+
+	.sponsors-layout {
+		display: grid;
+		grid-template-columns: 0.75fr 1.25fr;
+		gap: 100px;
+		align-items: start;
+	}
+
+	.sponsors-heading h2 {
+		margin: 20px 0 0;
+		font-family: var(--font-display);
+		font-size: clamp(72px, 8vw, 145px);
+		font-weight: 800;
+		letter-spacing: -0.05em;
+		line-height: 0.78;
+		text-transform: uppercase;
+	}
+
+	.sponsors-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px;
+	}
+
+	.sponsor-card {
+		display: flex;
+		flex-direction: column;
+		min-height: 320px;
+		padding: 28px;
+		border: 1px solid var(--border);
+		transition:
+			background-color 180ms ease,
+			transform 180ms ease;
+	}
+
+	.sponsor-card:hover {
+		background: color-mix(in srgb, var(--primary) 6%, var(--background));
+		transform: translateY(-4px);
+	}
+
+	.sponsor-logo {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 130px;
+		margin-bottom: 28px;
+		background: var(--secondary);
+		color: var(--background);
+	}
+
+	.sponsor-logo img {
+		width: 100%;
+		height: 100%;
+		padding: 22px;
+		object-fit: contain;
+	}
+
+	.sponsor-logo span {
+		font-family: var(--font-display);
+		font-size: 80px;
+		font-weight: 800;
+		line-height: 1;
+		text-transform: uppercase;
+	}
+
+	.sponsor-content {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.sponsor-tier {
+		margin: 0 0 8px;
+		color: var(--primary);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+
+	.sponsor-card h3 {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: 36px;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		line-height: 0.9;
+		text-transform: uppercase;
+	}
+
+	.sponsor-description {
+		margin: 18px 0 0;
+		color: var(--muted);
+		font-size: 14px;
+		line-height: 1.5;
+	}
+
+	.sponsor-card a {
+		margin-top: auto;
+		padding-top: 24px;
+		color: var(--foreground);
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.sponsor-card a:hover {
+		color: var(--primary);
+	}
+
+	.sponsor-card a span {
+		margin-left: 6px;
+		color: var(--primary);
 	}
 	.ticket-section {
 		padding-block: 130px;
@@ -629,6 +781,29 @@
 		.detail-highlights {
 			border-top: 0;
 			border-left: 1px solid var(--border);
+		}
+		.sponsors-section {
+			padding-block: 80px;
+		}
+
+		.sponsors-layout {
+			display: block;
+		}
+
+		.sponsors-heading {
+			margin-bottom: 50px;
+		}
+
+		.sponsors-heading h2 {
+			font-size: 76px;
+		}
+
+		.sponsors-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.sponsor-card {
+			min-height: 290px;
 		}
 		.ticket-section {
 			padding-block: 80px;

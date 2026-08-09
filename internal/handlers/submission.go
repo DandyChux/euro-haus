@@ -18,6 +18,7 @@ import (
 
 	"github.com/dandychux/euro-haus/internal/models"
 	"github.com/dandychux/euro-haus/internal/services"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/gorilla/mux"
@@ -71,8 +72,15 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 
 	priceID := strings.TrimSpace(r.FormValue("price_id"))
 
+	uuid, err := uuid.NewV7()
+	if err != nil {
+		log.Printf("Failed to generate UUID: %v", err)
+		http.Error(w, "Unable to generate submission ID", http.StatusInternalServerError)
+		return
+	}
+
 	submission := models.VehicleSubmissionDTO{
-		ID:                   generateSubmissionID(),
+		ID:                   uuid.String(),
 		EventID:              event.ID,
 		EventSlug:            event.Slug,
 		ParticipantName:      strings.TrimSpace(r.FormValue("participant_name")),

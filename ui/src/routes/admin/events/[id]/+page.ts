@@ -13,7 +13,22 @@ export const load: PageLoad = async ({ fetch, params }) => {
 		throw error(404, "Event not found");
 	}
 
-	const form = await superValidate(event, zod4(eventSchema));
+	const form = await superValidate(
+		{
+			...event,
+			prices: event.prices.map((price) => ({
+				...price,
+				included_products: Array.isArray(price.included_products)
+					? price.included_products
+					: [],
+				sold_out:
+					typeof price.sold_out === "boolean"
+						? price.sold_out
+						: false,
+			})),
+		},
+		zod4(eventSchema),
+	);
 
 	return {
 		event,

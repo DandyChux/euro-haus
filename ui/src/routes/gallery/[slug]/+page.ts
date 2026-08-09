@@ -1,12 +1,18 @@
 import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
-import { getEventByID, getEventGallery } from "$lib/services/event";
+import {
+	getEventByID,
+	getEventGallery,
+	getAllEvents,
+} from "$lib/services/event";
 
 export const load: PageLoad = async ({ fetch, params, url }) => {
-	const [event, images] = await Promise.all([
-		getEventByID(fetch, params.id),
-		getEventGallery(fetch, params.id),
+	const [allEvents, images] = await Promise.all([
+		getAllEvents(fetch, true),
+		getEventGallery(fetch, params.slug),
 	]);
+
+	let event = allEvents.find((e) => e.slug === params.slug);
 
 	if (!event && images.length === 0) {
 		error(404, "Gallery not found");
@@ -20,7 +26,7 @@ export const load: PageLoad = async ({ fetch, params, url }) => {
 	const paginatedImages = images.slice(start, end);
 
 	return {
-		title: event?.title ?? "Gallery",
+		title: event?.name ?? "Event",
 		event,
 		images: paginatedImages,
 		currentPage,

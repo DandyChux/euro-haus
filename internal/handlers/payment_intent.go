@@ -426,8 +426,8 @@ func GetCheckoutSession(w http.ResponseWriter, r *http.Request) {
 type CreateEventCheckoutSessionRequest struct {
 	PriceID       string         `json:"price_id"`
 	Quantity      int64          `json:"quantity"`
-	EventID       string         `json:"eventId"`
-	AddOnProducts []CheckoutAddOn `json:"addOnProducts"`
+	EventID       string         `json:"event_id"`
+	AddOnProducts []CheckoutAddOn `json:"addon_products"`
 	CustomerEmail string         `json:"customer_email"`
 }
 

@@ -1,10 +1,6 @@
 <script lang="ts">
 	import { untrack } from "svelte";
-	import {
-		superForm,
-		type Infer,
-		type SuperValidated,
-	} from "sveltekit-superforms";
+	import { superForm, type SuperValidated } from "sveltekit-superforms";
 	import { zod4Client } from "sveltekit-superforms/adapters";
 	import { toast } from "svelte-sonner";
 
@@ -37,7 +33,13 @@
 			validators: zod4Client(eventSchema),
 
 			async onUpdate({ form }) {
-				if (!form.valid) return;
+				if (!form.valid) {
+					console.error(
+						"Event form validation failed: ",
+						form.errors,
+					);
+					return;
+				}
 
 				try {
 					await onsaved({
@@ -61,6 +63,8 @@
 	let uploadingImage = $state(false);
 	let uploadProgress = $state(0);
 	let imageInput: HTMLInputElement;
+	let imageUrl = $state("");
+	let imageUrlError = $state("");
 
 	interface UploadedMediaResponse {
 		success: boolean;
@@ -73,6 +77,29 @@
 			folder: string;
 		};
 		message: string;
+	}
+
+	function addImageUrl() {
+		const url = imageUrl.trim();
+
+		if (!url) {
+			return;
+		}
+
+		try {
+			const parsedUrl = new URL(url);
+
+			if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+				throw new Error("Unsupported URL protocol");
+			}
+		} catch {
+			imageUrlError = "Enter a valid HTTP or HTTPS image URL.";
+			return;
+		}
+
+		$formData.images = [...$formData.images, url];
+		imageUrl = "";
+		imageUrlError = "";
 	}
 
 	function removeImage(index: number) {
@@ -315,7 +342,7 @@
 	}
 
 	function generateSlug() {
-		$formData.slug = `${$formData.name}-${$formData.date.slice(0, 10)}`
+		$formData.slug = `${$formData.name}`
 			.toLowerCase()
 			.normalize("NFKD")
 			.replace(/[^a-z0-9]+/g, "-")
@@ -827,8 +854,42 @@
 			<h2 class="text-lg font-semibold">Event images</h2>
 
 			<p class="text-sm text-muted-foreground">
-				Upload one or more images to DigitalOcean Spaces. The first
-				image is used as the default event image for Stripe.
+				Upload images or add existing CDN URLs. The first image is used
+				as the default event image for Stripe.
+			</p>
+		</div>
+
+		<div class="space-y-2">
+			<label for="event-image-url" class="text-sm font-medium">
+				Add an existing image URL
+			</label>
+
+			<div class="flex gap-2">
+				<Input
+					id="event-image-url"
+					bind:value={imageUrl}
+					type="url"
+					placeholder="https://cdn.example.com/event-image.jpg"
+					aria-invalid={imageUrlError ? "true" : undefined}
+					onkeydown={(event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							addImageUrl();
+						}
+					}}
+				/>
+
+				<Button type="button" onclick={addImageUrl}>Add image</Button>
+			</div>
+
+			{#if imageUrlError}
+				<p class="text-sm text-destructive">
+					{imageUrlError}
+				</p>
+			{/if}
+
+			<p class="text-sm text-muted-foreground">
+				Use a publicly accessible HTTP or HTTPS image URL.
 			</p>
 		</div>
 
@@ -1186,6 +1247,25 @@
 											<Form.Label>
 												Most popular tier
 											</Form.Label>
+										</div>
+									{/snippet}
+								</Form.Control>
+
+								<Form.Control>
+									{#snippet children({ props })}
+										<div class="flex items-center gap-2">
+											<Checkbox
+												{...props}
+												checked={$formData.prices[index]
+													.sold_out ?? false}
+												onCheckedChange={(value) =>
+													($formData.prices[
+														index
+													].sold_out =
+														value === true)}
+											/>
+
+											<Form.Label>Sold out</Form.Label>
 										</div>
 									{/snippet}
 								</Form.Control>
