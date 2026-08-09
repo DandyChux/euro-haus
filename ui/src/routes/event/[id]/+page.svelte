@@ -46,23 +46,40 @@
 		data.event.prices.find((price) => price.id === selectedPriceID),
 	);
 
-	async function startStripeCheckout(price: Price | undefined) {
-		if (!price || !price.id) {
-			console.error("Event price is missing an ID", {
+	function getSelectedPrice(): Price | undefined {
+		return data.event.prices.find((price) => price.id === selectedPriceID);
+	}
+
+	function openCheckout(): void {
+		const price = getSelectedPrice();
+
+		console.log("CHECKOUT DEBUG", {
+			selectedPriceID,
+			price,
+			requires_submission: price?.requires_submission,
+			requiresSubmissionType: typeof price?.requires_submission,
+		});
+
+		if (!price?.id) {
+			console.error("No ticket price selected", {
 				selectedPriceID,
 				prices: data.event.prices,
 			});
-
-			checkoutState = "idle";
 			return;
 		}
 
-		if (price.requires_submission) {
+		// String(...) handles incorrectly serialized production values such as
+		// "true" while remaining compatible with the correct boolean response.
+		if (String(price.requires_submission) === "true") {
 			pendingPrice = price;
 			checkoutState = "submission";
 			return;
 		}
 
+		void createStripeCheckout(price);
+	}
+
+	async function createStripeCheckout(price: Price): Promise<void> {
 		if (data.event.status === "sold_out") {
 			return;
 		}
@@ -70,26 +87,14 @@
 		checkoutState = "loading";
 
 		try {
-			// const response = await fetch("/api/create-event-checkout-session", {
-			// 	method: "POST",
-			// 	headers: {
-			// 		"content-type": "application/json",
-			// 	},
-			// 	body: JSON.stringify({
-			// 		eventId: data.event.id,
-			// 		price_id: price.id,
-			// 		quantity: Number(quantity),
-			// 		addon_products: selectedAddOns,
-			// 	}),
-			// });
 			const response = await apiClient.post<{
 				url?: string;
 				session_id?: string;
 			}>("/create-event-checkout-session", {
-				event_id: data.event.id,
+				eventId: data.event.id,
 				price_id: price.id,
 				quantity: Number(quantity),
-				addon_products: selectedAddOns,
+				addOnProducts: selectedAddOns,
 			});
 
 			if (!response.url) {
@@ -101,30 +106,6 @@
 			console.error("Unable to create Stripe Checkout session", error);
 			checkoutState = "idle";
 		}
-	}
-
-	function handleTierSelection(price: Price) {
-		if (price.sold_out) {
-			return;
-		}
-
-		selectedPriceID = price.id;
-
-		if (price.requires_submission) {
-			checkoutState = "submission";
-			return;
-		}
-
-		if (
-			price.included_products?.length === 0 &&
-			data.linked_products.length > 0
-		) {
-			pendingPrice = price;
-			checkoutState = "merchandise";
-			return;
-		}
-
-		void startStripeCheckout();
 	}
 
 	async function completeVehicleSubmission(
@@ -216,21 +197,75 @@
 			</div>
 		</section>
 
-		{#if checkoutState === "submission"}
+		{#if data.event.sponsors.length > 0}
+			<section
+				class="sponsors-section"
+				aria-labelledby="sponsors-heading"
+			>
+				<div class="wrap sponsors-layout">
+					<div class="sponsors-heading">
+						<p class="eyebrow">Partners</p>
+						<h2 id="sponsors-heading">
+							Our<br /><em>sponsors.</em>
+						</h2>
+					</div>
+
+					<div class="sponsors-grid">
+						{#each data.event.sponsors as sponsor, index (`${sponsor.name}-${index}`)}
+							<article class="sponsor-card">
+								<div class="sponsor-logo">
+									{#if sponsor.logo}
+										<img
+											src={sponsor.logo}
+											alt={`${sponsor.name} logo`}
+										/>
+									{:else}
+										<span aria-hidden="true">
+											{sponsor.name.slice(0, 1)}
+										</span>
+									{/if}
+								</div>
+
+								<div class="sponsor-content">
+									<p class="sponsor-tier">{sponsor.tier}</p>
+									<h3>{sponsor.name}</h3>
+
+									{#if sponsor.description}
+										<p class="sponsor-description">
+											{sponsor.description}
+										</p>
+									{/if}
+
+									{#if sponsor.url}
+										<a
+											href={sponsor.url}
+											target="_blank"
+											rel="noreferrer"
+										>
+											Visit sponsor
+											<span aria-hidden="true">↗</span>
+										</a>
+									{/if}
+								</div>
+							</article>
+						{/each}
+					</div>
+				</div>
+			</section>
+		{/if}
+
+		{#if checkoutState === "submission" && pendingPrice}
 			<section class="submission-panel wrap" aria-live="polite">
 				<VehicleSubmissionForm
 					eventId={data.event.id}
 					eventSlug={data.event.slug}
-					priceId={selectedPrice?.id ?? ""}
-					ticketTier={selectedPrice
-						? getPriceName(selectedPrice)
-						: "Vehicle entry"}
-					ticketPrice={selectedPrice
-						? getPriceAmount(selectedPrice)
-						: 0}
+					priceId={pendingPrice.id}
+					ticketTier={getPriceName(pendingPrice)}
+					ticketPrice={getPriceAmount(pendingPrice)}
 					ticketQuantity={Number(quantity)}
 					onsucceed={completeVehicleSubmission}
 					oncancel={() => {
+						pendingPrice = null;
 						checkoutState = "idle";
 					}}
 				/>
@@ -294,69 +329,11 @@
 								return;
 							}
 
-							selectedPriceID = pendingPrice.id;
-							void startStripeCheckout(selectedPrice);
+							void createStripeCheckout(pendingPrice);
 						}}
 					>
 						Continue to Stripe
 					</button>
-				</div>
-			</section>
-		{/if}
-
-		{#if data.event.sponsors.length > 0}
-			<section
-				class="sponsors-section"
-				aria-labelledby="sponsors-heading"
-			>
-				<div class="wrap sponsors-layout">
-					<div class="sponsors-heading">
-						<p class="eyebrow">Partners</p>
-						<h2 id="sponsors-heading">
-							Our<br /><em>sponsors.</em>
-						</h2>
-					</div>
-
-					<div class="sponsors-grid">
-						{#each data.event.sponsors as sponsor, index (`${sponsor.name}-${index}`)}
-							<article class="sponsor-card">
-								<div class="sponsor-logo">
-									{#if sponsor.logo}
-										<img
-											src={sponsor.logo}
-											alt={`${sponsor.name} logo`}
-										/>
-									{:else}
-										<span aria-hidden="true">
-											{sponsor.name.slice(0, 1)}
-										</span>
-									{/if}
-								</div>
-
-								<div class="sponsor-content">
-									<p class="sponsor-tier">{sponsor.tier}</p>
-									<h3>{sponsor.name}</h3>
-
-									{#if sponsor.description}
-										<p class="sponsor-description">
-											{sponsor.description}
-										</p>
-									{/if}
-
-									{#if sponsor.url}
-										<a
-											href={sponsor.url}
-											target="_blank"
-											rel="noreferrer"
-										>
-											Visit sponsor
-											<span aria-hidden="true">↗</span>
-										</a>
-									{/if}
-								</div>
-							</article>
-						{/each}
-					</div>
 				</div>
 			</section>
 		{/if}
@@ -402,12 +379,7 @@
 							</Label>
 						{/each}
 					</RadioGroup.Root>
-					<form
-						onsubmit={(event) => {
-							event.preventDefault();
-							void startStripeCheckout(selectedPrice);
-						}}
-					>
+					<div>
 						<input
 							type="hidden"
 							name="ticketId"
@@ -444,8 +416,9 @@
 							</strong>
 						</div>
 						<Button
-							type="submit"
-							disabled={!selectedPrice ||
+							type="button"
+							onclick={openCheckout}
+							disabled={!getSelectedPrice() ||
 								checkoutState === "loading" ||
 								data.event.status === "sold_out"}
 						>
@@ -457,7 +430,7 @@
 						<p class="secure-note">
 							Secure, hosted checkout. Prices shown in USD.
 						</p>
-					</form>
+					</div>
 				</div>
 			</div>
 		</section>
