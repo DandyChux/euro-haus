@@ -1,29 +1,35 @@
 <script lang="ts">
+	import { untrack } from "svelte";
 	import { fade, fly } from "svelte/transition";
 	import { toast } from "svelte-sonner";
+	import { superForm, type SuperValidated } from "sveltekit-superforms";
+	import { zod4Client } from "sveltekit-superforms/adapters";
+
+	import * as Form from "$lib/components/ui/form";
+	import { Input } from "$lib/components/ui/input";
+	import { Textarea } from "$lib/components/ui/textarea";
+	import { Button } from "$lib/components/ui/button";
 
 	import apiClient from "$lib/api";
-	import type { VehicleSubmission } from "$lib/schemas/event";
+	import {
+		vehicleSubmissionFormSchema,
+		type VehicleSubmission,
+		type VehicleSubmissionFormData,
+	} from "$lib/schemas/event";
 
 	interface Props {
+		data: {
+			form: SuperValidated<VehicleSubmissionFormData>;
+		};
+
 		eventId: string;
-		eventSlug: string;
 		priceId: string;
 		ticketTier: string;
 		ticketPrice: number;
 		ticketQuantity: number;
+
 		onsucceed: (submission: VehicleSubmission) => Promise<void>;
 		oncancel: () => void;
-	}
-
-	interface VehicleDetails {
-		participantName: string;
-		participantEmail: string;
-		participantPhone: string;
-		vehicleYear: string;
-		vehicleMake: string;
-		vehicleModel: string;
-		vehicleDescription: string;
 	}
 
 	interface UploadProgress {
@@ -33,8 +39,8 @@
 	}
 
 	let {
+		data,
 		eventId,
-		eventSlug,
 		priceId,
 		ticketTier,
 		ticketPrice,
@@ -43,31 +49,122 @@
 		oncancel,
 	}: Props = $props();
 
+	const form = superForm(
+		untrack(() => data.form),
+		{
+			SPA: true,
+			dataType: "json",
+			validators: zod4Client(vehicleSubmissionFormSchema),
+
+			async onUpdate({ form }) {
+				if (!form.valid) {
+					console.error(
+						"Vehicle submission validation failed:",
+						form.errors,
+					);
+					return;
+				}
+
+				if (files.length === 0) {
+					errorMessage =
+						"Add at least one image of your vehicle to continue.";
+					return;
+				}
+
+				if (!priceId) {
+					errorMessage = "The selected ticket price is unavailable.";
+					return;
+				}
+
+				submitting = true;
+				uploadProgress = 0;
+				errorMessage = "";
+
+				try {
+					const body = new FormData();
+
+					body.set("event_id", form.data.event_id);
+					body.set("participant_name", form.data.participant_name);
+					body.set("participant_email", form.data.participant_email);
+					body.set(
+						"participant_phone",
+						form.data.participant_phone ?? "",
+					);
+					body.set("vehicle_year", form.data.vehicle_year);
+					body.set("vehicle_make", form.data.vehicle_make);
+					body.set("vehicle_model", form.data.vehicle_model);
+					body.set(
+						"vehicle_description",
+						form.data.vehicle_description ?? "",
+					);
+					body.set(
+						"vehicle_modifications",
+						modifications
+							.filter((modification) => modification.trim())
+							.join("\n"),
+					);
+					body.set("price_id", form.data.price_id);
+
+					for (const file of files) {
+						body.append("images", file);
+					}
+
+					const submission =
+						await apiClient.upload<VehicleSubmission>(
+							"/submissions",
+							body,
+							({ percent }: UploadProgress) => {
+								uploadProgress = percent;
+							},
+						);
+
+					if (!submission.id) {
+						throw new Error(
+							"The submission was created without an ID.",
+						);
+					}
+
+					await onsucceed(submission);
+
+					toast.success(
+						"Vehicle submitted. Continue to checkout when ready.",
+					);
+				} catch (error) {
+					console.error("Vehicle submission failed:", error);
+
+					errorMessage =
+						error instanceof Error
+							? error.message
+							: "Unable to submit your vehicle right now.";
+				} finally {
+					submitting = false;
+				}
+			},
+		},
+	);
+
+	const { form: formData, enhance, submitting: formSubmitting } = form;
+
 	let step = $state<1 | 2>(1);
-
-	let details = $state<VehicleDetails>({
-		participantName: "",
-		participantEmail: "",
-		participantPhone: "",
-		vehicleYear: "",
-		vehicleMake: "",
-		vehicleModel: "",
-		vehicleDescription: "",
-	});
-
-	let modifications = $state<string[]>([]);
 	let files = $state<File[]>([]);
 	let previews = $state<string[]>([]);
+	let modifications = $state<string[]>([]);
 	let uploadProgress = $state(0);
 	let submitting = $state(false);
 	let errorMessage = $state("");
 
-	let formElement: HTMLFormElement;
-
 	const total = $derived(ticketPrice * ticketQuantity);
+	const isSubmitting = $derived(submitting || $formSubmitting);
+
+	$formData.event_id = eventId;
+	$formData.price_id = priceId;
 
 	function addModification() {
 		modifications = [...modifications, ""];
+	}
+
+	function updateModification(index: number, value: string) {
+		modifications[index] = value;
 	}
 
 	function removeModification(index: number) {
@@ -79,6 +176,8 @@
 	function addImages(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		const selected = Array.from(input.files ?? []);
+
+		errorMessage = "";
 
 		const valid = selected.filter(
 			(file) =>
@@ -99,98 +198,36 @@
 		files = nextFiles;
 		previews = nextFiles.map((file) => URL.createObjectURL(file));
 
-		// Allows the same file to be selected again after removing it.
 		input.value = "";
 	}
 
 	function removeImage(index: number) {
+		const preview = previews[index];
+
+		if (preview) {
+			URL.revokeObjectURL(preview);
+		}
+
 		files = files.filter((_, fileIndex) => fileIndex !== index);
 		previews = previews.filter((_, fileIndex) => fileIndex !== index);
 	}
 
-	function continueToImages() {
+	async function continueToImages() {
 		errorMessage = "";
 
-		if (!formElement.reportValidity()) {
+		const validationErrors = await Promise.all([
+			form.validate("participant_name"),
+			form.validate("participant_email"),
+			form.validate("vehicle_year"),
+			form.validate("vehicle_make"),
+			form.validate("vehicle_model"),
+		]);
+
+		if (validationErrors.some((errors) => (errors?.length ?? 0) > 0)) {
 			return;
 		}
 
 		step = 2;
-	}
-
-	async function submit(event: SubmitEvent) {
-		event.preventDefault();
-		errorMessage = "";
-
-		if (step === 1) {
-			continueToImages();
-			return;
-		}
-
-		if (files.length === 0) {
-			errorMessage =
-				"Add at least one image of your vehicle to continue.";
-			return;
-		}
-
-		if (!priceId) {
-			errorMessage = "The selected ticket price is unavailable.";
-			return;
-		}
-
-		submitting = true;
-		uploadProgress = 0;
-
-		const body = new FormData();
-
-		// These names match internal/handlers/submission.go.
-		body.set("event_id", eventId);
-		body.set("event_slug", eventSlug);
-		body.set("participant_name", details.participantName);
-		body.set("participant_email", details.participantEmail);
-		body.set("participant_phone", details.participantPhone);
-		body.set("vehicle_year", details.vehicleYear);
-		body.set("vehicle_make", details.vehicleMake);
-		body.set("vehicle_model", details.vehicleModel);
-		body.set("vehicle_description", details.vehicleDescription);
-		body.set(
-			"vehicle_modifications",
-			modifications
-				.filter((modification) => modification.trim())
-				.join("\n"),
-		);
-
-		// This must be the Stripe Price ID, not the display name.
-		body.set("price_id", priceId);
-
-		for (const file of files) {
-			body.append("images", file);
-		}
-
-		try {
-			const submission = await apiClient.upload<VehicleSubmission>(
-				"/submissions",
-				body,
-				({ percent }: UploadProgress) => {
-					uploadProgress = percent;
-				},
-			);
-
-			await onsucceed(submission);
-
-			toast.success(
-				"Vehicle submitted. Continue to checkout when ready.",
-			);
-		} catch (error) {
-			console.error("Vehicle submission failed:", error);
-
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "Unable to submit your vehicle right now.";
-		} finally {
-			submitting = false;
-		}
 	}
 </script>
 
@@ -257,89 +294,146 @@
 		</p>
 	{/if}
 
-	<form bind:this={formElement} onsubmit={submit}>
+	<form method="POST" use:enhance>
 		{#if step === 1}
 			<div class="form-grid" in:fade={{ duration: 180 }}>
-				<label class="full">
-					Full name
-					<input
-						bind:value={details.participantName}
-						required
-						minlength="2"
-						placeholder="Alex Morgan"
-					/>
-				</label>
+				<Form.Field {form} name="participant_name" class="full">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Full name</Form.Label>
 
-				<label>
-					Email
-					<input
-						bind:value={details.participantEmail}
-						required
-						type="email"
-						placeholder="alex@example.com"
-					/>
-				</label>
+							<Input
+								{...props}
+								bind:value={$formData.participant_name}
+								placeholder="Alex Morgan"
+								autocomplete="name"
+							/>
+						{/snippet}
+					</Form.Control>
 
-				<label>
-					Phone <span>(optional)</span>
-					<input
-						bind:value={details.participantPhone}
-						type="tel"
-						placeholder="(555) 123-4567"
-					/>
-				</label>
+					<Form.FieldErrors />
+				</Form.Field>
 
-				<label>
-					Year
-					<input
-						bind:value={details.vehicleYear}
-						required
-						type="number"
-						pattern="[0-9]{4}"
-						maxlength={4}
-						inputmode="numeric"
-						placeholder="2024"
-					/>
-				</label>
+				<Form.Field {form} name="participant_email">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Email</Form.Label>
 
-				<label>
-					Make
-					<input
-						bind:value={details.vehicleMake}
-						required
-						minlength="2"
-						placeholder="Porsche"
-					/>
-				</label>
+							<Input
+								{...props}
+								type="email"
+								bind:value={$formData.participant_email}
+								placeholder="alex@example.com"
+								autocomplete="email"
+							/>
+						{/snippet}
+					</Form.Control>
 
-				<label>
-					Model
-					<input
-						bind:value={details.vehicleModel}
-						required
-						minlength="2"
-						placeholder="911 GT3"
-					/>
-				</label>
+					<Form.FieldErrors />
+				</Form.Field>
 
-				<label class="full">
-					Tell us about the car <span>(optional)</span>
-					<textarea
-						bind:value={details.vehicleDescription}
-						rows="4"
-						placeholder="What makes this car special?"></textarea>
-				</label>
+				<Form.Field {form} name="participant_phone">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>
+								Phone <span>(optional)</span>
+							</Form.Label>
+
+							<Input
+								{...props}
+								type="tel"
+								bind:value={$formData.participant_phone}
+								placeholder="(555) 123-4567"
+								autocomplete="tel"
+							/>
+						{/snippet}
+					</Form.Control>
+
+					<Form.FieldErrors />
+				</Form.Field>
+
+				<Form.Field {form} name="vehicle_year">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Year</Form.Label>
+
+							<Input
+								{...props}
+								type="text"
+								inputmode="numeric"
+								maxlength={4}
+								bind:value={$formData.vehicle_year}
+								placeholder="2024"
+							/>
+						{/snippet}
+					</Form.Control>
+
+					<Form.FieldErrors />
+				</Form.Field>
+
+				<Form.Field {form} name="vehicle_make">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Make</Form.Label>
+
+							<Input
+								{...props}
+								bind:value={$formData.vehicle_make}
+								placeholder="Porsche"
+								autocomplete="organization"
+							/>
+						{/snippet}
+					</Form.Control>
+
+					<Form.FieldErrors />
+				</Form.Field>
+
+				<Form.Field {form} name="vehicle_model">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Model</Form.Label>
+
+							<Input
+								{...props}
+								bind:value={$formData.vehicle_model}
+								placeholder="911 GT3"
+							/>
+						{/snippet}
+					</Form.Control>
+
+					<Form.FieldErrors />
+				</Form.Field>
+
+				<Form.Field {form} name="vehicle_description" class="full">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>
+								Tell us about the car
+								<span>(optional)</span>
+							</Form.Label>
+
+							<Textarea
+								{...props}
+								bind:value={$formData.vehicle_description}
+								rows={4}
+								placeholder="What makes this car special?"
+							/>
+						{/snippet}
+					</Form.Control>
+
+					<Form.FieldErrors />
+				</Form.Field>
 			</div>
 
 			<div class="form-actions">
-				<button type="button" class="secondary" onclick={oncancel}>
+				<Button type="button" variant="outline" onclick={oncancel}>
 					Cancel
-				</button>
+				</Button>
 
-				<button type="submit" class="primary">
+				<Button type="button" onclick={continueToImages}>
 					Continue
 					<span aria-hidden="true">→</span>
-				</button>
+				</Button>
 			</div>
 		{:else}
 			<div class="photo-step" in:fade={{ duration: 180 }}>
@@ -360,7 +454,7 @@
 						accept="image/jpeg,image/png,image/webp"
 						multiple
 						onchange={addImages}
-						disabled={submitting}
+						disabled={isSubmitting}
 					/>
 
 					<span class="upload-icon">＋</span>
@@ -400,58 +494,67 @@
 							<h3>What have you changed?</h3>
 						</div>
 
-						<button
+						<Button
 							type="button"
-							class="secondary small"
+							variant="outline"
+							size="sm"
 							onclick={addModification}
 						>
 							＋ Add modification
-						</button>
+						</Button>
 					</div>
 
 					{#if modifications.length === 0}
 						<p class="empty-state">No modifications added yet.</p>
 					{:else}
-						{#each modifications as _, index (index)}
+						{#each modifications as modification, index (index)}
 							<div class="modification-row">
-								<input
-									bind:value={modifications[index]}
+								<Input
+									value={modification}
+									oninput={(event) =>
+										updateModification(
+											index,
+											(
+												event.currentTarget as HTMLInputElement
+											).value,
+										)}
 									placeholder="e.g. KW suspension, forged wheels"
+									disabled={isSubmitting}
 								/>
 
-								<button
+								<Button
 									type="button"
+									variant="ghost"
 									onclick={() => removeModification(index)}
 									aria-label={`Remove modification ${index + 1}`}
 								>
 									×
-								</button>
+								</Button>
 							</div>
 						{/each}
 					{/if}
 				</div>
 
 				<div class="form-actions">
-					<button
+					<Button
 						type="button"
-						class="secondary"
+						variant="outline"
 						onclick={() => (step = 1)}
-						disabled={submitting}
+						disabled={isSubmitting}
 					>
 						← Back
-					</button>
+					</Button>
 
-					<button
+					<Button
 						type="submit"
-						class="primary"
-						disabled={submitting || files.length === 0}
+						disabled={isSubmitting || files.length === 0}
 					>
-						{#if submitting}
+						{#if isSubmitting}
 							Uploading {uploadProgress}%…
 						{:else}
 							Submit and continue
 						{/if}
-					</button>
+					</Button>
 				</div>
 			</div>
 		{/if}
@@ -571,64 +674,26 @@
 		gap: 18px;
 	}
 
-	label {
-		display: grid;
-		gap: 8px;
+	.form-grid :global([data-slot="field"]) {
+		min-width: 0;
+	}
+
+	.form-grid :global([data-slot="field"].full) {
+		grid-column: 1 / -1;
+	}
+
+	.form-grid :global([data-slot="label"]) {
 		color: var(--foreground);
 		font-size: 12px;
 	}
 
-	label.full {
-		grid-column: 1 / -1;
-	}
-
-	input,
-	textarea {
-		width: 100%;
-		border: 1px solid var(--border);
-		border-radius: 0;
-		padding: 13px 14px;
-		background: transparent;
-		color: inherit;
-		font: inherit;
-	}
-
-	input:focus,
-	textarea:focus {
-		outline: 2px solid var(--primary);
-		outline-offset: 1px;
+	.modification-row :global(input) {
+		flex: 1;
 	}
 
 	.form-actions {
 		align-items: center;
 		margin-top: 34px;
-	}
-
-	.primary,
-	.secondary {
-		border: 1px solid var(--foreground);
-		padding: 13px 18px;
-		cursor: pointer;
-		font: inherit;
-	}
-
-	.primary {
-		background: var(--foreground);
-		color: var(--background);
-	}
-
-	.primary:disabled {
-		cursor: wait;
-		opacity: 0.55;
-	}
-
-	.secondary {
-		background: transparent;
-	}
-
-	.small {
-		padding: 9px 12px;
-		font-size: 11px;
 	}
 
 	.photo-step {
@@ -721,7 +786,7 @@
 		margin-top: 10px;
 	}
 
-	.modification-row input {
+	.modification-row :global(input) {
 		flex: 1;
 	}
 
@@ -730,7 +795,7 @@
 			grid-template-columns: 1fr;
 		}
 
-		label.full {
+		.form-grid :global([data-slot="field"].full) {
 			grid-column: auto;
 		}
 

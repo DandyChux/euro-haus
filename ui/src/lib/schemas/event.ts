@@ -64,7 +64,7 @@ export type Event = z.infer<typeof eventSchema>;
 export const eventAttendeeSchema = z.object({
 	token: z.string(),
 	customer_name: z.string(),
-	customer_email: z.string(),
+	customer_email: z.email(),
 	ticket_type: z.string(),
 	quantity: z.number(),
 	checked_in: z.boolean(),
@@ -83,7 +83,7 @@ export const ticketSchema = z.object({
 	event_name: z.string(),
 	status: z.string().default("active"),
 	customer_name: z.string(),
-	customer_email: z.string(),
+	customer_email: z.email(),
 	ticket_type: z.string().default("General"),
 	quantity: z.number().int().default(1),
 	checked_in: z.boolean().default(false),
@@ -100,7 +100,7 @@ export type Ticket = z.infer<typeof ticketSchema>;
 export const ticketInfoSchema = z.object({
 	valid: z.boolean(),
 	customer_name: z.string(),
-	customer_email: z.string(),
+	customer_email: z.email(),
 	event_id: z.string(),
 	quantity: z.number().int(),
 	checked_in: z.boolean(),
@@ -133,7 +133,7 @@ export const vehicleSubmissionSchema = z.object({
 	id: z.string(),
 	event_id: z.string(),
 	participant_name: z.string(),
-	participant_email: z.string(),
+	participant_email: z.email(),
 	participant_phone: z.string().optional(),
 	vehicle_year: z.string(),
 	vehicle_make: z.string(),
@@ -152,6 +152,39 @@ export const vehicleSubmissionSchema = z.object({
 });
 
 export type VehicleSubmission = z.infer<typeof vehicleSubmissionSchema>;
+
+export const vehicleSubmissionFormSchema = vehicleSubmissionSchema
+	.pick({
+		event_id: true,
+		participant_name: true,
+		participant_email: true,
+		participant_phone: true,
+		vehicle_year: true,
+		vehicle_make: true,
+		vehicle_model: true,
+		vehicle_description: true,
+		vehicle_modifications: true,
+		price_id: true,
+	})
+	.extend({
+		participant_name: z.string().trim().min(2, "Enter your full name."),
+		participant_email: z.email("Enter a valid email address.").trim(),
+		participant_phone: z.string().trim().optional(),
+		vehicle_year: z
+			.string()
+			.trim()
+			.regex(/^\d{4}$/, "Enter a four-digit year."),
+		vehicle_make: z.string().trim().min(2, "Enter the vehicle make."),
+		vehicle_model: z.string().trim().min(2, "Enter the vehicle model."),
+		vehicle_description: z.string().trim().optional(),
+		vehicle_modifications: z.string().optional(),
+		event_id: z.string().trim().min(1),
+		price_id: z.string().trim().min(1),
+	});
+
+export type VehicleSubmissionFormData = z.infer<
+	typeof vehicleSubmissionFormSchema
+>;
 
 export const eventCheckInSchema = z.object({
 	code: z.string().trim().min(1, "Ticket code is required"),

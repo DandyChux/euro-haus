@@ -223,8 +223,20 @@
 			requires_submission: false,
 			included_products: [],
 			quantity: undefined,
+			stock_quantity: undefined,
 			sold_out: false,
 		};
+	}
+
+	function setPriceStockQuantity(priceIndex: number, event: any) {
+		const rawValue = (event.currentTarget as HTMLInputElement).value;
+		const stockQuantity = Number(rawValue);
+
+		$formData.prices[priceIndex].stock_quantity = rawValue.trim()
+			? Number.isFinite(stockQuantity)
+				? Math.max(0, Math.floor(stockQuantity))
+				: undefined
+			: undefined;
 	}
 
 	function addPrice() {
@@ -1108,6 +1120,26 @@
 											oninput={(event) =>
 												setPriceQuantity(index, event)}
 											placeholder="10"
+										/>
+									{/snippet}
+								</Form.Control>
+
+								<Form.Control>
+									{#snippet children({ props })}
+										<Form.Label>Ticket stock</Form.Label>
+
+										<Input
+											{...props}
+											type="number"
+											min="0"
+											value={$formData.prices[index]
+												.stock_quantity ?? ""}
+											oninput={(event) =>
+												setPriceStockQuantity(
+													index,
+													event,
+												)}
+											placeholder="Leave blank for unlimited"
 										/>
 									{/snippet}
 								</Form.Control>
