@@ -88,13 +88,15 @@ type EventPriceWriteRequest struct {
 	RequiresApproval  bool     `json:"requires_approval"`
 	RequiresSubmission bool    `json:"requires_submission"`
 
+	Requirements []RequirementInput `json:"requirements"`
+
 	Quantity  int    `json:"quantity"`
 	Size      string `json:"size"`
 	Color     string `json:"color"`
 	SoldOut   bool   `json:"sold_out"`
+	StockQuantity *int `json:"stock_quantity"`
 
 	IncludedProducts []IncludedProductWriteRequest `json:"included_products"`
-	StockQuantity *int `json:"stock_quantity"`
 }
 
 type IncludedProductWriteRequest struct {
@@ -219,6 +221,11 @@ func loadEventPrices(
 	err := services.GetDB().
 		WithContext(ctx).
 		Preload("IncludedProductLinks").
+		Preload("Requirements", func(tx *gorm.DB) *gorm.DB {
+			return tx.
+				Where("active = ?", true).
+				Order("sort_order ASC, id ASC")
+		}).
 		Where(
 			"stripe_product_id = ? AND active = TRUE",
 			event.StripeProductID,
@@ -408,6 +415,101 @@ func replacePriceIncludedProductLinks(
 	}
 
 	return tx.Create(&links).Error
+}
+
+func replacePriceRequirements(
+	tx *gorm.DB,
+	priceID string,
+	inputs []RequirementInput,
+) error {
+	seenKeys := make(map[string]struct{}, len(inputs))
+
+	for index := range inputs {
+		input := inputs[index]
+
+		input.Key = strings.TrimSpace(input.Key)
+		input.Label = strings.TrimSpace(input.Label)
+		input.Type = strings.TrimSpace(input.Type)
+		input.SortOrder = index
+
+		if input.Active == false {
+			// New frontend rows may omit active, so treat them as active.
+			input.Active = true
+		}
+
+		if err := validateRequirementInput(input); err != nil {
+			return err
+		}
+
+		if _, exists := seenKeys[input.Key]; exists {
+			return fmt.Errorf(
+				"duplicate requirement key %q for price %s",
+				input.Key,
+				priceID,
+			)
+		}
+
+		seenKeys[input.Key] = struct{}{}
+
+		inputs[index] = input
+	}
+
+	// Preserve old definitions for historical submission answers.
+	if err := tx.
+		Model(&models.PriceRequirement{}).
+		Where("price_id = ?", priceID).
+		Update("active", false).
+		Error; err != nil {
+		return err
+	}
+
+	for _, input := range inputs {
+		requirement := requirementFromInput(priceID, input)
+
+		if requirement.ID == "" {
+			if err := tx.Create(&requirement).Error; err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		var existing models.PriceRequirement
+
+		err := tx.
+			Where("id = ? AND price_id = ?", requirement.ID, priceID).
+			First(&existing).
+			Error
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := tx.Create(&requirement).Error; err != nil {
+				return err
+			}
+
+			continue
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if err := tx.
+			Model(&existing).
+			Updates(map[string]any{
+				"key":        requirement.Key,
+				"label":      requirement.Label,
+				"type":       requirement.Type,
+				"required":   requirement.Required,
+				"options":    requirement.Options,
+				"sort_order": requirement.SortOrder,
+				"active":     true,
+			}).
+			Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func upsertEventPrice(
@@ -1853,12 +1955,25 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, priceRequest := range request.Prices {
-			if _, err := upsertEventPrice(
+			priceID, err := upsertEventPrice(
 				tx,
 				stripeProduct.ID,
 				priceRequest,
-			); err != nil {
+			)
+			if err != nil {
 				return err
+			}
+
+			if err := replacePriceRequirements(
+				tx,
+				priceID,
+				priceRequest.Requirements,
+			); err != nil {
+				return fmt.Errorf(
+					"replace requirements for price %s: %w",
+					priceID,
+					err,
+				)
 			}
 		}
 
@@ -2062,6 +2177,18 @@ func UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			)
 			if err != nil {
 				return err
+			}
+
+			if err := replacePriceRequirements(
+				tx,
+				priceID,
+				priceRequest.Requirements,
+			); err != nil {
+				return fmt.Errorf(
+					"replace requirements for price %s: %w",
+					priceID,
+					err,
+				)
 			}
 
 			incomingPriceIDs[priceID] = struct{}{}

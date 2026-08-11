@@ -43,7 +43,151 @@ func submissionFormatNullTime(t sql.NullTime) string {
 	return t.Time.Format(time.RFC3339)
 }
 
-// CreateSubmission handles vehicle submission with image uploads.
+func validateRequirementValue(
+	requirement models.PriceRequirement,
+	value any,
+) error {
+	switch requirement.Type {
+	case "text", "textarea":
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf(
+				"requirement %q must be text",
+				requirement.Label,
+			)
+		}
+
+	case "number":
+		switch value.(type) {
+		case float64, int, int64:
+		default:
+			return fmt.Errorf(
+				"requirement %q must be a number",
+				requirement.Label,
+			)
+		}
+
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf(
+				"requirement %q must be boolean",
+				requirement.Label,
+			)
+		}
+
+	case "select", "radio":
+		selected, ok := value.(string)
+		if !ok {
+			return fmt.Errorf(
+				"requirement %q must be an option",
+				requirement.Label,
+			)
+		}
+
+		var options []string
+		if err := json.Unmarshal(requirement.Options, &options); err != nil {
+			return fmt.Errorf(
+				"decode options for %s: %w",
+				requirement.Key,
+				err,
+			)
+		}
+
+		found := false
+		for _, option := range options {
+			if option == selected {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf(
+				"invalid option for requirement %q",
+				requirement.Label,
+			)
+		}
+	}
+
+	return nil
+}
+
+func validateSubmittedAnswers(
+	tx *gorm.DB,
+	priceID string,
+	answers map[string]any,
+) ([]models.SubmissionRequirementAnswer, error) {
+	if priceID == "" {
+		if len(answers) > 0 {
+			return nil, fmt.Errorf(
+				"requirement answers cannot be submitted without a price",
+			)
+		}
+
+		return nil, nil
+	}
+
+	requirements, err := loadPriceRequirements(tx, priceID)
+	if err != nil {
+		return nil, fmt.Errorf("load requirements: %w", err)
+	}
+
+	byID := make(map[string]models.PriceRequirement, len(requirements))
+	for _, requirement := range requirements {
+		byID[requirement.ID] = requirement
+	}
+
+	for requirementID := range answers {
+		if _, ok := byID[requirementID]; !ok {
+			return nil, fmt.Errorf(
+				"unknown requirement %s",
+				requirementID,
+			)
+		}
+	}
+
+	result := make([]models.SubmissionRequirementAnswer, 0, len(requirements))
+
+	for _, requirement := range requirements {
+		rawValue, exists := answers[requirement.ID]
+
+		if !exists || rawValue == nil || rawValue == "" {
+			if requirement.Required {
+				return nil, fmt.Errorf(
+					"requirement %q is required",
+					requirement.Label,
+				)
+			}
+
+			continue
+		}
+
+		if err := validateRequirementValue(requirement, rawValue); err != nil {
+			return nil, err
+		}
+
+		value, err := json.Marshal(rawValue)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"encode answer for %s: %w",
+				requirement.Key,
+				err,
+			)
+		}
+
+		result = append(result, models.SubmissionRequirementAnswer{
+			RequirementID: requirement.ID,
+			Value:        value,
+		})
+	}
+
+	return result, nil
+}
+
+type SubmittedRequirementAnswer struct {
+	RequirementID string `json:"requirement_id"`
+	Value any `json:"value"`
+}
+
 func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		http.Error(w, "Failed to parse form data", http.StatusBadRequest)
@@ -68,6 +212,27 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to resolve event %s: %v", eventID, err)
 		http.Error(w, "Unable to retrieve event", http.StatusInternalServerError)
 		return
+	}
+
+	var submittedAnswers map[string]any
+
+	rawAnswers := strings.TrimSpace(r.FormValue("requirement_answers"))
+	if rawAnswers != "" {
+		if err := json.Unmarshal(
+			[]byte(rawAnswers),
+			&submittedAnswers,
+		); err != nil {
+			http.Error(
+				w,
+				"Invalid requirement answers",
+				http.StatusBadRequest,
+			)
+			return
+		}
+	}
+
+	if submittedAnswers == nil {
+		submittedAnswers = map[string]any{}
 	}
 
 	priceID := strings.TrimSpace(r.FormValue("price_id"))
@@ -263,6 +428,26 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			return fmt.Errorf("insert vehicle submission: %w", err)
+		}
+
+		answers, err := validateSubmittedAnswers(
+			tx,
+			priceID,
+			submittedAnswers,
+		)
+		if err != nil {
+			return err
+		}
+
+		for index := range answers {
+			answers[index].SubmissionID = submission.ID
+
+			if err := tx.Create(&answers[index]).Error; err != nil {
+				return fmt.Errorf(
+					"insert requirement answer: %w",
+					err,
+				)
+			}
 		}
 
 		if requiresApproval {
@@ -1806,6 +1991,14 @@ func getSubmissionByID(
 			payment_captured_at,
 
 			COALESCE(price_id, ''),
+			COALESCE(
+				(
+					SELECT nickname
+					FROM prices
+					WHERE prices.id = vehicle_submissions.price_id
+				),
+				''
+			),
 			COALESCE(promotion_code, ''),
 
 			COALESCE(requires_approval, TRUE),
@@ -1867,6 +2060,7 @@ func getSubmissionByID(
 		&paymentCapturedAt,
 
 		&submission.PriceID,
+		&submission.PriceNickname,
 		&submission.PromotionCode,
 
 		&submission.RequiresApproval,
@@ -1902,6 +2096,27 @@ func getSubmissionByID(
 		return nil, err
 	}
 
+	var answers []models.SubmissionRequirementAnswer
+
+	if err := db.
+		Preload("Requirement").
+		Where("submission_id = ?", submissionID).
+		Order("created_at ASC, id ASC").
+		Find(&answers).
+		Error; err != nil {
+			return nil, err
+		}
+
+	var requirementAnswers []models.SubmissionRequirementAnswerDTO
+
+	for _, answer := range answers {
+		if dto, err := requirementAnswerDTO(answer); err == nil {
+			requirementAnswers = append(requirementAnswers, dto)
+		}
+	}
+
+	submission.RequirementAnswers = requirementAnswers
+
 	if err := json.Unmarshal(imagesJSON, &submission.Images); err != nil {
 		submission.Images = []string{}
 	}
@@ -1922,6 +2137,30 @@ func getSubmissionByID(
 	submission.RevokedAt = submissionFormatNullTime(revokedAt)
 
 	return submission, nil
+}
+
+func requirementAnswerDTO(
+	answer models.SubmissionRequirementAnswer,
+) (models.SubmissionRequirementAnswerDTO, error) {
+	var value any
+
+	if err := json.Unmarshal(answer.Value, &value); err != nil {
+		return models.SubmissionRequirementAnswerDTO{}, err
+	}
+
+	result := models.SubmissionRequirementAnswerDTO{
+		ID:            answer.ID,
+		RequirementID: answer.RequirementID,
+		Value:         value,
+	}
+
+	if answer.Requirement != nil {
+		result.Key = answer.Requirement.Key
+		result.Label = answer.Requirement.Label
+		result.Type = answer.Requirement.Type
+	}
+
+	return result, nil
 }
 
 // captureSubmissionPayment captures payment for an approved submission

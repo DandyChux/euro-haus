@@ -91,10 +91,10 @@
 				url?: string;
 				session_id?: string;
 			}>("/create-event-checkout-session", {
-				eventId: data.event.id,
+				event_id: data.event.id,
 				price_id: price.id,
 				quantity: Number(quantity),
-				addOnProducts: selectedAddOns,
+				addon_products: selectedAddOns,
 			});
 
 			if (!response.url) {
@@ -256,19 +256,22 @@
 
 		{#if checkoutState === "submission" && pendingPrice}
 			<section class="submission-panel wrap" aria-live="polite">
-				<VehicleSubmissionForm
-					data={{ form: data.form }}
-					eventId={data.event.id}
-					priceId={pendingPrice.id}
-					ticketTier={getPriceName(pendingPrice)}
-					ticketPrice={getPriceAmount(pendingPrice)}
-					ticketQuantity={Number(quantity)}
-					onsucceed={completeVehicleSubmission}
-					oncancel={() => {
-						pendingPrice = null;
-						checkoutState = "idle";
-					}}
-				/>
+				{#key pendingPrice.id}
+					<VehicleSubmissionForm
+						data={{ form: data.form }}
+						eventId={data.event.id}
+						priceId={pendingPrice.id}
+						ticketTier={getPriceName(pendingPrice)}
+						ticketPrice={getPriceAmount(pendingPrice)}
+						ticketQuantity={Number(quantity)}
+						requirements={pendingPrice.requirements}
+						onsucceed={completeVehicleSubmission}
+						oncancel={() => {
+							pendingPrice = null;
+							checkoutState = "idle";
+						}}
+					/>
+				{/key}
 			</section>
 		{:else if checkoutState === "merchandise" && pendingPrice}
 			<section class="checkout-panel wrap" aria-live="polite">

@@ -202,6 +202,16 @@
 								</span>
 							</div>
 
+							{#if submission.price_nickname || submission.price_id}
+								<p class="text-sm text-muted-foreground">
+									Tier:
+									<span class="font-medium text-foreground">
+										{submission.price_nickname ||
+											submission.price_id}
+									</span>
+								</p>
+							{/if}
+
 							{#if submission.images[0]}
 								<img
 									src={submission.images[0]}
@@ -327,6 +337,16 @@
 								dateStyle: "medium",
 							})}
 						</p>
+
+						{#if selectedSubmission.price_nickname || selectedSubmission.price_id}
+							<p class="mt-2 text-sm text-muted-foreground">
+								Tier:
+								<span class="font-medium text-foreground">
+									{selectedSubmission.price_nickname ||
+										selectedSubmission.price_id}
+								</span>
+							</p>
+						{/if}
 					</div>
 				</div>
 
@@ -363,6 +383,30 @@
 						<p class="whitespace-pre-wrap text-sm">
 							{selectedSubmission.review_notes}
 						</p>
+					</div>
+				{/if}
+
+				{#if selectedSubmission.requirement_answers?.length}
+					<div>
+						<h3 class="font-semibold">Included item details</h3>
+
+						<div class="mt-3 grid gap-3 sm:grid-cols-2">
+							{#each selectedSubmission.requirement_answers as answer (answer.requirement_id)}
+								<div
+									class="rounded-xl border border-white/10 p-3"
+								>
+									<p
+										class="text-xs uppercase tracking-wide text-muted-foreground"
+									>
+										{answer.label}
+									</p>
+
+									<p class="mt-1 whitespace-pre-wrap text-sm">
+										{String(answer.value)}
+									</p>
+								</div>
+							{/each}
+						</div>
 					</div>
 				{/if}
 

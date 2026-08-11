@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { priceSchema, type Price } from "./price";
+import { submissionRequirementTypeSchema } from "./submission";
 
 export const agendaItemSchema = z.object({
 	time: z.string(),
@@ -149,6 +150,19 @@ export const vehicleSubmissionSchema = z.object({
 	checkout_session_id: z.string().optional(),
 	payment_intent_id: z.string().optional(),
 	price_id: z.string().optional(),
+	price_nickname: z.string().optional(),
+	requirement_answers: z
+		.array(
+			z.object({
+				id: z.string(),
+				requirement_id: z.string(),
+				key: z.string(),
+				label: z.string(),
+				type: submissionRequirementTypeSchema,
+				value: z.unknown(),
+			}),
+		)
+		.optional(),
 });
 
 export type VehicleSubmission = z.infer<typeof vehicleSubmissionSchema>;

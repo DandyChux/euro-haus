@@ -99,6 +99,73 @@ func (v *VehicleSubmission) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+type PriceRequirement struct {
+	ID string `gorm:"type:uuid;primaryKey" json:"id"`
+
+	PriceID string `gorm:"type:varchar(255);not null;index" json:"price_id"`
+
+	Key      string `gorm:"type:varchar(100);not null" json:"key"`
+	Label    string `gorm:"not null" json:"label"`
+	Type     string `gorm:"type:varchar(30);not null" json:"type"`
+	Required bool   `gorm:"not null;default:false" json:"required"`
+
+	Options datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'::jsonb" json:"options"`
+
+	SortOrder int  `gorm:"not null;default:0" json:"sort_order"`
+	Active    bool `gorm:"not null;default:true" json:"active"`
+
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (PriceRequirement) TableName() string {
+	return "price_requirements"
+}
+
+func (r *PriceRequirement) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+
+		r.ID = id.String()
+	}
+
+	return nil
+}
+
+type SubmissionRequirementAnswer struct {
+	ID string `gorm:"type:uuid;primaryKey" json:"id"`
+
+	SubmissionID  string `gorm:"type:varchar(64);not null;index:idx_answers_submission" json:"submission_id"`
+	RequirementID string `gorm:"type:uuid;not null;index:idx_answers_requirement" json:"requirement_id"`
+
+	Value datatypes.JSON `gorm:"type:jsonb;not null;index:idx_answers_value" json:"value"`
+
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+
+	Requirement *PriceRequirement `gorm:"foreignKey:RequirementID;references:ID" json:"requirement,omitempty"`
+}
+
+func (SubmissionRequirementAnswer) TableName() string {
+	return "submission_requirement_answers"
+}
+
+func (a *SubmissionRequirementAnswer) BeforeCreate(tx *gorm.DB) error {
+	if a.ID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+
+		a.ID = id.String()
+	}
+
+	return nil
+}
+
 // Data Transfer Objects
 
 type VehicleSubmissionDTO struct {
@@ -135,6 +202,7 @@ type VehicleSubmissionDTO struct {
 	PaymentCapturedAt              string `json:"payment_captured_at,omitempty"`
 
 	PriceID       string `json:"price_id,omitempty"`
+	PriceNickname string `json:"price_nickname,omitempty"`
 	PromotionCode string `json:"promotion_code,omitempty"`
 
 	RequiresApproval bool `json:"requires_approval"`
@@ -165,4 +233,15 @@ type VehicleSubmissionDTO struct {
 
 	Issues  []string `json:"issues,omitempty"`
 	HasIssue bool     `json:"has_issue,omitempty"`
+
+	RequirementAnswers []SubmissionRequirementAnswerDTO `json:"requirement_answers,omitempty"`
+}
+
+type SubmissionRequirementAnswerDTO struct {
+	ID            string `json:"id"`
+	RequirementID string `json:"requirement_id"`
+	Key           string `json:"key"`
+	Label         string `json:"label"`
+	Type          string `json:"type"`
+	Value         any    `json:"value"`
 }

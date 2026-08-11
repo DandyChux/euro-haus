@@ -47,6 +47,8 @@ func InitDB() {
 		&models.Ticket{},
 		&models.TokenData{},
 		&models.User{},
+		&models.PriceRequirement{},
+		&models.SubmissionRequirementAnswer{},
 		&models.VehicleSubmission{},
 		&models.EmailJob{},
 	)

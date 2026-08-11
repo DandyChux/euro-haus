@@ -16,6 +16,10 @@
 		type VehicleSubmission,
 		type VehicleSubmissionFormData,
 	} from "$lib/schemas/event";
+	import type {
+		RequirementAnswer,
+		SubmissionRequirement,
+	} from "$lib/schemas/submission";
 
 	interface Props {
 		data: {
@@ -27,6 +31,7 @@
 		ticketTier: string;
 		ticketPrice: number;
 		ticketQuantity: number;
+		requirements?: SubmissionRequirement[];
 
 		onsucceed: (submission: VehicleSubmission) => Promise<void>;
 		oncancel: () => void;
@@ -45,6 +50,7 @@
 		ticketTier,
 		ticketPrice,
 		ticketQuantity,
+		requirements,
 		onsucceed,
 		oncancel,
 	}: Props = $props();
@@ -76,6 +82,10 @@
 					return;
 				}
 
+				if (!validateRequirements()) {
+					return;
+				}
+
 				submitting = true;
 				uploadProgress = 0;
 				errorMessage = "";
@@ -104,6 +114,10 @@
 							.join("\n"),
 					);
 					body.set("price_id", form.data.price_id);
+					body.set(
+						"requirement_answers",
+						JSON.stringify(requirementAnswers),
+					);
 
 					for (const file of files) {
 						body.append("images", file);
@@ -152,12 +166,45 @@
 	let uploadProgress = $state(0);
 	let submitting = $state(false);
 	let errorMessage = $state("");
+	let requirementAnswers = $state<Record<string, RequirementAnswer>>({});
 
 	const total = $derived(ticketPrice * ticketQuantity);
 	const isSubmitting = $derived(submitting || $formSubmitting);
 
 	$formData.event_id = eventId;
 	$formData.price_id = priceId;
+
+	function updateRequirement(
+		requirementId: string,
+		value: RequirementAnswer,
+	) {
+		requirementAnswers = {
+			...requirementAnswers,
+			[requirementId]: value,
+		};
+	}
+
+	function validateRequirements(): boolean {
+		const missing = requirements?.filter((requirement) => {
+			if (!requirement.required) return false;
+
+			const value = requirementAnswers[requirement.id];
+
+			return (
+				value === undefined ||
+				value === "" ||
+				(requirement.type === "boolean" && value !== true)
+			);
+		});
+
+		if (missing?.length === 0) return true;
+
+		errorMessage = `Complete: ${missing
+			?.map((requirement) => requirement.label)
+			?.join(", ")}.`;
+
+		return false;
+	}
 
 	function addModification() {
 		modifications = [...modifications, ""];
@@ -403,6 +450,157 @@
 
 					<Form.FieldErrors />
 				</Form.Field>
+
+				{#if (requirements?.length ?? 0) > 0}
+					<div class="full space-y-5">
+						<div>
+							<p class="eyebrow">Included items</p>
+							<h3>Tell us what you need.</h3>
+							<p>
+								These details are based on your selected ticket
+								tier.
+							</p>
+						</div>
+
+						{#each requirements as requirement (requirement.id)}
+							<div class="space-y-2">
+								<label
+									for={`requirement-${requirement.id}`}
+									class="block text-sm font-medium"
+								>
+									{requirement.label}
+									{#if requirement.required}
+										<span aria-hidden="true">*</span>
+									{:else}
+										<span>(optional)</span>
+									{/if}
+								</label>
+
+								{#if requirement.type === "textarea"}
+									<Textarea
+										id={`requirement-${requirement.id}`}
+										value={String(
+											requirementAnswers[
+												requirement.id
+											] ?? "",
+										)}
+										rows={4}
+										required={requirement.required}
+										disabled={isSubmitting}
+										oninput={(event) =>
+											updateRequirement(
+												requirement.id,
+												(
+													event.currentTarget as HTMLTextAreaElement
+												).value,
+											)}
+									/>
+								{:else if requirement.type === "select"}
+									<select
+										id={`requirement-${requirement.id}`}
+										class="w-full rounded-md border px-3 py-2"
+										value={String(
+											requirementAnswers[
+												requirement.id
+											] ?? "",
+										)}
+										required={requirement.required}
+										disabled={isSubmitting}
+										onchange={(event) =>
+											updateRequirement(
+												requirement.id,
+												(
+													event.currentTarget as HTMLSelectElement
+												).value,
+											)}
+									>
+										<option value=""
+											>Choose an option</option
+										>
+
+										{#each requirement.options as option}
+											<option value={option}
+												>{option}</option
+											>
+										{/each}
+									</select>
+								{:else if requirement.type === "radio"}
+									<div class="space-y-2">
+										{#each requirement.options as option}
+											<label
+												class="flex items-center gap-2"
+											>
+												<input
+													type="radio"
+													name={`requirement-${requirement.id}`}
+													value={option}
+													checked={requirementAnswers[
+														requirement.id
+													] === option}
+													disabled={isSubmitting}
+													onchange={() =>
+														updateRequirement(
+															requirement.id,
+															option,
+														)}
+												/>
+												<span>{option}</span>
+											</label>
+										{/each}
+									</div>
+								{:else if requirement.type === "boolean"}
+									<label class="flex items-center gap-2">
+										<input
+											id={`requirement-${requirement.id}`}
+											type="checkbox"
+											checked={requirementAnswers[
+												requirement.id
+											] === true}
+											disabled={isSubmitting}
+											onchange={(event) =>
+												updateRequirement(
+													requirement.id,
+													(
+														event.currentTarget as HTMLInputElement
+													).checked,
+												)}
+										/>
+										<span>
+											{requirement.label}
+											{#if requirement.required}*{/if}
+										</span>
+									</label>
+								{:else}
+									<Input
+										id={`requirement-${requirement.id}`}
+										type={requirement.type === "number"
+											? "number"
+											: "text"}
+										value={String(
+											requirementAnswers[
+												requirement.id
+											] ?? "",
+										)}
+										required={requirement.required}
+										disabled={isSubmitting}
+										oninput={(event) => {
+											const value = (
+												event.currentTarget as HTMLInputElement
+											).value;
+
+											updateRequirement(
+												requirement.id,
+												requirement.type === "number"
+													? Number(value)
+													: value,
+											);
+										}}
+									/>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
 
 				<Form.Field {form} name="vehicle_description" class="full">
 					<Form.Control>

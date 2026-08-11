@@ -65,6 +65,7 @@ type PriceInfo struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 
 	IncludedProductLinks []PriceIncludedProduct `gorm:"foreignKey:PriceID;references:ID" json:"-"`
+	Requirements []PriceRequirement `gorm:"foreignKey:PriceID;references:ID" json:"requirements,omitempty"`
 }
 
 func (PriceInfo) TableName() string {

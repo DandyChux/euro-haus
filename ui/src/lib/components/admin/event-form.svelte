@@ -14,6 +14,8 @@
 	import { Checkbox } from "../ui/checkbox";
 	import type { Price } from "$lib/schemas/price";
 	import apiClient from "$lib/api";
+	import type { SubmissionRequirement } from "$lib/schemas/submission";
+	import { Label } from "../ui/label";
 
 	interface Props {
 		data: {
@@ -39,6 +41,14 @@
 						form.errors,
 					);
 					return;
+				}
+
+				for (const price of form.data.prices) {
+					const error = validatePriceRequirements(price);
+					if (error) {
+						console.error(error);
+						return;
+					}
 				}
 
 				try {
@@ -204,6 +214,157 @@
 		}
 	}
 
+	function emptyRequirement(): SubmissionRequirement {
+		return {
+			id: "",
+			price_id: "",
+			key: "",
+			label: "",
+			type: "text",
+			required: false,
+			options: [],
+			sort_order: 0,
+			active: true,
+		};
+	}
+
+	function addPriceRequirement(priceIndex: number) {
+		const prices = $formData.prices.map((price, index) => {
+			if (index !== priceIndex) return price;
+
+			const requirements = price.requirements ?? [];
+
+			return {
+				...price,
+				requirements: [
+					...requirements,
+					{
+						...emptyRequirement(),
+						price_id: price.id,
+						sort_order: requirements.length,
+					},
+				],
+			};
+		});
+
+		$formData.prices = prices;
+	}
+
+	function removePriceRequirement(
+		priceIndex: number,
+		requirementIndex: number,
+	) {
+		$formData.prices = $formData.prices.map((price, index) => {
+			if (index !== priceIndex) return price;
+
+			return {
+				...price,
+				requirements: (price.requirements ?? []).filter(
+					(_, index) => index !== requirementIndex,
+				),
+			};
+		});
+	}
+
+	function addRequirementOption(
+		priceIndex: number,
+		requirementIndex: number,
+	) {
+		$formData.prices = $formData.prices.map((price, index) => {
+			if (index !== priceIndex) return price;
+
+			return {
+				...price,
+				requirements: (price.requirements ?? []).map(
+					(requirement, index) =>
+						index === requirementIndex
+							? {
+									...requirement,
+									options: [...requirement.options, ""],
+								}
+							: requirement,
+				),
+			};
+		});
+	}
+
+	function removeRequirementOption(
+		priceIndex: number,
+		requirementIndex: number,
+		optionIndex: number,
+	) {
+		$formData.prices = $formData.prices.map((price, index) => {
+			if (index !== priceIndex) return price;
+
+			return {
+				...price,
+				requirements: (price.requirements ?? []).map(
+					(requirement, index) =>
+						index === requirementIndex
+							? {
+									...requirement,
+									options: requirement.options.filter(
+										(_, index) => index !== optionIndex,
+									),
+								}
+							: requirement,
+				),
+			};
+		});
+	}
+
+	function validatePriceRequirements(price: Price): string | null {
+		const requirements = price.requirements ?? [];
+		const keys = new Set<string>();
+
+		for (const requirement of requirements) {
+			if (!requirement.label.trim()) {
+				return "Every requirement needs a label.";
+			}
+
+			if (!requirement.key.trim()) {
+				return "Every requirement needs a key.";
+			}
+
+			if (keys.has(requirement.key.trim())) {
+				return `Duplicate requirement key: ${requirement.key}`;
+			}
+
+			keys.add(requirement.key.trim());
+
+			if (
+				(requirement.type === "select" ||
+					requirement.type === "radio") &&
+				requirement.options.filter((option) => option.trim()).length ===
+					0
+			) {
+				return `${requirement.label} needs at least one option.`;
+			}
+		}
+
+		return null;
+	}
+
+	function updateRequirement(
+		priceIndex: number,
+		requirementIndex: number,
+		updates: Partial<SubmissionRequirement>,
+	) {
+		$formData.prices = $formData.prices.map((price, index) => {
+			if (index !== priceIndex) return price;
+
+			return {
+				...price,
+				requirements: (price.requirements ?? []).map(
+					(requirement, index) =>
+						index === requirementIndex
+							? { ...requirement, ...updates }
+							: requirement,
+				),
+			};
+		});
+	}
+
 	function emptyPrice(): Price {
 		return {
 			id: "",
@@ -221,6 +382,7 @@
 			most_popular: false,
 			requires_approval: true,
 			requires_submission: false,
+			requirements: [],
 			included_products: [],
 			quantity: undefined,
 			stock_quantity: undefined,
@@ -537,13 +699,13 @@
 			<Form.Field {form} name="active">
 				<Form.Control>
 					{#snippet children({ props })}
-						<label class="flex items-center gap-2">
+						<Label class="flex items-center gap-2">
 							<Checkbox
 								{...props}
 								bind:checked={$formData.active}
 							/>
 							Active
-						</label>
+						</Label>
 					{/snippet}
 				</Form.Control>
 			</Form.Field>
@@ -551,13 +713,13 @@
 			<Form.Field {form} name="featured">
 				<Form.Control>
 					{#snippet children({ props })}
-						<label class="flex items-center gap-2">
+						<Label class="flex items-center gap-2">
 							<Checkbox
 								{...props}
 								bind:checked={$formData.featured}
 							/>
 							Featured
-						</label>
+						</Label>
 					{/snippet}
 				</Form.Control>
 			</Form.Field>
@@ -630,12 +792,12 @@
 							class="grid gap-3 rounded-2xl border p-4 md:grid-cols-[10rem_minmax(0,1fr)_auto] md:items-start"
 						>
 							<div class="space-y-2">
-								<label
+								<Label
 									for={`agenda-time-${index}`}
 									class="text-sm font-medium"
 								>
 									Time
-								</label>
+								</Label>
 
 								<Input
 									{...props}
@@ -646,12 +808,12 @@
 							</div>
 
 							<div class="space-y-2">
-								<label
+								<Label
 									for={`agenda-activity-${index}`}
 									class="text-sm font-medium"
 								>
 									Activity
-								</label>
+								</Label>
 
 								<Input
 									{...props}
@@ -763,12 +925,12 @@
 
 							<div class="grid gap-4 md:grid-cols-2">
 								<div class="space-y-2">
-									<label
+									<Label
 										for={`sponsor-name-${index}`}
 										class="text-sm font-medium"
 									>
 										Company name
-									</label>
+									</Label>
 
 									<Input
 										{...props}
@@ -781,12 +943,12 @@
 								</div>
 
 								<div class="space-y-2">
-									<label
+									<Label
 										for={`sponsor-tier-${index}`}
 										class="text-sm font-medium"
 									>
 										Sponsor tier
-									</label>
+									</Label>
 
 									<Input
 										{...props}
@@ -799,12 +961,12 @@
 								</div>
 
 								<div class="space-y-2">
-									<label
+									<Label
 										for={`sponsor-logo-${index}`}
 										class="text-sm font-medium"
 									>
 										Logo URL
-									</label>
+									</Label>
 
 									<Input
 										{...props}
@@ -817,12 +979,12 @@
 								</div>
 
 								<div class="space-y-2">
-									<label
+									<Label
 										for={`sponsor-url-${index}`}
 										class="text-sm font-medium"
 									>
 										Website
-									</label>
+									</Label>
 
 									<Input
 										{...props}
@@ -836,12 +998,12 @@
 							</div>
 
 							<div class="space-y-2">
-								<label
+								<Label
 									for={`sponsor-description-${index}`}
 									class="text-sm font-medium"
 								>
 									Description
-								</label>
+								</Label>
 
 								<Textarea
 									{...props}
@@ -872,9 +1034,9 @@
 		</div>
 
 		<div class="space-y-2">
-			<label for="event-image-url" class="text-sm font-medium">
+			<Label for="event-image-url" class="text-sm font-medium">
 				Add an existing image URL
-			</label>
+			</Label>
 
 			<div class="flex gap-2">
 				<Input
@@ -908,7 +1070,7 @@
 		<fieldset class="space-y-3">
 			<legend class="text-sm font-medium"> Event images </legend>
 
-			<label
+			<Label
 				for="event-image-upload"
 				class="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-colors hover:border-primary"
 			>
@@ -923,7 +1085,7 @@
 						Select one or more PNG, JPG, WEBP, or GIF files
 					</p>
 				{/if}
-			</label>
+			</Label>
 
 			<input
 				id="event-image-upload"
@@ -1210,6 +1372,268 @@
 												</div>
 											{/snippet}
 										</Form.Control>
+									{/each}
+								{/if}
+							</fieldset>
+
+							<fieldset class="space-y-4 rounded-2xl border p-4">
+								<div
+									class="flex items-center justify-between gap-4"
+								>
+									<div>
+										<legend class="font-medium"
+											>Submission requirements</legend
+										>
+
+										<p
+											class="mt-1 text-sm text-muted-foreground"
+										>
+											Ask entrants for extra details
+											included with this tier.
+										</p>
+									</div>
+
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onclick={() =>
+											addPriceRequirement(index)}
+									>
+										Add requirement
+									</Button>
+								</div>
+
+								{#if !$formData.prices[index].requirements?.length}
+									<p class="text-sm text-muted-foreground">
+										No additional information is required
+										for this tier.
+									</p>
+								{:else}
+									{#each $formData.prices[index].requirements as requirement, requirementIndex (requirement.id || requirementIndex)}
+										<div
+											class="space-y-4 rounded-xl border p-4"
+										>
+											<div
+												class="flex items-start justify-between gap-4"
+											>
+												<div>
+													<p class="font-medium">
+														Requirement {requirementIndex +
+															1}
+													</p>
+
+													<p
+														class="text-sm text-muted-foreground"
+													>
+														This field will appear
+														in the vehicle
+														submission form.
+													</p>
+												</div>
+
+												<Button
+													type="button"
+													variant="ghost"
+													onclick={() =>
+														removePriceRequirement(
+															index,
+															requirementIndex,
+														)}
+												>
+													Remove
+												</Button>
+											</div>
+
+											<div
+												class="grid gap-4 md:grid-cols-2"
+											>
+												<div class="space-y-2">
+													<Label
+														for={`requirement-label-${index}-${requirementIndex}`}
+														class="text-sm font-medium"
+													>
+														Label
+													</Label>
+
+													<Input
+														id={`requirement-label-${index}-${requirementIndex}`}
+														bind:value={
+															requirement.label
+														}
+														oninput={(event) =>
+															updateRequirement(
+																index,
+																requirementIndex,
+																{
+																	label: (
+																		event.currentTarget as HTMLInputElement
+																	).value,
+																},
+															)}
+														placeholder="Shirt size"
+													/>
+												</div>
+
+												<div class="space-y-2">
+													<Label
+														for={`requirement-key-${index}-${requirementIndex}`}
+														class="text-sm font-medium"
+													>
+														Key
+													</Label>
+
+													<Input
+														id={`requirement-key-${index}-${requirementIndex}`}
+														bind:value={
+															requirement.key
+														}
+														placeholder="shirt_size"
+													/>
+
+													<p
+														class="text-xs text-muted-foreground"
+													>
+														Use a stable
+														machine-readable key.
+														(i.e. `shirt_size`)
+													</p>
+												</div>
+											</div>
+
+											<div
+												class="grid gap-4 md:grid-cols-2"
+											>
+												<div class="space-y-2">
+													<Label
+														for={`requirement-type-${index}-${requirementIndex}`}
+														class="text-sm font-medium"
+													>
+														Input type
+													</Label>
+
+													<select
+														id={`requirement-type-${index}-${requirementIndex}`}
+														bind:value={
+															requirement.type
+														}
+														class="w-full rounded-md border bg-background px-3 py-2"
+													>
+														<option value="text"
+															>Text</option
+														>
+														<option value="textarea"
+															>Long text</option
+														>
+														<option value="select"
+															>Dropdown</option
+														>
+														<option value="radio"
+															>Radio buttons</option
+														>
+														<option value="number"
+															>Number</option
+														>
+														<option value="boolean"
+															>Checkbox</option
+														>
+													</select>
+												</div>
+
+												<Label
+													class="flex items-center gap-2 self-end pb-2"
+												>
+													<Checkbox
+														checked={requirement.required}
+														onCheckedChange={(
+															value,
+														) =>
+															(requirement.required =
+																value === true)}
+													/>
+
+													<span
+														class="text-sm font-medium"
+													>
+														Required
+													</span>
+												</Label>
+											</div>
+
+											{#if requirement.type === "select" || requirement.type === "radio"}
+												<div class="space-y-3">
+													<div
+														class="flex items-center justify-between"
+													>
+														<div>
+															<p
+																class="text-sm font-medium"
+															>
+																Options
+															</p>
+															<p
+																class="text-xs text-muted-foreground"
+															>
+																Add the choices
+																entrants can
+																select.
+															</p>
+														</div>
+
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															onclick={() =>
+																addRequirementOption(
+																	index,
+																	requirementIndex,
+																)}
+														>
+															Add option
+														</Button>
+													</div>
+
+													{#if requirement.options.length === 0}
+														<p
+															class="text-sm text-destructive"
+														>
+															Add at least one
+															option.
+														</p>
+													{:else}
+														{#each requirement.options as _, optionIndex (optionIndex)}
+															<div
+																class="flex gap-2"
+															>
+																<Input
+																	bind:value={
+																		requirement
+																			.options[
+																			optionIndex
+																		]
+																	}
+																	placeholder="L"
+																/>
+
+																<Button
+																	type="button"
+																	variant="ghost"
+																	onclick={() =>
+																		removeRequirementOption(
+																			index,
+																			requirementIndex,
+																			optionIndex,
+																		)}
+																>
+																	Remove
+																</Button>
+															</div>
+														{/each}
+													{/if}
+												</div>
+											{/if}
+										</div>
 									{/each}
 								{/if}
 							</fieldset>

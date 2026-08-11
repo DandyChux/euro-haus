@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { IncludedProduct } from "./event";
+import { submissionRequirementSchema } from "./submission";
 
 export const priceSchema = z.object({
 	id: z.string(),
@@ -17,10 +18,14 @@ export const priceSchema = z.object({
 	most_popular: z.boolean(),
 	requires_approval: z.boolean(),
 	requires_submission: z.boolean(),
+
+	requirements: z.array(submissionRequirementSchema).default([]),
+
 	included_products: z
 		.array(z.custom<IncludedProduct>())
 		.nullish()
 		.default([]),
+
 	quantity: z.number().optional(),
 	stock_quantity: z.number().int().nonnegative().nullish(),
 	sold_out: z.boolean().nullish().default(false),

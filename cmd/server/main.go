@@ -220,6 +220,19 @@ func main() {
 
 	api.Handle("/admin/archive-price/{id}", middleware.RequireAdminAuth(http.HandlerFunc(handlers.ArchivePrice))).Methods("PUT")
 	api.Handle("/admin/set-default-price", middleware.RequireAdminAuth(http.HandlerFunc(handlers.SetDefaultPrice))).Methods("POST")
+	api.Handle(
+		"/admin/prices/{priceId}/requirements",
+		middleware.RequireAdminAuth(http.HandlerFunc(
+			handlers.GetPriceRequirements,
+		)),
+	).Methods("GET")
+
+	api.Handle(
+		"/admin/prices/{priceId}/requirements",
+		middleware.RequireAdminAuth(http.HandlerFunc(
+			handlers.ReplacePriceRequirements,
+		)),
+	).Methods("PUT")
 
 	// Discount management endpoints (requires authentication)
 	api.Handle("/admin/coupons", middleware.RequireAdminAuth(http.HandlerFunc(handlers.CreateCoupon))).Methods("POST")
