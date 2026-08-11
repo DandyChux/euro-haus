@@ -1,51 +1,20 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { apiClient } from "$lib/api";
 	import { formatDate } from "$lib/utils";
+	import * as Item from "$lib/components/ui/item";
+	import { invalidateAll } from "$app/navigation";
 
-	interface IssueSubmission {
-		id: string;
-		eventId: string;
-		eventSlug: string;
-		participantName: string;
-		participantEmail: string;
-		vehicleYear: string;
-		vehicleMake: string;
-		vehicleModel: string;
-		status: string;
-		submittedAt: string;
-		issues?: string[];
-		emailSent?: boolean;
-		checkoutSessionId?: string;
-		paymentIntentId?: string;
-		ticketId?: string;
-	}
+	let { data } = $props();
 
-	let submissions = $state<IssueSubmission[]>([]);
-	let isLoading = $state(true);
-	let errorMessage = $state("");
 	let statusMessage = $state("");
-
-	async function loadIssues() {
-		isLoading = true;
-		errorMessage = "";
-
-		try {
-			const response = await apiClient.get<{
-				submissions?: IssueSubmission[];
-			}>("/admin/submissions/issues");
-			submissions = response.submissions ?? [];
-		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "Unable to load submission issues.";
-		} finally {
-			isLoading = false;
-		}
-	}
+	let errorMessage = $state("");
+	let isResending = $state<string | null>(null);
 
 	async function resendEmail(id: string) {
+		isResending = id;
+		statusMessage = "";
+		errorMessage = "";
+
 		try {
 			await apiClient.post(`/admin/submissions/${id}/resend-email`, {});
 			statusMessage = `Resent approval email for ${id}.`;
@@ -54,12 +23,16 @@
 				error instanceof Error
 					? error.message
 					: "Unable to resend email.";
+		} finally {
+			isResending = null;
 		}
 	}
 
-	onMount(() => {
-		void loadIssues();
-	});
+	async function refresh() {
+		statusMessage = "";
+		errorMessage = "";
+		await invalidateAll();
+	}
 </script>
 
 <svelte:head>
@@ -83,7 +56,7 @@
 	<div class="flex justify-end">
 		<button
 			class="rounded-full border border-white/10 px-4 py-2 text-sm"
-			onclick={() => void loadIssues()}
+			onclick={() => void refresh()}
 		>
 			Refresh
 		</button>
@@ -105,42 +78,36 @@
 		</p>
 	{/if}
 
-	{#if isLoading}
-		<div class="rounded-3xl border border-white/10 bg-white/5 p-8 text-sm">
-			Loading issue list…
-		</div>
-	{:else if submissions.length === 0}
+	{#if data.submissions.length === 0}
 		<div
 			class="rounded-3xl border border-dashed border-white/10 bg-white/5 p-8 text-sm"
 		>
 			No submission issues detected.
 		</div>
 	{:else}
-		<div class="space-y-4">
-			{#each submissions as submission (submission.id)}
-				<article
-					class="rounded-3xl border border-white/10 bg-white/5 p-5"
-				>
-					<div
-						class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
-					>
-						<div>
-							<p class="text-lg font-medium">
-								{submission.vehicleYear}
-								{submission.vehicleMake}
-								{submission.vehicleModel}
-							</p>
-							<p class="mt-1 text-sm">
-								{submission.participantName} · {submission.participantEmail}
-							</p>
-							<p class="mt-2 text-sm">
-								{submission.eventSlug} · {formatDate(
-									submission.submittedAt,
+		<Item.Group class="flex flex-col gap-4">
+			{#each data.submissions as submission, index (submission.id)}
+				<Item.Root variant="outline" class="bg-white/5">
+					<Item.Content class="gap-3">
+						<Item.Header>
+							<Item.Title>
+								{submission.vehicle_year}
+								{submission.vehicle_make}
+								{submission.vehicle_model}
+							</Item.Title>
+							<Item.Description>
+								{submission.participant_name} · {submission.participant_email}
+							</Item.Description>
+							<Item.Description>
+								{submission.event_slug} · {formatDate(
+									submission.submitted_at,
 								)}
-							</p>
+							</Item.Description>
+						</Item.Header>
 
-							<div class="mt-4 flex flex-wrap gap-2">
-								{#each submission.issues ?? [] as issue (issue)}
+						{#if submission.issues?.length}
+							<div class="flex flex-wrap gap-2">
+								{#each submission.issues as issue (issue)}
 									<span
 										class="rounded-full border border-amber-500/30 px-3 py-1 text-xs text-amber-100"
 									>
@@ -148,25 +115,33 @@
 									</span>
 								{/each}
 							</div>
-						</div>
+						{/if}
+					</Item.Content>
 
-						<div class="flex flex-wrap gap-3">
-							<button
-								class="rounded-full border border-white/10 px-4 py-2 text-sm"
-								onclick={() => void resendEmail(submission.id)}
-							>
-								Resend email
-							</button>
-							<a
-								href={`/checkout/recover?submission=${submission.id}`}
-								class="rounded-full border border-white/10 px-4 py-2 text-sm"
-							>
-								Open recovery route
-							</a>
-						</div>
-					</div>
-				</article>
+					<Item.Actions class="flex-wrap">
+						<button
+							class="rounded-full border border-white/10 px-4 py-2 text-sm"
+							disabled={isResending === submission.id}
+							onclick={() => void resendEmail(submission.id)}
+						>
+							{isResending === submission.id
+								? "Resending…"
+								: "Resend email"}
+						</button>
+
+						<a
+							href={`/checkout/recover?submission=${submission.id}`}
+							class="rounded-full border border-white/10 px-4 py-2 text-sm"
+						>
+							Open recovery route
+						</a>
+					</Item.Actions>
+				</Item.Root>
+
+				{#if index !== data.submissions.length - 1}
+					<Item.Separator />
+				{/if}
 			{/each}
-		</div>
+		</Item.Group>
 	{/if}
 </section>

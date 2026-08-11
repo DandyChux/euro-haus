@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 
 	import apiClient from "$lib/api";
@@ -9,10 +8,6 @@
 	import { Card } from "$lib/components/ui/card";
 	import { Textarea } from "$lib/components/ui/textarea";
 	import { formatDate } from "$lib/utils";
-
-	interface SubmissionsResponse {
-		submissions?: VehicleSubmission[];
-	}
 
 	interface Props {
 		eventName: string;

@@ -36,6 +36,24 @@ export const submissionRequirementAnswerSchema = z.object({
 	value: requirementAnswerSchema,
 });
 
+const issueSubmissionSchema = z.object({
+	id: z.string(),
+	event_id: z.string(),
+	event_slug: z.string(),
+	participant_name: z.string(),
+	participant_email: z.string(),
+	vehicle_year: z.string(),
+	vehicle_make: z.string(),
+	vehicle_model: z.string(),
+	status: z.string(),
+	submitted_at: z.string(),
+	issues: z.array(z.string()).optional(),
+	email_sent: z.boolean().optional(),
+	checkout_session_id: z.string().optional(),
+	payment_intent_id: z.string().optional(),
+	ticket_id: z.string().optional(),
+});
+
 export type SubmissionRequirementType = z.infer<
 	typeof submissionRequirementTypeSchema
 >;
@@ -47,3 +65,5 @@ export type SubmissionRequirement = z.infer<typeof submissionRequirementSchema>;
 export type SubmissionRequirementAnswer = z.infer<
 	typeof submissionRequirementAnswerSchema
 >;
+
+export type IssueSubmission = z.infer<typeof issueSubmissionSchema>;
