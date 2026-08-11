@@ -67,15 +67,6 @@
 </main>
 
 <style>
-	:global(*) {
-		box-sizing: border-box;
-	}
-
-	:global(body) {
-		margin: 0;
-		background: #10100f;
-	}
-
 	.error-page {
 		position: relative;
 		display: grid;
