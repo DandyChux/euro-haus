@@ -3,6 +3,7 @@
 	import { formatDate } from "$lib/utils";
 	import * as Item from "$lib/components/ui/item";
 	import { invalidateAll } from "$app/navigation";
+	import Badge from "$lib/components/ui/badge/badge.svelte";
 
 	let { data } = $props();
 
@@ -108,11 +109,12 @@
 						{#if submission.issues?.length}
 							<div class="flex flex-wrap gap-2">
 								{#each submission.issues as issue (issue)}
-									<span
-										class="rounded-full border border-amber-500/30 px-3 py-1 text-xs text-amber-100"
+									<Badge
+										class="text-xs border-accent/30 text-accent hover:border-accent/50 hover:text-accent"
+										variant="circle"
 									>
 										{issue}
-									</span>
+									</Badge>
 								{/each}
 							</div>
 						{/if}
