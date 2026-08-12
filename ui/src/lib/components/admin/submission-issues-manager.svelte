@@ -10,6 +10,7 @@
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Card } from "$lib/components/ui/card";
 	import { formatDate } from "$lib/utils";
+	import { Badge } from "../ui/badge";
 
 	interface Props {
 		submissions: IssueSubmission[];
@@ -539,12 +540,10 @@
 							</p>
 						</div>
 
-						<div class="flex flex-wrap gap-2">
-							<span
-								class="rounded-full border px-2 py-1 text-xs capitalize"
-							>
+						<div class="inline-grid grid-cols-1 gap-2">
+							<Badge class="text-xs capitalize" variant="circle">
 								{submission.status}
-							</span>
+							</Badge>
 
 							{#if hasPaymentIssue(submission)}
 								<Button
