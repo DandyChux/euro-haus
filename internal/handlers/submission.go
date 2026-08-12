@@ -651,30 +651,15 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 
 	paymentLink := ""
 
-	// If an unpaid checkout already exists, reuse it.
-	if submission.CheckoutSessionID != "" || submission.PaymentIntentID != "" {
-		params := &stripe.CheckoutSessionParams{}
+	hasExistingPaymentDetails :=
+		strings.TrimSpace(submission.CheckoutSessionID) != "" ||
+			strings.TrimSpace(submission.PaymentIntentID) != ""
 
-		checkoutSession, getErr := session.Get(
-			submission.CheckoutSessionID,
-			params,
-		)
+	hasExistingTicket := strings.TrimSpace(submission.TicketID) != ""
 
-		if getErr != nil {
-			log.Printf(
-				"Failed to retrieve checkout session %s: %v",
-				submission.CheckoutSessionID,
-				getErr,
-			)
-		} else if checkoutSession.PaymentStatus != "paid" {
-			paymentLink = checkoutSession.URL
-		}
-	}
-
-	// If no usable payment link exists, create one.
-	if paymentLink == "" &&
-		submission.TicketID == "" &&
-		submission.PaymentIntentID == "" {
+	// Only create a payment link when the participant has not already
+	// submitted payment details.
+	if !hasExistingPaymentDetails && !hasExistingTicket {
 		paymentLink, err = createSubmissionPaymentLink(*submission)
 		if err != nil {
 			log.Printf(
@@ -730,29 +715,6 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 
-		// If a ticket already exists, the payment webhook has already
-		// handled ticket delivery. Do not enqueue a duplicate approval email.
-		if submission.TicketID != "" {
-			return nil
-		}
-
-		message := buildApprovalEmail(
-			*submission,
-			paymentLink,
-		)
-
-		if err := services.QueueEmailTx(
-			r.Context(),
-			tx,
-			submissionID,
-			message,
-		); err != nil {
-			return fmt.Errorf(
-				"enqueue approval email: %w",
-				err,
-			)
-		}
-
 		return nil
 	})
 
@@ -805,13 +767,45 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseStatus := http.StatusOK
+	// If the payment webhook created a ticket while capture was completing,
+	// it is responsible for sending the ticket email. Avoid sending a
+	// duplicate approval email.
+	if updatedSubmission.TicketID == "" {
+		email := buildApprovalEmail(
+			*updatedSubmission,
+			paymentLink,
+		)
+
+		err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+			return services.QueueEmailTx(
+				r.Context(),
+				tx,
+				submissionID,
+				email,
+			)
+		})
+
+		if err != nil {
+			log.Printf(
+				"Failed to enqueue approval email for submission %s: %v",
+				submissionID,
+				err,
+			)
+
+			http.Error(
+				w,
+				"Submission approved but approval email could not be queued",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+	}
 
 	response := map[string]interface{}{
 		"submission":        updatedSubmission,
 		"payment_captured":   paymentCaptured,
 		"payment_processing": paymentProcessing,
-		"message":            "Submission approved successfully. Email delivery has been queued.",
+		"message":            "Submission approved successfully.",
 	}
 
 	if paymentCaptureError != "" {
@@ -826,7 +820,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(responseStatus)
+	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf(
@@ -3369,6 +3363,19 @@ func buildApprovalEmail(
 	submission models.VehicleSubmissionDTO,
 	paymentLink string,
 ) *services.EmailMessage {
+	hasExistingPaymentDetails :=
+		strings.TrimSpace(submission.CheckoutSessionID) != "" ||
+			strings.TrimSpace(submission.PaymentIntentID) != ""
+
+	if hasExistingPaymentDetails {
+		paymentLink = ""
+	}
+
+	paymentComplete :=
+		submission.PaymentCaptured ||
+			submission.PaymentSucceededAt != "" ||
+			submission.TicketID != ""
+
 	emailData := map[string]interface{}{
 		"ParticipantName": submission.ParticipantName,
 		"VehicleDetails": fmt.Sprintf(
@@ -3377,14 +3384,15 @@ func buildApprovalEmail(
 			submission.VehicleMake,
 			submission.VehicleModel,
 		),
-		"EventID":     submission.EventID,
-		"PaymentLink": paymentLink,
-		"ReviewNotes": submission.ReviewNotes,
+		"EventID":         submission.EventID,
+		"PaymentLink":     paymentLink,
+		"PaymentComplete": paymentComplete,
+		"ReviewNotes":     submission.ReviewNotes,
 	}
 
 	return &services.EmailMessage{
 		To:           []string{submission.ParticipantEmail},
-		Subject:      "Vehicle Submission Approved - Complete Your Registration",
+		Subject:      "Vehicle Submission Approved - Euro Haus",
 		TemplateID:   "submission-approved",
 		TemplateData: emailData,
 		BodyHTML:     generateApprovalEmailHTML(emailData),
