@@ -207,11 +207,6 @@ func insertParticipantTicket(
 	}
 
 	token := generateUniqueToken()
-	vehicleDetails := fmt.Sprintf("%s %s %s",
-		submission.VehicleYear,
-		submission.VehicleMake,
-		submission.VehicleModel,
-	)
 
 	err := services.GetDB().WithContext(ctx).Exec(`
 			INSERT INTO tickets (
@@ -223,16 +218,10 @@ func insertParticipantTicket(
 				customer_email,
 				customer_name,
 				quantity,
-				purchase_date,
-				checked_in,
-				event_name,
 				ticket_type,
-				submission_id,
-				vehicle_details,
-				approved_participant,
 				status
 			) VALUES (
-				?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, ?, TRUE, 'active'
+				?, ?, ?, ?, ?, ?, ?, ?, ?, 'active'
 			)
 		`,
 		token,
@@ -243,10 +232,7 @@ func insertParticipantTicket(
 		submission.ParticipantEmail,
 		submission.ParticipantName,
 		quantity,
-		eventName,
 		ticketType,
-		submission.ID,
-		vehicleDetails,
 	).Error
 	if err != nil {
 		return "", err
@@ -287,13 +273,6 @@ func insertParticipantTicketTx(
 
 	token := generateUniqueToken()
 
-	vehicleDetails := fmt.Sprintf(
-		"%s %s %s",
-		submission.VehicleYear,
-		submission.VehicleMake,
-		submission.VehicleModel,
-	)
-
 	err := tx.WithContext(ctx).Exec(`
 		INSERT INTO tickets (
 			token,
@@ -304,17 +283,11 @@ func insertParticipantTicketTx(
 			customer_email,
 			customer_name,
 			quantity,
-			purchase_date,
-			checked_in,
-			event_name,
 			ticket_type,
-			submission_id,
-			vehicle_details,
-			approved_participant,
 			status
 		)
 		VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, ?, TRUE, 'active'
+			?, ?, ?, ?, ?, ?, ?, ?, ?, 'active'
 		)
 	`,
 		token,
@@ -325,10 +298,7 @@ func insertParticipantTicketTx(
 		submission.ParticipantEmail,
 		submission.ParticipantName,
 		quantity,
-		eventName,
 		ticketType,
-		submission.ID,
-		vehicleDetails,
 	).Error
 
 	if err != nil {
@@ -2483,7 +2453,6 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	}
 
 	eventID := lineItem.Price.Product.ID
-	eventName := eventNameForStripeProduct(context.Background(), eventID)
 
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if lineItem.Price == nil || lineItem.Price.Product == nil {
@@ -2508,15 +2477,11 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 				customer_email,
 				customer_name,
 				quantity,
-				purchase_date,
-				checked_in,
-				event_name,
 				ticket_type,
-				submission_id,
 				status
 			)
 			VALUES (
-				?, ?, ?, ?, ?, ?, ?, ?, NOW(), FALSE, ?, ?, ?, 'active'
+				?, ?, ?, ?, ?, ?, ?, ?, ?, 'active'
 			)
 		`,
 			token,
@@ -2527,9 +2492,7 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 			customerEmail,
 			customerName,
 			lineItem.Quantity,
-			eventName,
 			ticketType,
-			submissionNullableString(submissionID),
 		).Error
 
 		if err != nil {

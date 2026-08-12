@@ -10,7 +10,6 @@ type Ticket struct {
 
 	EventID string `gorm:"type:uuid;not null;index"`
 
-	// Stripe references only.
 	StripeProductID string
 	StripeSessionID string
 	StripePaymentIntentID string

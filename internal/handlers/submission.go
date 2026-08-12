@@ -2581,7 +2581,7 @@ func RetrySubmissionTicket(
 		http.Error(
 			w,
 			fmt.Sprintf(
-				"Failed to capture payment and create ticket: %v",
+				"Payment may already be captured, but ticket creation failed. Retry ticket processing: %v",
 				err,
 			),
 			http.StatusInternalServerError,
