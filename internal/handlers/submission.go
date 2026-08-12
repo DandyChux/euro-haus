@@ -1850,14 +1850,6 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if hasPaymentData {
-			hasIssue = true
-			if !contains(issues, "no_ticket_created") {
-				issues = appendUniqueIssue(issues, "no_ticket_created")
-				fmt.Printf("Submission %s has payment data but no ticket", submissionID)
-			}
-		}
-
 		if submission.PaymentIntentID != "" && submission.CheckoutSessionID == "" {
 			hasIssue = true
 			if !contains(issues, "incomplete_payment_process") {
