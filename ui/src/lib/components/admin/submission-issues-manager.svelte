@@ -226,6 +226,14 @@
 		return (submission.issues ?? []).includes("no_ticket_created");
 	}
 
+	function hasUnpaidCheckout(submission: IssueSubmission): boolean {
+		return (
+			submission.status === "approved" &&
+			Boolean(submission.checkout_session_id) &&
+			!submission.payment_intent_id
+		);
+	}
+
 	async function applyServerFilters() {
 		showFilters = false;
 		await refreshSubmissions();
@@ -277,7 +285,7 @@
 		try {
 			const response = await apiClient.get<{
 				prices?: Price[];
-			}>(`/products/${eventId}/prices`);
+			}>(`/events/${eventId}/prices`);
 
 			prices = (response.prices ?? []).filter((price) => price.active);
 
@@ -313,6 +321,7 @@
 				toast.success("Payment link created.");
 
 				window.open(response.sessionUrl, "_blank");
+
 				showCreatePayment = false;
 				selectedPriceId = "";
 
@@ -348,6 +357,14 @@
 		} finally {
 			resendingEmail = false;
 		}
+	}
+
+	async function sendPaymentLink(submission: IssueSubmission) {
+		await runAction(
+			submission.id,
+			`/admin/submissions/${submission.id}/send-payment-link`,
+			"Payment link email queued.",
+		);
 	}
 </script>
 
@@ -562,6 +579,17 @@
 										openCreatePayment(submission)}
 								>
 									Create replacement checkout
+								</Button>
+							{/if}
+
+							{#if hasUnpaidCheckout(submission)}
+								<Button
+									type="button"
+									variant="outline"
+									disabled={busyAction !== null}
+									onclick={() => sendPaymentLink(submission)}
+								>
+									Send payment link
 								</Button>
 							{/if}
 

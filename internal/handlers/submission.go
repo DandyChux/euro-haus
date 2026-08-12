@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -2464,7 +2465,184 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SendSubmissionPaymentLink queues an email containing the currently active
+// Stripe Checkout URL for an approved submission.
+//
+// This endpoint intentionally does not create or replace a Checkout Session.
+// Replacement sessions must be created explicitly through create-payment.
+func SendSubmissionPaymentLink(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	if submission.Status != "approved" {
+		http.Error(
+			w,
+			"Submission must be approved before sending a payment link",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	if submission.ParticipantEmail == "" {
+		http.Error(
+			w,
+			"Submission does not have a participant email address",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	if submission.CheckoutSessionID == "" {
+		http.Error(
+			w,
+			"No checkout session exists for this submission. Create a replacement checkout first.",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	params := &stripe.CheckoutSessionParams{}
+	checkoutSession, err := session.Get(
+		submission.CheckoutSessionID,
+		params,
+	)
+	if err != nil {
+		log.Printf(
+			"Failed to retrieve checkout session %s for submission %s: %v",
+			submission.CheckoutSessionID,
+			submissionID,
+			err,
+		)
+
+		http.Error(
+			w,
+			"The stored checkout session does not exist in Stripe. Create a replacement checkout first.",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	if checkoutSession.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
+		http.Error(
+			w,
+			"This checkout session has already been paid",
+			http.StatusConflict,
+		)
+		return
+	}
+
+	if checkoutSession.URL == "" {
+		http.Error(
+			w,
+			"Stripe did not return a checkout URL",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	message := buildSubmissionPaymentLinkEmail(
+		*submission,
+		checkoutSession.URL,
+	)
+
+	db := services.GetDB()
+	if db == nil {
+		http.Error(
+			w,
+			"Database is unavailable",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := services.QueueEmailTx(
+			r.Context(),
+			tx,
+			submissionID,
+			message,
+		); err != nil {
+			return fmt.Errorf(
+				"queue payment link email: %w",
+				err,
+			)
+		}
+
+		if err := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET
+				approval_email_resent = TRUE,
+				email_resent_count = COALESCE(email_resent_count, 0) + 1
+			WHERE id = ?
+		`, submissionID).Error; err != nil {
+			return fmt.Errorf(
+				"update payment link email state: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf(
+			"Failed to queue payment link email for submission %s: %v",
+			submissionID,
+			err,
+		)
+
+		http.Error(
+			w,
+			"Failed to queue payment link email",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":     true,
+		"message":     "Payment link email queued successfully",
+		"paymentLink": true,
+	})
+}
+
 // Helper functions
+
+func buildSubmissionPaymentLinkEmail(
+	submission models.VehicleSubmissionDTO,
+	paymentLink string,
+) *services.EmailMessage {
+	emailData := map[string]interface{}{
+		"ParticipantName": submission.ParticipantName,
+		"VehicleDetails": fmt.Sprintf(
+			"%s %s %s",
+			submission.VehicleYear,
+			submission.VehicleMake,
+			submission.VehicleModel,
+		),
+		"EventName":   submission.EventSlug,
+		"PaymentLink": paymentLink,
+		"SubmissionID": submission.ID,
+	}
+
+	return &services.EmailMessage{
+		To:         []string{submission.ParticipantEmail},
+		Subject:    "Complete Your Euro Haus Registration",
+		TemplateID: "submission-payment-link",
+		TemplateData: emailData,
+		BodyHTML: generateSubmissionPaymentLinkHTML(emailData),
+	}
+}
 
 func generateSubmissionID() string {
 	timestamp := time.Now().Unix()
@@ -3067,6 +3245,57 @@ func generateDenialEmailHTML(data map[string]interface{}) string {
 		</body>
 		</html>
 	`, data["ParticipantName"], data["VehicleDetails"], data["DenialReason"])
+}
+
+func generateSubmissionPaymentLinkHTML(
+	data map[string]interface{},
+) string {
+	participantName, _ := data["ParticipantName"].(string)
+	vehicleDetails, _ := data["VehicleDetails"].(string)
+	eventName, _ := data["EventName"].(string)
+	paymentLink, _ := data["PaymentLink"].(string)
+
+	return fmt.Sprintf(`
+<!doctype html>
+<html>
+	<body>
+		<p>Hello %s,</p>
+
+		<p>
+			Your vehicle submission for <strong>%s</strong> has been approved.
+		</p>
+
+		<p>
+			Vehicle:
+			<strong>%s</strong>
+		</p>
+
+		<p>
+			Please complete your registration payment using the link below:
+		</p>
+
+		<p>
+			<a href="%s">
+				Complete registration payment
+			</a>
+		</p>
+
+		<p>
+			If the button does not work, copy and paste this URL into your browser:
+		</p>
+
+		<p>%s</p>
+
+		<p>Euro Haus</p>
+	</body>
+</html>
+`,
+		html.EscapeString(participantName),
+		html.EscapeString(eventName),
+		html.EscapeString(vehicleDetails),
+		html.EscapeString(paymentLink),
+		html.EscapeString(paymentLink),
+	)
 }
 
 func priceRequiresApproval(priceID string) bool {

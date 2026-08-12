@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+	<body>
+		<p>Hello {{.ParticipantName}},</p>
+
+		<p>
+			Your vehicle submission for <strong>{{.EventName}}</strong>
+			has been approved.
+		</p>
+
+		<p>
+			Vehicle:
+			<strong>{{.VehicleDetails}}</strong>
+		</p>
+
+		<p>Please complete your registration payment:</p>
+
+		<p>
+			<a href="{{.PaymentLink}}"> Complete registration payment </a>
+		</p>
+
+		<p>If the button does not work, copy and paste this URL:</p>
+
+		<p>{{.PaymentLink}}</p>
+
+		<p>Euro Haus</p>
+	</body>
+</html>

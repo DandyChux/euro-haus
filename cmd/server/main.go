@@ -313,6 +313,12 @@ func main() {
 			http.HandlerFunc(handlers.RetrySubmissionTicket),
 		),
 	).Methods("POST")
+	api.Handle(
+		"/admin/submissions/{submissionId}/send-payment-link",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.SendSubmissionPaymentLink),
+		),
+	).Methods("POST")
 	api.Handle("/admin/submissions/{submissionId}/approve", middleware.RequireAdminAuth(http.HandlerFunc(handlers.ApproveSubmission))).Methods("PUT")
 	api.Handle("/admin/submissions/{submissionId}/deny", middleware.RequireAdminAuth(http.HandlerFunc(handlers.DenySubmission))).Methods("PUT")
 	api.Handle("/admin/submissions/{submissionId}/payment-status", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetSubmissionPaymentStatus))).Methods("GET")
