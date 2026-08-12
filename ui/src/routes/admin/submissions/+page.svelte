@@ -2,7 +2,7 @@
 	import { onMount } from "svelte";
 	import { apiClient } from "$lib/api";
 	import { formatDate } from "$lib/utils";
-	import type { VehicleSubmission } from "$lib/schemas/event";
+	import type { VehicleSubmission } from "$lib/schemas/submission";
 	import type { PageProps } from "./$types";
 	import SubmissionReview from "$lib/components/admin/submission-review.svelte";
 

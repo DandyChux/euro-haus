@@ -295,6 +295,24 @@ func main() {
 	api.Handle("/admin/submissions/pending-count", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetPendingSubmissionsCount))).Methods("GET")
 	api.Handle("/admin/submissions/issues", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetAllSubmissionsWithIssues))).Methods("GET") // MOVED UP
 	api.Handle("/admin/submissions/{id}", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetEventSubmissions))).Methods("GET")
+	api.Handle(
+	    "/admin/submissions/{submissionId}/repair-payment",
+	    middleware.RequireAdminAuth(
+	        http.HandlerFunc(handlers.RepairSubmissionPayment),
+	    ),
+	).Methods("POST")
+	api.Handle(
+		"/admin/submissions/{submissionId}/retry-approval",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.RetrySubmissionApproval),
+		),
+	).Methods("POST")
+	api.Handle(
+		"/admin/submissions/{submissionId}/retry-ticket",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.RetrySubmissionTicket),
+		),
+	).Methods("POST")
 	api.Handle("/admin/submissions/{submissionId}/approve", middleware.RequireAdminAuth(http.HandlerFunc(handlers.ApproveSubmission))).Methods("PUT")
 	api.Handle("/admin/submissions/{submissionId}/deny", middleware.RequireAdminAuth(http.HandlerFunc(handlers.DenySubmission))).Methods("PUT")
 	api.Handle("/admin/submissions/{submissionId}/payment-status", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetSubmissionPaymentStatus))).Methods("GET")

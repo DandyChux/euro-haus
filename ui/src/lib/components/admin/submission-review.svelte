@@ -2,7 +2,7 @@
 	import { toast } from "svelte-sonner";
 
 	import apiClient from "$lib/api";
-	import type { VehicleSubmission } from "$lib/schemas/event";
+	import type { VehicleSubmission } from "$lib/schemas/submission";
 
 	import { Button } from "$lib/components/ui/button";
 	import { Card } from "$lib/components/ui/card";

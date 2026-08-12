@@ -1,35 +1,19 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import { toast } from "svelte-sonner";
 
 	import apiClient from "$lib/api";
-	import type { VehicleSubmission } from "$lib/schemas/event";
+	import type { IssueSubmission } from "$lib/schemas/submission";
 	import type { Price } from "$lib/schemas/price";
 
-	import * as Form from "$lib/components/ui/form";
 	import { Input } from "$lib/components/ui/input";
 	import { Button } from "$lib/components/ui/button";
 	import { Checkbox } from "$lib/components/ui/checkbox";
-	import { Textarea } from "$lib/components/ui/textarea";
 	import { Card } from "$lib/components/ui/card";
+	import { formatDate } from "$lib/utils";
 
 	interface Props {
-		events?: Array<{
-			id: string;
-			name: string;
-		}>;
-	}
-
-	type IssueSubmission = VehicleSubmission & {
-		issues?: string[];
-		event_slug?: string;
-		has_issue?: boolean;
-		email_sent_at?: string;
-	};
-
-	interface IssuesResponse {
-		submissions?: IssueSubmission[];
-		total?: number;
+		submissions: IssueSubmission[];
+		onRefresh?: () => void | Promise<void>;
 	}
 
 	interface PaymentStatus {
@@ -49,9 +33,8 @@
 		message?: string;
 	}
 
-	let { events = [] }: Props = $props();
+	let { submissions, onRefresh }: Props = $props();
 
-	let submissions = $state<IssueSubmission[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state("");
 
@@ -79,10 +62,11 @@
 	let creatingPayment = $state(false);
 	let resendingEmail = $state(false);
 	let loadingPrices = $state(false);
+	let busyAction = $state<string | null>(null);
 
 	const paymentIssueTypes = [
 		"no_payment",
-		"payment_failed",
+		"payment_check_failed",
 		"payment_expired",
 		"payment_incomplete",
 		"missing_payment_intent",
@@ -90,6 +74,9 @@
 		"payment_not_succeeded",
 		"missing_checkout_data",
 		"incomplete_payment_process",
+		"orphaned_checkout_session",
+		"capture_failed",
+		"payment_processing",
 	];
 
 	const issueTypes = $derived(
@@ -165,24 +152,62 @@
 					: filteredSubmissions,
 	);
 
-	onMount(() => {
-		void loadSubmissions();
-	});
+	async function repairPayment(submission: IssueSubmission) {
+		await runAction(
+			submission.id,
+			`/admin/submissions/${submission.id}/repair-payment`,
+			"Payment references repaired.",
+		);
+	}
 
-	function formatDate(value?: string): string {
-		if (!value) return "—";
+	async function retryApproval(submission: IssueSubmission) {
+		await runAction(
+			submission.id,
+			`/admin/submissions/${submission.id}/retry-approval`,
+			"Approval/payment processing retried.",
+		);
+	}
 
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: "medium",
-		}).format(new Date(value));
+	async function retryTicket(submission: IssueSubmission) {
+		await runAction(
+			submission.id,
+			`/admin/submissions/${submission.id}/retry-ticket`,
+			"Ticket and ticket email processing retried.",
+		);
+	}
+
+	async function runAction(
+		id: string,
+		endpoint: string,
+		successMessage: string,
+		body: unknown = {},
+	) {
+		busyAction = `${id}:${endpoint}`;
+
+		try {
+			const response = await apiClient.post<{
+				message?: string;
+			}>(endpoint, body);
+
+			toast.success(response.message ?? successMessage);
+			await refreshSubmissions();
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Action failed.",
+			);
+		} finally {
+			busyAction = null;
+		}
 	}
 
 	function getEventName(submission: IssueSubmission): string {
-		return (
-			events.find((event) => event.id === submission.event_id)?.name ??
-			submission.event_slug ??
-			"Unknown event"
-		);
+		return submission.event_slug ?? "Euro Haus Event";
+	}
+
+	async function refreshSubmissions() {
+		if (onRefresh) {
+			await onRefresh();
+		}
 	}
 
 	function formatIssue(issue: string): string {
@@ -203,37 +228,9 @@
 		return (submission.issues ?? []).includes("no_ticket_created");
 	}
 
-	async function loadSubmissions() {
-		loading = true;
-		errorMessage = "";
-
-		const params = new URLSearchParams();
-
-		if (debugMode) params.set("debug", "true");
-		if (showAll) params.set("all", "true");
-		if (includeId.trim()) {
-			params.set("include_id", includeId.trim());
-		}
-
-		const query = params.toString();
-
-		try {
-			const response = await apiClient.get<IssuesResponse>(
-				`/admin/submissions/issues${query ? `?${query}` : ""}`,
-			);
-
-			submissions = response.submissions ?? [];
-		} catch (error) {
-			console.error("Failed to load submission issues:", error);
-			errorMessage = "Failed to load submission issues.";
-		} finally {
-			loading = false;
-		}
-	}
-
 	async function applyServerFilters() {
 		showFilters = false;
-		await loadSubmissions();
+		await refreshSubmissions();
 		toast.success("Filters applied.");
 	}
 
@@ -246,7 +243,7 @@
 		selectedIssueTypes = [];
 		showFilters = false;
 
-		void loadSubmissions();
+		void refreshSubmissions();
 	}
 
 	async function checkPaymentStatus(submission: IssueSubmission) {
@@ -321,7 +318,7 @@
 				showCreatePayment = false;
 				selectedPriceId = "";
 
-				await loadSubmissions();
+				await refreshSubmissions();
 			}
 		} catch (error) {
 			console.error("Failed to create payment:", error);
@@ -346,7 +343,7 @@
 				toast.error(response.message ?? "Failed to resend email.");
 			}
 
-			await loadSubmissions();
+			await refreshSubmissions();
 		} catch (error) {
 			console.error("Failed to resend approval email:", error);
 			toast.error("Failed to resend approval email.");
@@ -392,7 +389,7 @@
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => loadSubmissions()}
+					onclick={() => void refreshSubmissions()}
 				>
 					Refresh
 				</Button>
@@ -573,27 +570,59 @@
 								</span>
 
 								{#if hasPaymentIssue(submission)}
-									<span
-										class="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive"
+									<Button
+										type="button"
+										variant="outline"
+										disabled={busyAction !== null}
+										onclick={() =>
+											repairPayment(submission)}
 									>
-										Payment issue
-									</span>
+										Repair payment references
+									</Button>
+
+									<Button
+										type="button"
+										disabled={busyAction !== null}
+										onclick={() =>
+											openCreatePayment(submission)}
+									>
+										Create replacement checkout
+									</Button>
 								{/if}
 
-								{#if hasEmailIssue(submission)}
-									<span
-										class="rounded-full border px-2 py-1 text-xs"
+								{#if submission.status === "approved" && (submission.checkout_session_id || submission.payment_intent_id)}
+									<Button
+										type="button"
+										variant="outline"
+										disabled={busyAction !== null}
+										onclick={() =>
+											retryApproval(submission)}
 									>
-										Email issue
-									</span>
+										Retry approval/capture
+									</Button>
 								{/if}
 
 								{#if hasTicketIssue(submission)}
-									<span
-										class="rounded-full border border-orange-300 px-2 py-1 text-xs text-orange-700"
+									<Button
+										type="button"
+										variant="outline"
+										disabled={busyAction !== null}
+										onclick={() => retryTicket(submission)}
 									>
-										Ticket issue
-									</span>
+										Retry ticket/email
+									</Button>
+								{/if}
+
+								{#if hasEmailIssue(submission) && submission.status === "approved"}
+									<Button
+										type="button"
+										variant="outline"
+										disabled={busyAction !== null}
+										onclick={() =>
+											resendApprovalEmail(submission)}
+									>
+										Resend approval email
+									</Button>
 								{/if}
 							</div>
 						</div>
@@ -618,16 +647,20 @@
 							<div>
 								<p class="text-muted-foreground">Submitted</p>
 								<p class="font-medium">
-									{formatDate(submission.submitted_at)}
+									{formatDate(submission.submitted_at, {
+										dateStyle: "medium",
+									})}
 								</p>
 							</div>
 
-							<div>
+							<!-- <div>
 								<p class="text-muted-foreground">Reviewed</p>
 								<p class="font-medium">
-									{formatDate(submission.reviewed_at)}
+									{formatDate(submission.reviewed_at, {
+										dateStyle: "medium",
+									})}
 								</p>
-							</div>
+							</div> -->
 						</div>
 
 						{#if submission.issues?.length}
@@ -774,7 +807,9 @@
 							</span>
 
 							<strong>
-								{formatDate(paymentStatus.email_sent_at)}
+								{formatDate(paymentStatus.email_sent_at, {
+									dateStyle: "medium",
+								})}
 							</strong>
 						</div>
 					{/if}

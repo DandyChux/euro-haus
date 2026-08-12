@@ -1,13 +1,17 @@
 import apiClient from "$lib/api";
 import type { IssueSubmission } from "$lib/schemas/submission";
-import type { PageLoad } from "../$types";
+import type { PageLoad } from "./$types";
+
+interface IssuesResponse {
+	submissions?: IssueSubmission[];
+}
 
 export const load: PageLoad = async () => {
-	const response = await apiClient.get<{
-		submissions?: IssueSubmission[];
-	}>("/admin/submissions/issues");
+	const response = await apiClient.get<IssuesResponse>(
+		"/admin/submissions/issues",
+	);
 
 	return {
-		submissions: response.submissions ?? [],
+		issues: response.submissions ?? [],
 	};
 };

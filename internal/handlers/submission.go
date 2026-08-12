@@ -599,6 +599,33 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if submission.CheckoutSessionID == "" &&
+		submission.PaymentIntentID == "" {
+		recoveredSessionID, recoveredPaymentIntentID, recoveryErr :=
+			recoverSubmissionPaymentReferences(
+				r.Context(),
+				submissionID,
+			)
+
+		if recoveryErr != nil {
+			log.Printf(
+				"No Stripe payment references recovered for submission %s: %v",
+				submissionID,
+				recoveryErr,
+			)
+		} else {
+			submission.CheckoutSessionID = recoveredSessionID
+			submission.PaymentIntentID = recoveredPaymentIntentID
+
+			log.Printf(
+				"Recovered Stripe payment references for submission %s: session=%s payment_intent=%s",
+				submissionID,
+				recoveredSessionID,
+				recoveredPaymentIntentID,
+			)
+		}
+	}
+
 	if submission.Status == "approved" {
 		http.Error(
 			w,
@@ -623,7 +650,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	paymentLink := ""
 
 	// If an unpaid checkout already exists, reuse it.
-	if submission.CheckoutSessionID != "" {
+	if submission.CheckoutSessionID != "" || submission.PaymentIntentID != "" {
 		params := &stripe.CheckoutSessionParams{}
 
 		checkoutSession, getErr := session.Get(
@@ -740,15 +767,21 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 
 	paymentCaptured := false
 	paymentProcessing := false
+	paymentCaptureError := ""
 
-	// Capture manually-authorized payment after approval.
-	if submission.CheckoutSessionID != "" {
+	hasPaymentReference :=
+		strings.TrimSpace(submission.CheckoutSessionID) != "" ||
+			strings.TrimSpace(submission.PaymentIntentID) != ""
+
+	if hasPaymentReference {
 		var captureErr error
 
 		paymentCaptured, paymentProcessing, captureErr =
 			captureSubmissionPayment(submissionID)
 
 		if captureErr != nil {
+			paymentCaptureError = captureErr.Error()
+
 			log.Printf(
 				"Payment capture failed for submission %s: %v",
 				submissionID,
@@ -767,14 +800,30 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	responseStatus := http.StatusOK
 
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"submission":        updatedSubmission,
-		"paymentCaptured":   paymentCaptured,
-		"paymentProcessing": paymentProcessing,
-		"message":           "Submission approved successfully. Email delivery has been queued.",
-	}); err != nil {
+		"payment_captured":   paymentCaptured,
+		"payment_processing": paymentProcessing,
+		"message":            "Submission approved successfully. Email delivery has been queued.",
+	}
+
+	if paymentCaptureError != "" {
+		response["payment_capture_error"] = paymentCaptureError
+		response["message"] =
+			"Submission was approved, but payment capture requires attention."
+	}
+
+	if paymentProcessing {
+		response["message"] =
+			"Submission was approved. Payment is still processing."
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(responseStatus)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf(
 			"Failed to encode approval response for %s: %v",
 			submissionID,
@@ -970,14 +1019,51 @@ func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := services.GetDB()
-	err = db.WithContext(r.Context()).Exec(`
-			UPDATE vehicle_submissions
-			SET checkout_session_id = ?,
-				price_id = ?
-			WHERE id = ?
-		`, s.ID, submissionNullableString(req.PriceID), req.SubmissionID).Error
-	if err != nil {
-		log.Printf("Failed to store checkout session for submission %s: %v", req.SubmissionID, err)
+	if db == nil {
+		http.Error(
+			w,
+			"Database is unavailable",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	result := db.WithContext(r.Context()).Exec(`
+		UPDATE vehicle_submissions
+		SET
+			checkout_session_id = ?,
+			price_id = NULLIF(?, ''),
+			checkout_created_at = NOW()
+		WHERE id = ?
+	`,
+		s.ID,
+		strings.TrimSpace(req.PriceID),
+		req.SubmissionID,
+	)
+
+	if result.Error != nil {
+		log.Printf(
+			"Failed to persist checkout session %s for submission %s: %v",
+			s.ID,
+			req.SubmissionID,
+			result.Error,
+		)
+
+		http.Error(
+			w,
+			"Checkout session was created but could not be saved. Contact support before retrying.",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	if result.RowsAffected != 1 {
+		http.Error(
+			w,
+			"Submission not found while saving checkout session",
+			http.StatusNotFound,
+		)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1001,6 +1087,30 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.SubmissionID = strings.TrimSpace(req.SubmissionID)
+	req.PriceID = strings.TrimSpace(req.PriceID)
+
+	if req.SubmissionID == "" {
+		http.Error(
+			w,
+			"Submission ID is required",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	if req.PriceID == "" {
+		http.Error(
+			w,
+			"Price ID is required",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	// Submission-backed checkouts currently support only one submission/ticket
+	req.Quantity = 1
+
 	submission, err := getSubmissionByID(req.SubmissionID)
 	if err != nil {
 		log.Printf(
@@ -1019,12 +1129,63 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requiresApproval := true
-	if req.PriceID != "" {
-		requiresApproval = priceRequiresApproval(req.PriceID)
+	event, err := findEventByID(
+		r.Context(),
+		submission.EventID,
+	)
+	if err != nil {
+		http.Error(
+			w,
+			"Event not found",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
-	needsManualCapture := requiresApproval && submission.Status != "approved"
+	var eventPrice models.PriceInfo
+
+	err = services.GetDB().
+		WithContext(r.Context()).
+		Where(
+			"id = ? AND stripe_product_id = ? AND active = TRUE",
+			req.PriceID,
+			event.StripeProductID,
+		).
+		First(&eventPrice).
+		Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(
+			w,
+			"Price does not belong to this event",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	if err != nil {
+		http.Error(
+			w,
+			"Unable to validate submission price",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	// requiresApproval := eventPrice.RequiresApproval
+	requiresApproval := true
+
+	if !requiresApproval &&
+		submission.Status != "approved" {
+		http.Error(
+			w,
+			"This price does not require a submission approval flow",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	needsManualCapture := submission.Status != "approved"
 
 	baseURL := os.Getenv("BASE_URL")
 	params := &stripe.CheckoutSessionParams{
@@ -1034,7 +1195,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
 				Price:    stripe.String(req.PriceID),
-				Quantity: stripe.Int64(req.Quantity),
+				Quantity: stripe.Int64(1),
 			},
 		},
 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
@@ -1121,23 +1282,27 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db := services.GetDB()
-	err = db.WithContext(r.Context()).Exec(`
-		UPDATE vehicle_submissions
-		SET checkout_session_id = ?,
-			price_id = ?,
-			requires_approval = ?,
-			checkout_created_at = NOW(),
-			promotion_code = ?
-		WHERE id = ?
-	`, s.ID,
-		submissionNullableString(req.PriceID),
-		requiresApproval,
-		submissionNullableString(req.PromotionCode),
+	if err := persistCheckoutSessionAfterCreation(
+		r.Context(),
 		req.SubmissionID,
-	).Error
-	if err != nil {
-		log.Printf("Error updating submission with checkout session: %v", err)
+		s.ID,
+		req.PriceID,
+		req.PromotionCode,
+		requiresApproval,
+	); err != nil {
+		log.Printf(
+			"Checkout session %s was created in Stripe but could not be persisted for submission %s: %v",
+			s.ID,
+			req.SubmissionID,
+			err,
+		)
+
+		http.Error(
+			w,
+			"Checkout session was created but could not be saved. Contact support before retrying.",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1148,9 +1313,8 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetSubmissionPaymentStatus checks the payment status for a submission
 func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
-	submissionID := mux.Vars(r)["submission_id"]
+	submissionID := mux.Vars(r)["submissionId"]
 
 	submission, err := getSubmissionByID(submissionID)
 	if err != nil {
@@ -1160,47 +1324,69 @@ func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
 
 	type PaymentStatus struct {
 		HasPayment      bool   `json:"has_payment"`
-		PaymentStatus   string `json:"payment_status"`
-		PaymentAmount   int64  `json:"payment_amount"`
-		PaymentCurrency string `json:"payment_currency"`
+		PaymentStatus   string `json:"payment_status,omitempty"`
+		PaymentAmount   int64  `json:"payment_amount,omitempty"`
+		PaymentCurrency string `json:"payment_currency,omitempty"`
 		CheckoutURL     string `json:"checkout_url,omitempty"`
+		CheckoutExists  bool   `json:"checkout_exists"`
+		PaymentIntentID string `json:"payment_intent_id,omitempty"`
 		ErrorMessage    string `json:"error_message,omitempty"`
 	}
 
 	status := PaymentStatus{
-		HasPayment: false,
+		PaymentIntentID: submission.PaymentIntentID,
 	}
 
 	if submission.CheckoutSessionID != "" {
 		params := &stripe.CheckoutSessionParams{}
-		sess, err := session.Get(submission.CheckoutSessionID, params)
-		if err != nil {
-			status.ErrorMessage = fmt.Sprintf("Failed to retrieve checkout session: %v", err)
-		} else {
-			status.HasPayment = true
+		params.AddExpand("payment_intent")
+
+		sess, sessionErr := session.Get(
+			submission.CheckoutSessionID,
+			params,
+		)
+
+		if sessionErr == nil {
+			status.CheckoutExists = true
 			status.PaymentStatus = string(sess.PaymentStatus)
 			status.PaymentAmount = sess.AmountTotal
 			status.PaymentCurrency = string(sess.Currency)
+			status.CheckoutURL = sess.URL
 
-			if sess.PaymentStatus != "paid" && sess.URL != "" {
-				status.CheckoutURL = sess.URL
+			if sess.PaymentIntent != nil &&
+				sess.PaymentIntent.ID != "" {
+				status.PaymentIntentID = sess.PaymentIntent.ID
+				status.HasPayment = true
 			}
-		}
-	} else if submission.PaymentIntentID != "" {
-		params := &stripe.PaymentIntentParams{}
-		pi, err := paymentintent.Get(submission.PaymentIntentID, params)
-		if err != nil {
-			status.ErrorMessage = fmt.Sprintf("Failed to retrieve payment intent: %v", err)
 		} else {
+			status.ErrorMessage = fmt.Sprintf(
+				"Checkout session not found: %v",
+				sessionErr,
+			)
+		}
+	}
+
+	if status.PaymentIntentID != "" {
+		pi, paymentErr := paymentintent.Get(
+			status.PaymentIntentID,
+			nil,
+		)
+
+		if paymentErr == nil {
 			status.HasPayment = true
 			status.PaymentStatus = string(pi.Status)
 			status.PaymentAmount = pi.Amount
 			status.PaymentCurrency = string(pi.Currency)
+		} else if status.ErrorMessage == "" {
+			status.ErrorMessage = fmt.Sprintf(
+				"PaymentIntent not found: %v",
+				paymentErr,
+			)
 		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func CreateSubmissionPayment(
@@ -1286,20 +1472,29 @@ func CreateSubmissionPayment(
 	db := services.GetDB()
 
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`
+		result := tx.Exec(`
 			UPDATE vehicle_submissions
-			SET checkout_session_id = ?,
-				price_id = ?,
+			SET
+				checkout_session_id = ?,
+				price_id = NULLIF(?, ''),
 				checkout_created_at = NOW()
 			WHERE id = ?
 		`,
 			checkoutSession.ID,
-			submissionNullableString(req.PriceID),
-			submissionID,
-		).Error; err != nil {
+			req.PriceID,
+			submissionID)
+
+		if result.Error != nil {
 			return fmt.Errorf(
 				"update submission checkout session: %w",
-				err,
+				result.Error,
+			)
+		}
+
+		if result.RowsAffected != 1 {
+			return fmt.Errorf(
+				"submission %s was not found while saving checkout session",
+				submissionID,
 			)
 		}
 
@@ -1375,7 +1570,7 @@ func ResendApprovalEmail(
 
 	paymentLink := ""
 
-	if submission.CheckoutSessionID != "" {
+	if submission.CheckoutSessionID != "" || submission.PaymentIntentID != "" {
 		params := &stripe.CheckoutSessionParams{}
 
 		checkoutSession, getErr := session.Get(
@@ -1503,83 +1698,128 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		hasIssue := false
 		issues := []string{}
 
-		hasPaymentData := submission.CheckoutSessionID != "" ||
-			submission.PaymentIntentID != ""
+		hasPaymentData :=
+			submission.CheckoutSessionID != "" ||
+				submission.PaymentIntentID != ""
 
 		if status == "approved" {
-			if submission.CheckoutSessionID == "" && submission.PaymentIntentID == "" {
+			if !hasPaymentData {
 				hasIssue = true
-				issues = append(issues, "no_payment")
-				fmt.Printf("Submission %s has no payment", submissionID)
+				issues = appendUniqueIssue(issues, "no_payment")
 			}
 
-			if submission.CheckoutSessionID != "" {
-				sessionValid := false
-				params := &stripe.CheckoutSessionParams{}
-				sess, err := session.Get(submission.CheckoutSessionID, params)
-				if err != nil {
-					log.Printf("Error checking session %s: %v", submission.CheckoutSessionID, err)
-					hasIssue = true
-					issues = append(issues, "payment_check_failed")
-				} else {
-					if sess.PaymentStatus != "paid" {
-						if sess.ExpiresAt < time.Now().Unix() {
-							hasIssue = true
-							issues = append(issues, "payment_expired")
-							fmt.Printf("Submission %s payment expired", submissionID)
-						} else {
-							hasIssue = true
-							issues = append(issues, "payment_incomplete")
-							fmt.Printf("Submission %s payment incomplete", submissionID)
-						}
-					} else {
-						sessionValid = true
-					}
-				}
+			sessionPaid := false
 
-				if submission.PaymentIntentID == "" && !sessionValid {
+			if submission.CheckoutSessionID != "" {
+				params := &stripe.CheckoutSessionParams{}
+				params.AddExpand("payment_intent")
+
+				sess, sessionErr := session.Get(
+					submission.CheckoutSessionID,
+					params,
+				)
+
+				if sessionErr != nil {
 					hasIssue = true
-					issues = append(issues, "missing_payment_intent")
-					fmt.Printf("Submission %s has checkout session but no payment intent", submissionID)
+					issues = appendUniqueIssue(issues, "orphaned_checkout_session")
+
+					log.Printf(
+						"Checkout session %s for submission %s cannot be retrieved: %v",
+						submission.CheckoutSessionID,
+						submissionID,
+						sessionErr,
+					)
+				} else {
+					sessionPaid = sess.PaymentStatus == "paid"
+
+					if submission.PaymentIntentID == "" &&
+						sess.PaymentIntent != nil &&
+						sess.PaymentIntent.ID != "" {
+						hasIssue = true
+						issues = appendUniqueIssue(issues, "missing_payment_intent")
+					}
+
+					if !sessionPaid {
+						hasIssue = true
+
+						if sess.ExpiresAt > 0 &&
+							sess.ExpiresAt < time.Now().Unix() {
+							issues = appendUniqueIssue(issues, "payment_expired")
+						} else {
+							issues = appendUniqueIssue(issues, "payment_incomplete")
+						}
+					}
 				}
 			}
 
 			if submission.PaymentIntentID != "" {
-				params := &stripe.PaymentIntentParams{}
-				pi, err := paymentintent.Get(submission.PaymentIntentID, params)
-				if err != nil {
-					log.Printf("Error checking payment intent %s: %v", submission.PaymentIntentID, err)
+				pi, paymentErr := paymentintent.Get(
+					submission.PaymentIntentID,
+					nil,
+				)
+
+				if paymentErr != nil {
 					hasIssue = true
-					issues = append(issues, "payment_intent_check_failed")
-				} else if pi.Status != "succeeded" {
-					hasIssue = true
-					issues = append(issues, "payment_not_succeeded")
-					fmt.Printf("Submission %s payment intent not succeeded: %s", submissionID, pi.Status)
+					issues = appendUniqueIssue(issues, "payment_intent_check_failed")
+
+					log.Printf(
+						"PaymentIntent %s for submission %s cannot be retrieved: %v",
+						submission.PaymentIntentID,
+						submissionID,
+						paymentErr,
+					)
+				} else {
+					switch pi.Status {
+					case stripe.PaymentIntentStatusSucceeded:
+						sessionPaid = true
+
+					case stripe.PaymentIntentStatusRequiresCapture:
+						// This is valid for an approved submission that is waiting
+						// for administrative capture.
+						if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
+							hasIssue = true
+							issues = appendUniqueIssue(issues, "capture_failed")
+						}
+
+					case stripe.PaymentIntentStatusProcessing:
+						hasIssue = true
+						issues = appendUniqueIssue(issues, "payment_processing")
+
+					default:
+						hasIssue = true
+						issues = appendUniqueIssue(issues, "payment_not_succeeded")
+					}
 				}
 			}
 
-			if submission.PaymentIntentID != "" && submission.TicketID == "" {
+			if submission.CheckoutSessionID == "" &&
+				submission.PaymentIntentID != "" {
 				hasIssue = true
-				issues = append(issues, "no_ticket_created")
-				fmt.Printf("Submission %s has payment but no ticket", submissionID)
+				issues = appendUniqueIssue(issues, "incomplete_payment_process")
+			}
+
+			if sessionPaid &&
+				submission.TicketID == "" &&
+				submission.PaymentIntentID != "" {
+				hasIssue = true
+				issues = appendUniqueIssue(issues, "no_ticket_created")
 			}
 
 			if submission.CheckoutSessionID == "" {
 				hasIssue = true
-				issues = append(issues, "missing_checkout_data")
-				fmt.Printf("Submission %s missing checkout data", submissionID)
+				issues = appendUniqueIssue(issues, "missing_checkout_data")
 			}
 		}
 
 		if status != "approved" && hasPaymentData {
 			hasIssue = true
-			issues = append(issues, "payment_without_approval")
+			issues = appendUniqueIssue(issues, "payment_without_approval")
 			fmt.Printf("Submission %s has payment data but not approved", submissionID)
 		}
 
 		if status == "pending" && hasPaymentData {
 			hasIssue = true
-			issues = append(issues, "pending_with_payment")
+			issues = appendUniqueIssue(issues, "pending_with_payment")
 			fmt.Printf("Submission %s is pending with payment data", submissionID)
 		}
 
@@ -1589,7 +1829,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				twoWeeksAgo := time.Now().AddDate(0, 0, -14)
 				if submittedAt.Before(twoWeeksAgo) {
 					hasIssue = true
-					issues = append(issues, "pending_too_long")
+					issues = appendUniqueIssue(issues, "pending_too_long")
 					fmt.Printf("Submission %s pending too long", submissionID)
 				}
 			}
@@ -1598,7 +1838,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		if hasPaymentData {
 			hasIssue = true
 			if !contains(issues, "no_ticket_created") {
-				issues = append(issues, "no_ticket_created")
+				issues = appendUniqueIssue(issues, "no_ticket_created")
 				fmt.Printf("Submission %s has payment data but no ticket", submissionID)
 			}
 		}
@@ -1606,7 +1846,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		if submission.PaymentIntentID != "" && submission.CheckoutSessionID == "" {
 			hasIssue = true
 			if !contains(issues, "incomplete_payment_process") {
-				issues = append(issues, "incomplete_payment_process")
+				issues = appendUniqueIssue(issues, "incomplete_payment_process")
 				fmt.Printf("Submission %s has incomplete payment process", submissionID)
 			}
 		}
@@ -1691,7 +1931,7 @@ func UpdateSubmissionEmail(w http.ResponseWriter, r *http.Request) {
 		paymentIsPaid := false
 		paymentLink := ""
 
-		if submission.CheckoutSessionID != "" {
+		if submission.CheckoutSessionID != "" || submission.PaymentIntentID != "" {
 			params := &stripe.CheckoutSessionParams{}
 
 			checkoutSession, getErr := session.Get(
@@ -1911,6 +2151,317 @@ func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+func RepairSubmissionPayment(w http.ResponseWriter, r *http.Request) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	sessionID := submission.CheckoutSessionID
+	paymentIntentID := submission.PaymentIntentID
+
+	if sessionID == "" || paymentIntentID == "" {
+		recoveredSessionID, recoveredPaymentIntentID, recoveryErr :=
+			recoverSubmissionPaymentReferences(
+				r.Context(),
+				submissionID,
+			)
+
+		if recoveryErr != nil {
+			http.Error(
+				w,
+				fmt.Sprintf("Unable to recover Stripe payment: %v", recoveryErr),
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+
+		sessionID = recoveredSessionID
+		paymentIntentID = recoveredPaymentIntentID
+	}
+
+	pi, err := paymentintent.Get(paymentIntentID, nil)
+	if err != nil {
+		http.Error(
+			w,
+			fmt.Sprintf("Unable to retrieve payment intent: %v", err),
+			http.StatusBadGateway,
+		)
+		return
+	}
+
+	updates := map[string]interface{}{
+		"checkout_session_id":  sessionID,
+		"payment_intent_id":    paymentIntentID,
+		"checkout_completed":   true,
+		"checkout_completed_at": gorm.Expr("COALESCE(checkout_completed_at, NOW())"),
+	}
+
+	switch pi.Status {
+	case stripe.PaymentIntentStatusRequiresCapture:
+		updates["awaiting_approval"] = true
+		updates["payment_succeeded_before_approval"] = true
+		updates["payment_succeeded_at"] =
+			gorm.Expr("COALESCE(payment_succeeded_at, NOW())")
+
+	case stripe.PaymentIntentStatusSucceeded:
+		updates["payment_succeeded_at"] =
+			gorm.Expr("COALESCE(payment_succeeded_at, NOW())")
+
+	default:
+		updates["awaiting_approval"] = false
+	}
+
+	if err := services.GetDB().
+		WithContext(r.Context()).
+		Model(&models.VehicleSubmission{}).
+		Where("id = ?", submissionID).
+		Updates(updates).
+		Error; err != nil {
+		http.Error(
+			w,
+			fmt.Sprintf("Unable to repair submission: %v", err),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	updated, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(
+			w,
+			"Payment repaired but submission could not be reloaded",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"submission":       updated,
+		"payment_intent_id": paymentIntentID,
+		"checkout_session_id": sessionID,
+		"stripe_status":     pi.Status,
+	})
+}
+
+func RetrySubmissionApproval(w http.ResponseWriter, r *http.Request) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	if submission.Status != "approved" {
+		http.Error(
+			w,
+			"Submission must be approved before retrying payment",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	paymentCaptured := false
+	paymentProcessing := false
+
+	if submission.CheckoutSessionID != "" ||
+		submission.PaymentIntentID != "" {
+		var captureErr error
+
+		paymentCaptured, paymentProcessing, captureErr =
+			captureSubmissionPayment(submissionID)
+
+		if captureErr != nil {
+			http.Error(
+				w,
+				fmt.Sprintf("Payment retry failed: %v", captureErr),
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+	}
+
+	updatedSubmission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(
+			w,
+			"Payment retry completed but submission could not be reloaded",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":          true,
+		"message":          "Approval/payment processing retried",
+		"paymentCaptured":  paymentCaptured,
+		"paymentProcessing": paymentProcessing,
+		"submission":       updatedSubmission,
+	})
+}
+
+func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	if submission.PaymentIntentID == "" {
+		http.Error(
+			w,
+			"Submission has no payment intent",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	if submission.TicketID != "" {
+		http.Error(
+			w,
+			"Submission already has a ticket",
+			http.StatusConflict,
+		)
+		return
+	}
+
+	pi, err := paymentintent.Get(
+		submission.PaymentIntentID,
+		nil,
+	)
+	if err != nil {
+		http.Error(
+			w,
+			"Unable to retrieve payment intent",
+			http.StatusBadGateway,
+		)
+		return
+	}
+
+	if pi.Status != stripe.PaymentIntentStatusSucceeded {
+		http.Error(
+			w,
+			fmt.Sprintf(
+				"Payment is not complete; current status is %s",
+				pi.Status,
+			),
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	event, err := findEventByID(
+		r.Context(),
+		submission.EventID,
+	)
+	if err != nil {
+		http.Error(
+			w,
+			"Event not found",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	checkoutSessionID := submission.CheckoutSessionID
+
+	err = services.GetDB().
+		WithContext(r.Context()).
+		Transaction(func(tx *gorm.DB) error {
+			ticketToken, err := insertParticipantTicketTx(
+				r.Context(),
+				tx,
+				submission,
+				event.Name,
+				checkoutSessionID,
+				submission.PaymentIntentID,
+				"Participant",
+				1,
+			)
+			if err != nil {
+				return err
+			}
+
+			if err := tx.Exec(`
+				UPDATE vehicle_submissions
+				SET
+					ticket_id = ?,
+					ticket_created_at = NOW(),
+					payment_captured = TRUE,
+					payment_captured_at = COALESCE(
+						payment_captured_at,
+						NOW()
+					)
+				WHERE id = ?
+			`,
+				ticketToken,
+				submissionID,
+			).Error; err != nil {
+				return fmt.Errorf(
+					"update ticket state: %w",
+					err,
+				)
+			}
+
+			message, err := buildParticipantTicketEmail(
+				submission,
+				ticketToken,
+				event.Name,
+			)
+			if err != nil {
+				return err
+			}
+
+			if err := services.QueueEmailTx(
+				r.Context(),
+				tx,
+				submissionID,
+				message,
+			); err != nil {
+				return fmt.Errorf(
+					"queue ticket email: %w",
+					err,
+				)
+			}
+
+			return nil
+		})
+
+	if err != nil {
+		http.Error(
+			w,
+			fmt.Sprintf("Failed to retry ticket processing: %v", err),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	updatedSubmission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(
+			w,
+			"Ticket created but submission could not be reloaded",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"message":    "Ticket and ticket email queued",
+		"submission": updatedSubmission,
+	})
 }
 
 // Helper functions
@@ -2163,62 +2714,130 @@ func requirementAnswerDTO(
 	return result, nil
 }
 
-// captureSubmissionPayment captures payment for an approved submission
-// The webhook will handle sending emails and creating tickets when payment succeeds
 func captureSubmissionPayment(submissionID string) (bool, bool, error) {
+	ctx := context.Background()
+
 	submission, err := getSubmissionByID(submissionID)
 	if err != nil {
-		return false, false, fmt.Errorf("submission not found: %v", err)
+		return false, false, fmt.Errorf("load submission: %w", err)
 	}
 
-	if submission.CheckoutSessionID == "" {
-		return false, false, fmt.Errorf("no checkout session found")
+	var pi *stripe.PaymentIntent
+
+	// Prefer the persisted PaymentIntent. This avoids depending on a
+	// Checkout Session being present in the local database.
+	if strings.TrimSpace(submission.PaymentIntentID) != "" {
+		pi, err = paymentintent.Get(
+			strings.TrimSpace(submission.PaymentIntentID),
+			nil,
+		)
+		if err != nil {
+			return false, false, fmt.Errorf(
+				"retrieve payment intent %s: %w",
+				submission.PaymentIntentID,
+				err,
+			)
+		}
+	} else if strings.TrimSpace(submission.CheckoutSessionID) != "" {
+		pi, err = retrieveCheckoutSessionPaymentIntent(
+			ctx,
+			submission.CheckoutSessionID,
+		)
+		if err != nil {
+			return false, false, err
+		}
+
+		if err := persistPaymentIntentID(
+			ctx,
+			submissionID,
+			pi.ID,
+		); err != nil {
+			return false, false, err
+		}
+	} else {
+		return false, false, fmt.Errorf(
+			"submission has neither checkout session nor payment intent",
+		)
 	}
 
-	sess, err := session.Get(submission.CheckoutSessionID, nil)
-	if err != nil {
-		return false, false, fmt.Errorf("error retrieving checkout session: %v", err)
-	}
+	switch pi.Status {
+	case stripe.PaymentIntentStatusRequiresCapture:
+		if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
+			return false, false, fmt.Errorf(
+				"payment intent %s requires capture but uses capture method %s",
+				pi.ID,
+				pi.CaptureMethod,
+			)
+		}
 
-	if sess.PaymentIntent == nil {
-		return false, false, fmt.Errorf("no payment intent associated with checkout session")
-	}
-
-	pi, err := paymentintent.Get(sess.PaymentIntent.ID, nil)
-	if err != nil {
-		return false, false, fmt.Errorf("error retrieving payment intent: %v", err)
-	}
-
-	if pi.Status == "requires_capture" && pi.CaptureMethod == "manual" {
-		fmt.Printf("Capturing payment for submission %s (payment intent: %s)\n", submissionID, pi.ID)
+		log.Printf(
+			"Capturing payment %s for submission %s",
+			pi.ID,
+			submissionID,
+		)
 
 		capturedPI, err := paymentintent.Capture(pi.ID, nil)
 		if err != nil {
-			return false, false, fmt.Errorf("error capturing payment: %v", err)
+			return false, false, fmt.Errorf(
+				"capture payment intent %s: %w",
+				pi.ID,
+				err,
+			)
 		}
 
-		err = services.GetDB().WithContext(context.Background()).Exec(`
-			UPDATE vehicle_submissions
-			SET payment_intent_id = ?,
-			    payment_captured = TRUE,
-			    payment_captured_at = NOW()
-			WHERE id = ?
-		`, capturedPI.ID, submissionID).Error
-		if err != nil {
-			log.Printf("Failed to update payment capture state for submission %s: %v", submissionID, err)
+		if err := services.GetDB().
+			WithContext(ctx).
+			Exec(`
+				UPDATE vehicle_submissions
+				SET
+					payment_intent_id = ?,
+					payment_captured = TRUE,
+					payment_captured_at = NOW(),
+					payment_succeeded_at = COALESCE(payment_succeeded_at, NOW())
+				WHERE id = ?
+			`,
+				capturedPI.ID,
+				submissionID,
+			).Error; err != nil {
+			return false, false, fmt.Errorf(
+				"persist captured payment state: %w",
+				err,
+			)
 		}
 
-		fmt.Printf("Successfully captured payment %s for submission %s\n", capturedPI.ID, submissionID)
-		return true, true, nil
-	} else if pi.Status == "succeeded" {
-		log.Printf("Payment already succeeded for submission %s\n", submissionID)
 		return true, false, nil
-	} else if pi.Status == "processing" {
-		log.Printf("Payment is processing for submission %s\n", submissionID)
-		return false, true, nil
-	}
 
-	return false, false, fmt.Errorf("payment intent status: %s (capture method: %s)", pi.Status, pi.CaptureMethod)
+	case stripe.PaymentIntentStatusSucceeded:
+		if err := services.GetDB().
+			WithContext(ctx).
+			Exec(`
+				UPDATE vehicle_submissions
+				SET
+					payment_intent_id = ?,
+					payment_succeeded_at = COALESCE(payment_succeeded_at, NOW())
+				WHERE id = ?
+			`,
+				pi.ID,
+				submissionID,
+			).Error; err != nil {
+			return false, false, fmt.Errorf(
+				"persist succeeded payment state: %w",
+				err,
+			)
+		}
+
+		return true, false, nil
+
+	case stripe.PaymentIntentStatusProcessing:
+		return false, true, nil
+
+	default:
+		return false, false, fmt.Errorf(
+			"payment intent %s status is %s",
+			pi.ID,
+			pi.Status,
+		)
+	}
 }
 
 func createSubmissionPaymentLink(submission models.VehicleSubmissionDTO) (string, error) {
@@ -2475,6 +3094,88 @@ func priceRequiresApproval(priceID string) bool {
 	return priceInfo.RequiresApproval
 }
 
+func recoverSubmissionPaymentReferences(
+	ctx context.Context,
+	submissionID string,
+) (string, string, error) {
+	submissionID = strings.TrimSpace(submissionID)
+	if submissionID == "" {
+		return "", "", fmt.Errorf("submission ID is required")
+	}
+
+	params := &stripe.CheckoutSessionListParams{}
+	params.Filters.AddFilter(
+		"limit",
+		"",
+		"100",
+	)
+	params.Filters.AddFilter(
+		"metadata[submission_id]",
+		"",
+		submissionID,
+	)
+
+	iter := session.List(params)
+
+	for iter.Next() {
+		sess := iter.CheckoutSession()
+
+		if sess == nil || sess.ID == "" {
+			continue
+		}
+
+		paymentIntentID := paymentIntentIDFromSession(sess)
+
+		if paymentIntentID == "" {
+			expandedParams := &stripe.CheckoutSessionParams{}
+			expandedParams.AddExpand("payment_intent")
+
+			expanded, err := session.Get(sess.ID, expandedParams)
+			if err != nil {
+				log.Printf(
+					"Failed to expand recovered checkout session %s: %v",
+					sess.ID,
+					err,
+				)
+				continue
+			}
+
+			paymentIntentID = paymentIntentIDFromSession(expanded)
+		}
+
+		if paymentIntentID == "" {
+			continue
+		}
+
+		if err := persistCheckoutState(
+			ctx,
+			submissionID,
+			sess.ID,
+			paymentIntentID,
+			sess.Status == stripe.CheckoutSessionStatusComplete,
+			false,
+			false,
+		); err != nil {
+			return "", "", err
+		}
+
+		return sess.ID, paymentIntentID, nil
+	}
+
+	if err := iter.Err(); err != nil {
+		return "", "", fmt.Errorf(
+			"list checkout sessions for submission %s: %w",
+			submissionID,
+			err,
+		)
+	}
+
+	return "", "", fmt.Errorf(
+		"no Stripe Checkout Session found for submission %s",
+		submissionID,
+	)
+}
+
 // Helper function to check if a slice contains a string
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
@@ -2483,4 +3184,14 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func appendUniqueIssue(issues []string, issue string) []string {
+	for _, existing := range issues {
+		if existing == issue {
+			return issues
+		}
+	}
+
+	return append(issues, issue)
 }

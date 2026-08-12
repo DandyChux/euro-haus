@@ -56,7 +56,7 @@
 			price: currentPrice,
 			quantity,
 			imageUrl: images[activeImage] ?? images[0],
-			maxQuantity,
+			max_quantity: maxQuantity,
 			type: isBundleProduct(data.product) ? "bundle" : "product",
 		});
 	}

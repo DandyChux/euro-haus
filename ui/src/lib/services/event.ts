@@ -1,12 +1,8 @@
 import { apiRequest } from "$lib/api";
-import type {
-	AgendaItem,
-	Sponsor,
-	Event,
-	VehicleSubmission,
-} from "$lib/schemas/event";
+import type { AgendaItem, Sponsor, Event } from "$lib/schemas/event";
 import type { EventGallery, MediaFile } from "$lib/schemas/media";
 import type { Price } from "$lib/schemas/price";
+import type { VehicleSubmission } from "$lib/schemas/submission";
 import { isUpcoming, parseJsonField, toInt } from "$lib/utils";
 
 type EventAPIResponse = {

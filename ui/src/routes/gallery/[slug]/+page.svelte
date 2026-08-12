@@ -30,7 +30,7 @@
 			<div class="album-heading">
 				<div>
 					<p class="eyebrow">Event album</p>
-					<h1>{data.event?.title}</h1>
+					<h1>{data.event?.name}</h1>
 				</div>
 				<div class="album-intro">
 					<p>{data.event?.description}</p>
@@ -63,7 +63,7 @@
 
 		<section
 			class="full-grid wrap"
-			aria-label={`${data.event?.title} photographs`}
+			aria-label={`${data.event?.name} photographs`}
 		>
 			{#each data.images as photo, index (photo.url)}
 				<figure class:wide={index % 11 === 0 || index % 11 === 6}>

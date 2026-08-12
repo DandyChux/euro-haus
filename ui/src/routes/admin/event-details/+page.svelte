@@ -149,20 +149,20 @@
 						>
 							<div>
 								<p class="font-medium">
-									{attendee.customerName ||
+									{attendee.customer_name ||
 										"Unknown attendee"}
 								</p>
-								<p>{attendee.customerEmail || "—"}</p>
+								<p>{attendee.customer_email || "—"}</p>
 							</div>
 
 							<div>{attendee.token || "—"}</div>
 
 							<div>
-								{attendee.ticketType || "General"}
+								{attendee.ticket_type || "General"}
 							</div>
 
 							<div>
-								{attendee.checkedIn
+								{attendee.checked_in
 									? "Checked in"
 									: "Not checked in"}
 							</div>

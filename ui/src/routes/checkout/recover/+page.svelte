@@ -1,51 +1,44 @@
 <script lang="ts">
-	import type { PageProps } from "./$types";
+	import apiClient from "$lib/api.js";
 
-	let { data }: PageProps = $props();
+	let { data } = $props();
 
-	let isRecovering = $state(false);
-	let recoveryError = $state("");
+	let loading = $state(false);
+	let errorMessage = $state("");
 
 	async function recoverSubmissionCheckout() {
-		if (!data.submission || !data.event || !data.matchedPriceId) return;
+		if (!data.submission?.id || !data.matchedPriceId) {
+			errorMessage = "Unable to determine the submission price.";
+			return;
+		}
 
-		isRecovering = true;
-		recoveryError = "";
+		loading = true;
+		errorMessage = "";
 
 		try {
-			const response = await fetch("/api/create-participant-checkout", {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-				},
-				body: JSON.stringify({
-					submissionId: data.submission.id,
-					price_id: data.matchedPriceId,
-					eventName: data.event.name,
-					quantity: data.submission.ticketQuantity || 1,
-				}),
+			const response = await apiClient.post<{
+				session_id: string;
+				session_url: string;
+				requires_approval: boolean;
+			}>("/create-participant-checkout", {
+				submission_id: data.submission.id,
+				price_id: data.matchedPriceId,
+				event_name: data.event?.name,
+				quantity: 1,
 			});
 
-			const payload = await response.json();
-
-			if (!response.ok) {
-				throw new Error(
-					payload.message ?? "Unable to recover checkout.",
-				);
+			if (!response.session_url) {
+				throw new Error("Checkout session URL was not returned.");
 			}
 
-			if (payload.sessionUrl) {
-				window.location.href = payload.sessionUrl;
-				return;
-			}
-
-			throw new Error("The API did not return a Stripe checkout URL.");
+			window.location.href = response.session_url;
 		} catch (error) {
-			recoveryError =
+			errorMessage =
 				error instanceof Error
 					? error.message
 					: "Unable to recover checkout.";
-			isRecovering = false;
+		} finally {
+			loading = false;
 		}
 	}
 </script>
@@ -101,22 +94,22 @@
 				>
 					<p class="">Submission</p>
 					<p class="mt-1 text-white">
-						{data.submission.vehicleYear}
-						{data.submission.vehicleMake}
-						{data.submission.vehicleModel}
+						{data.submission.vehicle_year}
+						{data.submission.vehicle_make}
+						{data.submission.vehicle_model}
 					</p>
 					<p class="mt-3">Participant</p>
 					<p class="mt-1 text-white">
-						{data.submission.participantName}
+						{data.submission.participant_name}
 					</p>
 				</div>
 			{/if}
 
-			{#if recoveryError}
+			{#if errorMessage}
 				<p
 					class="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
 				>
-					{recoveryError}
+					{errorMessage}
 				</p>
 			{/if}
 
@@ -124,9 +117,9 @@
 				<button
 					class="rounded-full bg-white px-5 py-3 text-sm font-medium disabled:opacity-60"
 					onclick={recoverSubmissionCheckout}
-					disabled={isRecovering || !data.matchedPriceId}
+					disabled={loading || !data.matchedPriceId}
 				>
-					{isRecovering ? "Creating checkout…" : "Resume checkout"}
+					{loading ? "Creating checkout…" : "Resume checkout"}
 				</button>
 				<a
 					href={data.event ? `/event/${data.event.id}` : "/events"}

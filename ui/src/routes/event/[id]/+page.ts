@@ -6,7 +6,7 @@ import { getEventLinkedProducts } from "$lib/services/stripe";
 import {
 	vehicleSubmissionFormSchema,
 	type VehicleSubmissionFormData,
-} from "$lib/schemas/event";
+} from "$lib/schemas/submission";
 import { zod4 } from "sveltekit-superforms/adapters";
 import { superValidate } from "sveltekit-superforms";
 

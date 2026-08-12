@@ -593,81 +593,137 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 }
 
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
-	fmt.Printf("Checkout session completed: %s\n", checkoutSession.ID)
-
 	ctx := context.Background()
 
-	fmt.Printf(
-		"Checkout session completed: %s\n",
+	log.Printf(
+		"Checkout session completed: %s",
 		checkoutSession.ID,
 	)
 
-	participantSubmission, submissionErr :=
-		findSubmissionByCheckoutSessionID(
-			ctx,
-			checkoutSession.ID,
-		)
+	participantSubmission, err :=
+		findSubmissionByCheckoutSessionID(ctx, checkoutSession.ID)
 
-	if submissionErr == nil && participantSubmission != nil {
-		if checkoutSession.PaymentIntent != nil {
-			pi, err := paymentintent.Get(
-				checkoutSession.PaymentIntent.ID,
-				nil,
-			)
+	if err == nil && participantSubmission != nil {
+		paymentIntentID := paymentIntentIDFromSession(&checkoutSession)
 
-			if err == nil && pi.CaptureMethod == "manual" {
-				paymentIntentID := ""
+		// The webhook payload may contain only a PaymentIntent ID. Retrieve
+		// the session with payment_intent expanded when necessary.
+		if paymentIntentID == "" {
+			params := &stripe.CheckoutSessionParams{}
+			params.AddExpand("payment_intent")
 
-				if checkoutSession.PaymentIntent != nil {
-					paymentIntentID =
-						checkoutSession.PaymentIntent.ID
-				}
+			expandedSession, expandErr :=
+				session.Get(checkoutSession.ID, params)
 
-				db := services.GetDB()
-				err = db.WithContext(ctx).Exec(`
-					UPDATE vehicle_submissions
-					SET checkout_session_id = ?,
-						payment_intent_id = ?,
-						checkout_completed = TRUE,
-						awaiting_approval = TRUE,
-						checkout_completed_at = NOW()
-					WHERE id = ?
-				`,
-					checkoutSession.ID,
-					submissionNullableString(paymentIntentID),
-					participantSubmission.ID,
-				).Error
-
-				if err != nil {
-					log.Printf(
-						"Error updating participant submission: %v",
-						err,
-					)
-				}
-
+			if expandErr != nil {
 				log.Printf(
-					"Submission %s checkout completed; awaiting approval",
-					participantSubmission.ID,
+					"Failed to expand payment intent for checkout session %s: %v",
+					checkoutSession.ID,
+					expandErr,
 				)
-
-				return
+			} else {
+				paymentIntentID =
+					paymentIntentIDFromSession(expandedSession)
 			}
 		}
 
-		handleParticipantCheckout(
-			checkoutSession,
-			participantSubmission.ID,
-		)
+		paymentSucceeded := false
+		paymentSucceededAt := false
 
+		if paymentIntentID != "" {
+			pi, piErr := paymentintent.Get(paymentIntentID, nil)
+			if piErr != nil {
+				log.Printf(
+					"Failed to retrieve payment intent %s for submission %s: %v",
+					paymentIntentID,
+					participantSubmission.ID,
+					piErr,
+				)
+			} else {
+				paymentSucceeded =
+					pi.Status == stripe.PaymentIntentStatusSucceeded ||
+						pi.Status == stripe.PaymentIntentStatusRequiresCapture
+
+				paymentSucceededAt = paymentSucceeded
+
+				// Manual capture means the funds are authorized but not yet
+				// captured. It must remain pending approval.
+				if pi.CaptureMethod == stripe.PaymentIntentCaptureMethodManual &&
+					pi.Status == stripe.PaymentIntentStatusRequiresCapture {
+					if persistErr := persistCheckoutState(
+						ctx,
+						participantSubmission.ID,
+						checkoutSession.ID,
+						paymentIntentID,
+						true,
+						true,
+						true,
+					); persistErr != nil {
+						logPersistenceFailure(
+							"persist manual-capture checkout state",
+							participantSubmission.ID,
+							persistErr,
+						)
+					}
+
+					log.Printf(
+						"Submission %s checkout completed; awaiting approval",
+						participantSubmission.ID,
+					)
+					return
+				}
+			}
+		}
+
+		if persistErr := persistCheckoutState(
+			ctx,
+			participantSubmission.ID,
+			checkoutSession.ID,
+			paymentIntentID,
+			true,
+			paymentSucceeded,
+			paymentSucceededAt,
+		); persistErr != nil {
+			logPersistenceFailure(
+				"persist checkout completion",
+				participantSubmission.ID,
+				persistErr,
+			)
+		}
+
+		if paymentSucceeded {
+			handleParticipantPaymentSucceededFromCheckout(
+				checkoutSession,
+				participantSubmission.ID,
+				paymentIntentID,
+			)
+			return
+		}
+
+		handleParticipantCheckout(checkoutSession, participantSubmission.ID)
 		return
 	}
 
+	// Existing non-submission checkout behavior remains unchanged.
+	handleNonSubmissionCheckoutCompleted(checkoutSession)
+}
+
+func handleNonSubmissionCheckoutCompleted(
+	checkoutSession stripe.CheckoutSession,
+) {
 	params := &stripe.CheckoutSessionParams{}
 	params.AddExpand("line_items.data.price.product")
 
-	fullSession, err := session.Get(checkoutSession.ID, params)
+	fullSession, err := session.Get(
+		checkoutSession.ID,
+		params,
+	)
 	if err != nil {
-		log.Printf("Error expanding session: %v\n", err)
+		log.Printf(
+			"Error expanding non-submission checkout session %s: %v",
+			checkoutSession.ID,
+			err,
+		)
 		return
 	}
 
@@ -679,6 +735,11 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	totalAmount := 0.0
 
 	for _, lineItem := range fullSession.LineItems.Data {
+		if lineItem.Price == nil ||
+			lineItem.Price.Product == nil {
+			continue
+		}
+
 		stripeProductID := lineItem.Price.Product.ID
 
 		_, eventErr := findEventByStripeProductID(
@@ -687,40 +748,36 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		)
 
 		isEventProduct := eventErr == nil
-
 		productType := "product"
 
 		if isEventProduct {
 			productType = "event"
+			hasEventTickets = true
+
+			storeTicketPurchase(*fullSession, *lineItem)
+		} else {
+			hasPhysicalProducts = true
 		}
 
 		productItems = append(productItems, map[string]interface{}{
 			"Name":        lineItem.Price.Product.Name,
 			"Description": lineItem.Price.Product.Description,
 			"Quantity":    lineItem.Quantity,
-			"Price":       float64(lineItem.Price.UnitAmount) / 100.0,
-			"Currency":    string(lineItem.Price.Currency),
-			"Subtotal":    float64(lineItem.AmountSubtotal) / 100.0,
-			"Type":        productType,
+			"Price": float64(
+				lineItem.Price.UnitAmount,
+			) / 100.0,
+			"Currency": string(
+				lineItem.Price.Currency,
+			),
+			"Subtotal": float64(
+				lineItem.AmountSubtotal,
+			) / 100.0,
+			"Type": productType,
 		})
 
-		totalAmount += float64(lineItem.AmountTotal) / 100.0
-
-		if isEventProduct {
-			hasEventTickets = true
-
-			// Do not create tickets for participant submissions.
-			if participantSubmission == nil {
-				storeTicketPurchase(*fullSession, *lineItem)
-			} else {
-				log.Printf(
-					"Skipping immediate ticket creation for participant checkout %s",
-					fullSession.ID,
-				)
-			}
-		} else {
-			hasPhysicalProducts = true
-		}
+		totalAmount += float64(
+			lineItem.AmountTotal,
+		) / 100.0
 	}
 
 	customerEmail := fullSession.CustomerEmail
@@ -730,7 +787,11 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		customerEmail = fullSession.Customer.Email
 	}
 
-	customerName := fullSession.CustomerDetails.Name
+	customerName := ""
+
+	if fullSession.CustomerDetails != nil {
+		customerName = fullSession.CustomerDetails.Name
+	}
 
 	if err := ProcessBundledProducts(
 		fullSession.ID,
@@ -745,7 +806,10 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	}
 
 	if customerEmail == "" {
-		log.Printf("No email address available for checkout session %s", fullSession.ID)
+		log.Printf(
+			"No email address available for checkout session %s",
+			fullSession.ID,
+		)
 		return
 	}
 
@@ -761,7 +825,7 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		"ShippingAddress":  formatShippingAddress(fullSession),
 	}
 
-	msg := &services.EmailMessage{
+	message := &services.EmailMessage{
 		To:           []string{customerEmail},
 		Subject:      "Order Confirmation - Euro Haus",
 		TemplateID:   "order-confirmation",
@@ -770,9 +834,9 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	}
 
 	if err := services.QueueEmail(
-		ctx,
+		context.Background(),
 		"",
-		msg,
+		message,
 	); err != nil {
 		log.Printf(
 			"Failed to queue order confirmation email for session %s: %v",
@@ -780,8 +844,178 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 			err,
 		)
 	}
+}
 
-	fmt.Printf("Order processed for session: %s, Customer: %s\n", fullSession.ID, customerEmail)
+func handleParticipantPaymentSucceededFromCheckout(
+	checkoutSession stripe.CheckoutSession,
+	submissionID string,
+	paymentIntentID string,
+) {
+	if strings.TrimSpace(paymentIntentID) == "" {
+		log.Printf(
+			"Cannot process completed checkout for submission %s: missing payment intent",
+			submissionID,
+		)
+		return
+	}
+
+	pi, err := paymentintent.Get(paymentIntentID, nil)
+	if err != nil {
+		log.Printf(
+			"Failed to retrieve payment intent %s for submission %s: %v",
+			paymentIntentID,
+			submissionID,
+			err,
+		)
+		return
+	}
+
+	if pi.Status != stripe.PaymentIntentStatusSucceeded {
+		log.Printf(
+			"Payment intent %s for submission %s is %s; ticket will not be created",
+			paymentIntentID,
+			submissionID,
+			pi.Status,
+		)
+		return
+	}
+
+	handleParticipantPaymentSucceededWithSession(
+		*pi,
+		submissionID,
+		checkoutSession.ID,
+	)
+}
+
+func handleParticipantPaymentSucceededWithSession(
+	pi stripe.PaymentIntent,
+	submissionID string,
+	checkoutSessionID string,
+) {
+	log.Printf(
+		"Handling successful participant payment for submission %s",
+		submissionID,
+	)
+
+	ctx := context.Background()
+	db := services.GetDB()
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		log.Printf(
+			"Failed to load submission %s after payment success: %v",
+			submissionID,
+			err,
+		)
+		return
+	}
+
+	if err := persistCheckoutState(
+		ctx,
+		submissionID,
+		checkoutSessionID,
+		pi.ID,
+		true,
+		true,
+		true,
+	); err != nil {
+		logPersistenceFailure(
+			"persist successful participant payment",
+			submissionID,
+			err,
+		)
+		return
+	}
+
+	if submission.Status != "approved" {
+		return
+	}
+
+	if submission.TicketID != "" {
+		log.Printf(
+			"Ticket already exists for submission %s: %s",
+			submissionID,
+			submission.TicketID,
+		)
+		return
+	}
+
+	event, err := findEventByID(ctx, submission.EventID)
+	if err != nil {
+		log.Printf(
+			"Failed to load event for submission %s: %v",
+			submissionID,
+			err,
+		)
+		return
+	}
+
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ticketToken, err := insertParticipantTicketTx(
+			ctx,
+			tx,
+			submission,
+			event.Name,
+			checkoutSessionID,
+			pi.ID,
+			"Participant",
+			1,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET
+				ticket_id = ?,
+				payment_intent_id = ?,
+				payment_succeeded_before_approval = FALSE,
+				payment_succeeded_at = COALESCE(payment_succeeded_at, NOW()),
+				ticket_created_at = NOW()
+			WHERE id = ?
+		`,
+			ticketToken,
+			pi.ID,
+			submissionID,
+		).Error; err != nil {
+			return fmt.Errorf(
+				"update submission after ticket creation: %w",
+				err,
+			)
+		}
+
+		ticketMessage, err := buildParticipantTicketEmail(
+			submission,
+			ticketToken,
+			event.Name,
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := services.QueueEmailTx(
+			ctx,
+			tx,
+			submissionID,
+			ticketMessage,
+		); err != nil {
+			return fmt.Errorf(
+				"queue participant ticket email: %w",
+				err,
+			)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf(
+			"Failed to create ticket and queue email for submission %s: %v",
+			submissionID,
+			err,
+		)
+	}
 }
 
 // handleParticipantCheckout handles checkout completion for approved vehicle submissions

@@ -478,6 +478,28 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requiresSubmission := eventPrice.RequiresSubmission
+
+	maxQuantity := eventPrice.Quantity
+
+	if requiresSubmission {
+		maxQuantity = 1
+	}
+
+	if maxQuantity < 1 {
+		maxQuantity = 1
+	}
+
+	requestedQuantity := req.Quantity
+
+	if requestedQuantity < 1 {
+		requestedQuantity = 1
+	}
+
+	if requestedQuantity > int64(maxQuantity) {
+		requestedQuantity = int64(maxQuantity)
+	}
+
 	priceParams := &stripe.PriceParams{}
 	priceParams.AddExpand("product")
 
@@ -496,7 +518,7 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	lineItems := []*stripe.CheckoutSessionLineItemParams{
 		{
 			Price:    stripe.String(req.PriceID),
-			Quantity: stripe.Int64(req.Quantity),
+			Quantity: stripe.Int64(requestedQuantity),
 		},
 	}
 
@@ -531,7 +553,7 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	metadata := map[string]string{
 		"event_id": event.ID,
 		"price_id": req.PriceID,
-		"quantity": strconv.FormatInt(req.Quantity, 10),
+		"quantity": strconv.FormatInt(requestedQuantity, 10),
 	}
 
 	params := &stripe.CheckoutSessionParams{

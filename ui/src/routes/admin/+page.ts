@@ -1,6 +1,6 @@
 import type { PageLoad } from "./$types";
 import apiClient from "$lib/api";
-import type { Product } from "$lib/types";
+import type { Product } from "$lib/schemas/product";
 
 type CouponSummary = { valid?: boolean };
 

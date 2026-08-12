@@ -24,18 +24,18 @@
 				<div>
 					<p class="">Vehicle</p>
 					<p class="mt-1 text-white">
-						{data.submission.vehicleYear}
-						{data.submission.vehicleMake}
-						{data.submission.vehicleModel}
+						{data.submission.vehicle_year}
+						{data.submission.vehicle_make}
+						{data.submission.vehicle_model}
 					</p>
 				</div>
 
 				<div>
 					<p class="">Participant</p>
 					<p class="mt-1 text-white">
-						{data.submission.participantName}
+						{data.submission.participant_name}
 					</p>
-					<p>{data.submission.participantEmail}</p>
+					<p>{data.submission.participant_email}</p>
 				</div>
 
 				<div>
@@ -48,7 +48,7 @@
 				<div>
 					<p class="">Submitted</p>
 					<p class="mt-1 text-white">
-						{formatDate(data.submission.submittedAt)}
+						{formatDate(data.submission.submitted_at)}
 					</p>
 				</div>
 			</div>

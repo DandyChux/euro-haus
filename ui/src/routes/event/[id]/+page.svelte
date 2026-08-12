@@ -14,7 +14,7 @@
 		type Price,
 	} from "$lib/schemas/price";
 	import apiClient from "$lib/api";
-	import type { VehicleSubmission } from "$lib/schemas/event";
+	import type { VehicleSubmission } from "$lib/schemas/submission";
 	import VehicleSubmissionForm from "$lib/components/vehicle-submission-form.svelte";
 
 	let { data } = $props();
@@ -23,7 +23,7 @@
 
 	let checkoutState = $state<CheckoutState>("idle");
 	let pendingPrice = $state<Price | null>(null);
-	let quantity = $state("1");
+	let quantitiesByPrice = $state<Record<string, number>>({});
 
 	let selectedAddOns = $state<Array<{ price_id: string; quantity: number }>>(
 		[],
@@ -50,27 +50,70 @@
 		return data.event.prices.find((price) => price.id === selectedPriceID);
 	}
 
+	function priceRequiresSubmission(price: Price): boolean {
+		return String(price.requires_submission) === "true";
+	}
+
+	function getPriceMaximumQuantity(price: Price): number {
+		if (priceRequiresSubmission(price)) {
+			return 1;
+		}
+
+		const configuredQuantity = Number(price.quantity);
+
+		if (!Number.isFinite(configuredQuantity) || configuredQuantity < 1) {
+			return 1;
+		}
+
+		return Math.floor(configuredQuantity);
+	}
+
+	function getPriceQuantity(price: Price): number {
+		const maximumQuantity = getPriceMaximumQuantity(price);
+		const selectedQuantity = quantitiesByPrice[price.id];
+
+		if (!Number.isFinite(selectedQuantity) || selectedQuantity < 1) {
+			return 1;
+		}
+
+		return Math.min(Math.floor(selectedQuantity), maximumQuantity);
+	}
+
+	function setPriceQuantity(price: Price, value: string): void {
+		const maximumQuantity = getPriceMaximumQuantity(price);
+		const parsedQuantity = Number(value);
+
+		const nextQuantity =
+			Number.isFinite(parsedQuantity) && parsedQuantity >= 1
+				? Math.min(Math.floor(parsedQuantity), maximumQuantity)
+				: 1;
+
+		quantitiesByPrice = {
+			...quantitiesByPrice,
+			[price.id]: nextQuantity,
+		};
+	}
+
+	let currentPrice = $derived(getSelectedPrice());
+
+	let currentQuantity = $derived(
+		currentPrice ? getPriceQuantity(currentPrice) : 1,
+	);
+
+	let maximumQuantity = $derived(
+		currentPrice ? getPriceMaximumQuantity(currentPrice) : 1,
+	);
+
 	function openCheckout(): void {
 		const price = getSelectedPrice();
 
-		console.log("CHECKOUT DEBUG", {
-			selectedPriceID,
-			price,
-			requires_submission: price?.requires_submission,
-			requiresSubmissionType: typeof price?.requires_submission,
-		});
-
 		if (!price?.id) {
-			console.error("No ticket price selected", {
-				selectedPriceID,
-				prices: data.event.prices,
-			});
 			return;
 		}
 
-		// String(...) handles incorrectly serialized production values such as
-		// "true" while remaining compatible with the correct boolean response.
-		if (String(price.requires_submission) === "true") {
+		if (priceRequiresSubmission(price)) {
+			setPriceQuantity(price, "1");
+
 			pendingPrice = price;
 			checkoutState = "submission";
 			return;
@@ -84,6 +127,8 @@
 			return;
 		}
 
+		const selectedQuantity = getPriceQuantity(price);
+
 		checkoutState = "loading";
 
 		try {
@@ -93,7 +138,7 @@
 			}>("/create-event-checkout-session", {
 				event_id: data.event.id,
 				price_id: price.id,
-				quantity: Number(quantity),
+				quantity: selectedQuantity,
 				addon_products: selectedAddOns,
 			});
 
@@ -125,7 +170,7 @@
 			submission_id: submission.id,
 			price_id: selectedPrice.id,
 			event_name: data.event.name,
-			quantity: Number(quantity),
+			quantity: 1,
 		});
 
 		if (!result.session_url) {
@@ -263,7 +308,7 @@
 						priceId={pendingPrice.id}
 						ticketTier={getPriceName(pendingPrice)}
 						ticketPrice={getPriceAmount(pendingPrice)}
-						ticketQuantity={Number(quantity)}
+						ticketQuantity={1}
 						requirements={pendingPrice.requirements}
 						onsucceed={completeVehicleSubmission}
 						oncancel={() => {
@@ -356,6 +401,18 @@
 						class="ticket-options"
 						name="ticket-choice"
 						bind:value={selectedPriceID}
+						onValueChange={(value) => {
+							const price = data.event.prices.find(
+								(item) => item.id === value,
+							);
+
+							if (price) {
+								setPriceQuantity(
+									price,
+									String(getPriceQuantity(price)),
+								);
+							}
+						}}
 					>
 						{#each data.event.prices as price (price.id)}
 							<Label
@@ -388,32 +445,72 @@
 							name="ticketId"
 							value={selectedPriceID}
 						/>
+
 						<div class="quantity-field">
-							<Label for="quantity">Quantity</Label><Select.Root
-								type="single"
-								name="quantity"
-								bind:value={quantity}
-								><Select.Trigger id="quantity"
-									>{quantity}</Select.Trigger
-								><Select.Content
-									><Select.Group
-										><Select.Label>Quantity</Select.Label
-										>{#each [1, 2, 3, 4, 5, 6, 7, 8] as amount (amount)}<Select.Item
-												value={String(amount)}
-												label={String(amount)}
-												>{amount}</Select.Item
-											>{/each}</Select.Group
-									></Select.Content
-								></Select.Root
-							>
+							<Label for="quantity">Quantity</Label>
+
+							{#if currentPrice && priceRequiresSubmission(currentPrice)}
+								<span
+									id="quantity"
+									class="quantity-value"
+									aria-describedby="submission-quantity-help"
+								>
+									1
+								</span>
+
+								<small id="submission-quantity-help">
+									Submission tickets are limited to one
+									vehicle per submission.
+								</small>
+							{:else}
+								<Select.Root
+									type="single"
+									name="quantity"
+									value={String(currentQuantity)}
+									onValueChange={(value) => {
+										if (currentPrice) {
+											setPriceQuantity(
+												currentPrice,
+												value,
+											);
+										}
+									}}
+								>
+									<Select.Trigger id="quantity">
+										{currentQuantity}
+									</Select.Trigger>
+
+									<Select.Content>
+										<Select.Group>
+											<Select.Label>Quantity</Select.Label
+											>
+
+											{#each Array.from({ length: maximumQuantity }, (_, index) => index + 1) as amount (amount)}
+												<Select.Item
+													value={String(amount)}
+													label={String(amount)}
+												>
+													{amount}
+												</Select.Item>
+											{/each}
+										</Select.Group>
+									</Select.Content>
+								</Select.Root>
+
+								<small>
+									Maximum quantity: {maximumQuantity}
+								</small>
+							{/if}
 						</div>
+
 						<div class="ticket-total">
 							<span>Total</span>
+
 							<strong>
-								${selectedPrice
+								${currentPrice
 									? (
-											getPriceAmount(selectedPrice) *
-											Number(quantity)
+											getPriceAmount(currentPrice) *
+											currentQuantity
 										).toFixed(2)
 									: "0.00"}
 							</strong>
@@ -729,6 +826,16 @@
 	.quantity-field :global([data-slot="select-trigger"]) {
 		width: 96px;
 	}
+	.quantity-value {
+		display: inline-flex;
+		width: 96px;
+		align-items: center;
+		justify-content: space-between;
+		border: 1px solid var(--border);
+		border-radius: 0.5rem;
+		padding: 0.55rem 0.75rem;
+		font-weight: 600;
+	}
 	.ticket-total {
 		padding: 28px 0;
 	}
@@ -755,6 +862,7 @@
 			),
 			var(--secondary);
 	}
+
 	@media (max-width: 800px) {
 		.detail-hero {
 			padding-top: 70px;

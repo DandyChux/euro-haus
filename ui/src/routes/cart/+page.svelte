@@ -27,9 +27,9 @@
 				},
 				body: JSON.stringify({
 					line_items: cart.items.map((item) =>
-						item.priceId
+						item.price_id
 							? {
-									price: item.priceId,
+									price: item.price_id,
 									quantity: item.quantity,
 								}
 							: {

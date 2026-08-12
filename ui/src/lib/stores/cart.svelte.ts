@@ -1,6 +1,6 @@
 import { browser } from "$app/environment";
 import { toast } from "svelte-sonner";
-import type { CartItem } from "$lib/types";
+import type { CartItem } from "$lib/schemas/session";
 
 const STORAGE_KEY = "euro-haus-cart";
 const DEFAULT_MAX_QUANTITY = 99;
@@ -35,7 +35,7 @@ function normalizeCartItem(item: PersistedCartItem): CartItem {
 		imageUrl: item.imageUrl,
 		max_quantity: item.max_quantity,
 		type: item.type,
-		eventDate: item.eventDate,
+		event_date: item.event_date,
 	};
 }
 

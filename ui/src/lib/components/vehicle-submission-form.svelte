@@ -15,7 +15,7 @@
 		vehicleSubmissionFormSchema,
 		type VehicleSubmission,
 		type VehicleSubmissionFormData,
-	} from "$lib/schemas/event";
+	} from "$lib/schemas/submission";
 	import type {
 		RequirementAnswer,
 		SubmissionRequirement,

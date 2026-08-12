@@ -11,7 +11,7 @@ export const CartItemSchema = z.object({
 	imageUrl: z.string().optional(),
 	max_quantity: z.number().optional(),
 	type: z.enum(["product", "event", "bundle"]).optional(),
-	eventDate: z.string().optional(),
+	event_date: z.string().optional(),
 	metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
