@@ -75,6 +75,8 @@
 		"orphaned_checkout_session",
 		"capture_failed",
 		"payment_processing",
+		"payment_requires_capture",
+		"capture_method_mismatch",
 	];
 
 	const issueTypes = $derived(

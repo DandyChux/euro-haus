@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dandychux/euro-haus/internal/middleware"
 	"github.com/dandychux/euro-haus/internal/models"
 	"github.com/dandychux/euro-haus/internal/services"
 	"github.com/google/uuid"
@@ -698,16 +699,19 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 
 	db := services.GetDB()
 
+	reviewedBy := authenticatedAdminName(r)
+
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'approved',
 				reviewed_at = NOW(),
-				reviewed_by = 'admin',
+				reviewed_by = ?,
 				review_notes = ?
 			WHERE id = ?
 				AND status NOT IN ('approved', 'revoked')
 		`,
+			reviewedBy,
 			submissionNullableString(submission.ReviewNotes),
 			submissionID,
 		)
@@ -870,15 +874,18 @@ func DenySubmission(w http.ResponseWriter, r *http.Request) {
 
 	db := services.GetDB()
 
+	reviewedBy := authenticatedAdminName(r)
+
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'denied',
 				reviewed_at = NOW(),
-				reviewed_by = 'admin',
+				reviewed_by = ?,
 				review_notes = ?
 			WHERE id = ?
 		`,
+			reviewedBy,
 			req.Notes,
 			submissionID,
 		).Error; err != nil {
@@ -1775,11 +1782,18 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 						sessionPaid = true
 
 					case stripe.PaymentIntentStatusRequiresCapture:
-						// This is valid for an approved submission that is waiting
-						// for administrative capture.
 						if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
 							hasIssue = true
-							issues = appendUniqueIssue(issues, "capture_failed")
+							issues = appendUniqueIssue(
+								issues,
+								"capture_method_mismatch",
+							)
+						} else if !submission.PaymentCaptured {
+							hasIssue = true
+							issues = appendUniqueIssue(
+								issues,
+								"payment_requires_capture",
+							)
 						}
 
 					case stripe.PaymentIntentStatusProcessing:
@@ -2082,16 +2096,19 @@ func RevokeSubmission(w http.ResponseWriter, r *http.Request) {
 
 	result["ticket_invalidated"] = true
 
+	reviewedBy := authenticatedAdminName(r)
+
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'revoked',
 				revoked_at = NOW(),
-				revoked_by = 'admin',
+				revoked_by = ?,
 				revocation_reason = ?
 			WHERE id = ?
 				AND status = 'approved'
 		`,
+			reviewedBy,
 			req.Reason,
 			submissionID,
 		)
@@ -2309,12 +2326,19 @@ func RetrySubmissionApproval(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
+func RetrySubmissionTicket(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	submission, err := getSubmissionByID(submissionID)
 	if err != nil {
-		http.Error(w, "Submission not found", http.StatusNotFound)
+		http.Error(
+			w,
+			"Submission not found",
+			http.StatusNotFound,
+		)
 		return
 	}
 
@@ -2343,8 +2367,53 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(
 			w,
-			"Unable to retrieve payment intent",
+			fmt.Sprintf(
+				"Unable to retrieve payment intent: %v",
+				err,
+			),
 			http.StatusBadGateway,
+		)
+		return
+	}
+
+	switch pi.Status {
+	case stripe.PaymentIntentStatusRequiresCapture:
+		if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
+			http.Error(
+				w,
+				fmt.Sprintf(
+					"PaymentIntent uses unsupported capture method %s",
+					pi.CaptureMethod,
+				),
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+
+		pi, err = paymentintent.Capture(pi.ID, nil)
+		if err != nil {
+			http.Error(
+				w,
+				fmt.Sprintf(
+					"Failed to capture payment: %v",
+					err,
+				),
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+
+	case stripe.PaymentIntentStatusSucceeded:
+		// Already captured. Continue.
+
+	default:
+		http.Error(
+			w,
+			fmt.Sprintf(
+				"Payment is not ready for ticket creation; current status is %s",
+				pi.Status,
+			),
+			http.StatusUnprocessableEntity,
 		)
 		return
 	}
@@ -2353,7 +2422,7 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 		http.Error(
 			w,
 			fmt.Sprintf(
-				"Payment is not complete; current status is %s",
+				"Payment capture did not complete; current status is %s",
 				pi.Status,
 			),
 			http.StatusUnprocessableEntity,
@@ -2374,30 +2443,51 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	checkoutSessionID := submission.CheckoutSessionID
+	db := services.GetDB()
+	if db == nil {
+		http.Error(
+			w,
+			"Database is unavailable",
+			http.StatusInternalServerError,
+		)
+		return
+	}
 
-	err = services.GetDB().
-		WithContext(r.Context()).
-		Transaction(func(tx *gorm.DB) error {
-			ticketToken, err := insertParticipantTicketTx(
-				r.Context(),
-				tx,
-				submission,
-				event.Name,
-				checkoutSessionID,
-				submission.PaymentIntentID,
-				"Participant",
-				1,
-			)
+	err = db.WithContext(r.Context()).Transaction(
+		func(tx *gorm.DB) error {
+			var existingTicketID string
+
+			err := tx.Raw(`
+				SELECT COALESCE(ticket_id, '')
+				FROM vehicle_submissions
+				WHERE id = ?
+				FOR UPDATE
+			`, submissionID).Scan(&existingTicketID).Error
+
 			if err != nil {
-				return err
+				return fmt.Errorf(
+					"check existing ticket: %w",
+					err,
+				)
+			}
+
+			if existingTicketID != "" {
+				return fmt.Errorf(
+					"submission %s already has ticket %s",
+					submissionID,
+					existingTicketID,
+				)
 			}
 
 			if err := tx.Exec(`
 				UPDATE vehicle_submissions
 				SET
-					ticket_id = ?,
-					ticket_created_at = NOW(),
+					payment_intent_id = ?,
+					payment_succeeded_before_approval = FALSE,
+					payment_succeeded_at = COALESCE(
+						payment_succeeded_at,
+						NOW()
+					),
 					payment_captured = TRUE,
 					payment_captured_at = COALESCE(
 						payment_captured_at,
@@ -2405,11 +2495,44 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 					)
 				WHERE id = ?
 			`,
+				pi.ID,
+				submissionID,
+			).Error; err != nil {
+				return fmt.Errorf(
+					"persist captured payment state: %w",
+					err,
+				)
+			}
+
+			ticketToken, err := insertParticipantTicketTx(
+				r.Context(),
+				tx,
+				submission,
+				event.Name,
+				submission.CheckoutSessionID,
+				pi.ID,
+				"Participant",
+				1,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"create participant ticket: %w",
+					err,
+				)
+			}
+
+			if err := tx.Exec(`
+				UPDATE vehicle_submissions
+				SET
+					ticket_id = ?,
+					ticket_created_at = NOW()
+				WHERE id = ?
+			`,
 				ticketToken,
 				submissionID,
 			).Error; err != nil {
 				return fmt.Errorf(
-					"update ticket state: %w",
+					"persist ticket state: %w",
 					err,
 				)
 			}
@@ -2420,7 +2543,10 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 				event.Name,
 			)
 			if err != nil {
-				return err
+				return fmt.Errorf(
+					"build ticket email: %w",
+					err,
+				)
 			}
 
 			if err := services.QueueEmailTx(
@@ -2436,12 +2562,28 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 			}
 
 			return nil
-		})
+		},
+	)
 
 	if err != nil {
+		if strings.Contains(
+			err.Error(),
+			"already has ticket",
+		) {
+			http.Error(
+				w,
+				err.Error(),
+				http.StatusConflict,
+			)
+			return
+		}
+
 		http.Error(
 			w,
-			fmt.Sprintf("Failed to retry ticket processing: %v", err),
+			fmt.Sprintf(
+				"Failed to capture payment and create ticket: %v",
+				err,
+			),
 			http.StatusInternalServerError,
 		)
 		return
@@ -2460,8 +2602,124 @@ func RetrySubmissionTicket(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
-		"message":    "Ticket and ticket email queued",
+		"message":    "Payment captured, ticket created, and ticket email queued",
 		"submission": updatedSubmission,
+	})
+}
+
+func CaptureSubmissionPayment(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	if submission.PaymentIntentID == "" {
+		http.Error(
+			w,
+			"Submission has no payment intent",
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	pi, err := paymentintent.Get(
+		submission.PaymentIntentID,
+		nil,
+	)
+	if err != nil {
+		http.Error(
+			w,
+			fmt.Sprintf(
+				"Unable to retrieve payment intent: %v",
+				err,
+			),
+			http.StatusBadGateway,
+		)
+		return
+	}
+
+	switch pi.Status {
+	case stripe.PaymentIntentStatusRequiresCapture:
+		if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
+			http.Error(
+				w,
+				"PaymentIntent is not configured for manual capture",
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+
+		pi, err = paymentintent.Capture(pi.ID, nil)
+		if err != nil {
+			http.Error(
+				w,
+				fmt.Sprintf(
+					"Failed to capture payment: %v",
+					err,
+				),
+				http.StatusUnprocessableEntity,
+			)
+			return
+		}
+
+	case stripe.PaymentIntentStatusSucceeded:
+		// Already captured.
+
+	default:
+		http.Error(
+			w,
+			fmt.Sprintf(
+				"Payment cannot be captured from status %s",
+				pi.Status,
+			),
+			http.StatusUnprocessableEntity,
+		)
+		return
+	}
+
+	err = services.GetDB().
+		WithContext(r.Context()).
+		Exec(`
+			UPDATE vehicle_submissions
+			SET
+				payment_intent_id = ?,
+				payment_captured = TRUE,
+				payment_captured_at = COALESCE(
+					payment_captured_at,
+					NOW()
+				),
+				payment_succeeded_at = COALESCE(
+					payment_succeeded_at,
+					NOW()
+				)
+			WHERE id = ?
+		`,
+			pi.ID,
+			submissionID,
+		).
+		Error
+
+	if err != nil {
+		http.Error(
+			w,
+			"Payment captured but database reconciliation failed",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"message":        "Payment captured and submission reconciled",
+		"payment_intent": pi.ID,
+		"status":         pi.Status,
 	})
 }
 
@@ -3403,6 +3661,23 @@ func recoverSubmissionPaymentReferences(
 		"no Stripe Checkout Session found for submission %s",
 		submissionID,
 	)
+}
+
+func authenticatedAdminName(r *http.Request) string {
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok || user == nil {
+		return "admin"
+	}
+
+	if strings.TrimSpace(user.Name) != "" {
+		return strings.TrimSpace(user.Name)
+	}
+
+	if strings.TrimSpace(user.Email) != "" {
+		return strings.TrimSpace(user.Email)
+	}
+
+	return "admin"
 }
 
 // Helper function to check if a slice contains a string
