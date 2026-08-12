@@ -1717,6 +1717,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			}
 
 			sessionPaid := false
+			sessionExpired := false
 
 			if submission.CheckoutSessionID != "" {
 				params := &stripe.CheckoutSessionParams{}
@@ -1748,14 +1749,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 					}
 
 					if !sessionPaid {
-						hasIssue = true
-
-						if sess.ExpiresAt > 0 &&
-							sess.ExpiresAt < time.Now().Unix() {
-							issues = appendUniqueIssue(issues, "payment_expired")
-						} else {
-							issues = appendUniqueIssue(issues, "payment_incomplete")
-						}
+						sessionExpired = sess.ExpiresAt > 0 && sess.ExpiresAt < time.Now().Unix()
 					}
 				}
 			}
@@ -1804,6 +1798,16 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 						hasIssue = true
 						issues = appendUniqueIssue(issues, "payment_not_succeeded")
 					}
+				}
+			}
+
+			if !sessionPaid {
+				hasIssue = true
+
+				if sessionExpired {
+					issues = appendUniqueIssue(issues, "payment_expired")
+				} else {
+					issues = appendUniqueIssue(issues, "payment_incomplete")
 				}
 			}
 
