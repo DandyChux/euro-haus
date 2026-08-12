@@ -35,9 +35,6 @@
 
 	let { submissions, onRefresh }: Props = $props();
 
-	let loading = $state(true);
-	let errorMessage = $state("");
-
 	let activeTab = $state<"all" | "payment" | "email" | "ticket">("all");
 
 	let searchTerm = $state("");
@@ -353,352 +350,241 @@
 	}
 </script>
 
-{#if loading}
-	<div
-		class="flex min-h-64 items-center justify-center text-muted-foreground"
-	>
-		Loading submission issues…
-	</div>
-{:else}
-	<div class="space-y-6">
-		{#if errorMessage}
-			<p
-				role="alert"
-				class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+<div class="space-y-6">
+	<div class="flex flex-col gap-3 md:flex-row md:items-center">
+		<Input
+			bind:value={searchTerm}
+			placeholder="Search by name, email, vehicle, or ID..."
+			class="md:max-w-sm"
+		/>
+
+		<div class="flex gap-2 md:ml-auto">
+			<Button
+				type="button"
+				variant="outline"
+				onclick={() => (showFilters = !showFilters)}
 			>
-				{errorMessage}
-			</p>
-		{/if}
+				Filters
+			</Button>
 
-		<div class="flex flex-col gap-3 md:flex-row md:items-center">
-			<Input
-				bind:value={searchTerm}
-				placeholder="Search by name, email, vehicle, or ID..."
-				class="md:max-w-sm"
-			/>
-
-			<div class="flex gap-2 md:ml-auto">
-				<Button
-					type="button"
-					variant="outline"
-					onclick={() => (showFilters = !showFilters)}
-				>
-					Filters
-				</Button>
-
-				<Button
-					type="button"
-					variant="outline"
-					onclick={() => void refreshSubmissions()}
-				>
-					Refresh
-				</Button>
-			</div>
+			<Button
+				type="button"
+				variant="outline"
+				onclick={() => void refreshSubmissions()}
+			>
+				Refresh
+			</Button>
 		</div>
+	</div>
 
-		{#if showFilters}
-			<Card class="space-y-5 p-5">
-				<div>
-					<h2 class="font-semibold">Submission filters</h2>
+	{#if showFilters}
+		<Card class="space-y-5 p-5">
+			<div>
+				<h2 class="font-semibold">Submission filters</h2>
 
-					<p class="text-sm text-muted-foreground">
-						Control which issue records are loaded and displayed.
-					</p>
-				</div>
+				<p class="text-sm text-muted-foreground">
+					Control which issue records are loaded and displayed.
+				</p>
+			</div>
 
-				<div class="grid gap-4 md:grid-cols-2">
-					<label class="flex items-center gap-2 text-sm">
-						<Checkbox bind:checked={debugMode} />
-						Debug mode
-					</label>
-
-					<label class="flex items-center gap-2 text-sm">
-						<Checkbox bind:checked={showAll} />
-						Show all submissions
-					</label>
-				</div>
-
-				<label class="space-y-2 text-sm font-medium">
-					<span>Include submission ID</span>
-
-					<Input
-						bind:value={includeId}
-						placeholder="Optional submission ID"
-					/>
+			<div class="grid gap-4 md:grid-cols-2">
+				<label class="flex items-center gap-2 text-sm">
+					<Checkbox bind:checked={debugMode} />
+					Debug mode
 				</label>
 
-				<div>
-					<p class="mb-2 text-sm font-medium">Status</p>
+				<label class="flex items-center gap-2 text-sm">
+					<Checkbox bind:checked={showAll} />
+					Show all submissions
+				</label>
+			</div>
 
-					<div class="flex flex-wrap gap-4">
-						{#each ["approved", "pending", "denied"] as status}
-							<label class="flex items-center gap-2 text-sm">
-								<Checkbox
-									checked={selectedStatuses.includes(status)}
-									onCheckedChange={(checked) => {
-										if (checked === true) {
-											selectedStatuses = [
-												...selectedStatuses,
-												status,
-											];
-										} else {
-											selectedStatuses =
-												selectedStatuses.filter(
-													(value) => value !== status,
-												);
-										}
-									}}
-								/>
+			<label class="space-y-2 text-sm font-medium">
+				<span>Include submission ID</span>
 
-								<span class="capitalize">{status}</span>
-							</label>
-						{/each}
-					</div>
+				<Input
+					bind:value={includeId}
+					placeholder="Optional submission ID"
+				/>
+			</label>
+
+			<div>
+				<p class="mb-2 text-sm font-medium">Status</p>
+
+				<div class="flex flex-wrap gap-4">
+					{#each ["approved", "pending", "denied"] as status}
+						<label class="flex items-center gap-2 text-sm">
+							<Checkbox
+								checked={selectedStatuses.includes(status)}
+								onCheckedChange={(checked) => {
+									if (checked === true) {
+										selectedStatuses = [
+											...selectedStatuses,
+											status,
+										];
+									} else {
+										selectedStatuses =
+											selectedStatuses.filter(
+												(value) => value !== status,
+											);
+									}
+								}}
+							/>
+
+							<span class="capitalize">{status}</span>
+						</label>
+					{/each}
 				</div>
+			</div>
 
-				<div>
-					<p class="mb-2 text-sm font-medium">Issue types</p>
+			<div>
+				<p class="mb-2 text-sm font-medium">Issue types</p>
 
-					<div class="grid gap-2 md:grid-cols-2">
-						{#each issueTypes as issue}
-							<label class="flex items-center gap-2 text-sm">
-								<Checkbox
-									checked={selectedIssueTypes.includes(issue)}
-									onCheckedChange={(checked) => {
-										if (checked === true) {
-											selectedIssueTypes = [
-												...selectedIssueTypes,
-												issue,
-											];
-										} else {
-											selectedIssueTypes =
-												selectedIssueTypes.filter(
-													(value) => value !== issue,
-												);
-										}
-									}}
-								/>
+				<div class="grid gap-2 md:grid-cols-2">
+					{#each issueTypes as issue}
+						<label class="flex items-center gap-2 text-sm">
+							<Checkbox
+								checked={selectedIssueTypes.includes(issue)}
+								onCheckedChange={(checked) => {
+									if (checked === true) {
+										selectedIssueTypes = [
+											...selectedIssueTypes,
+											issue,
+										];
+									} else {
+										selectedIssueTypes =
+											selectedIssueTypes.filter(
+												(value) => value !== issue,
+											);
+									}
+								}}
+							/>
 
-								<span class="capitalize">
-									{formatIssue(issue)}
-								</span>
-							</label>
-						{/each}
-					</div>
+							<span class="capitalize">
+								{formatIssue(issue)}
+							</span>
+						</label>
+					{/each}
 				</div>
+			</div>
 
-				<div class="flex justify-end gap-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onclick={resetFilters}
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="ghost" onclick={resetFilters}>
+					Reset
+				</Button>
+
+				<Button type="button" onclick={applyServerFilters}>
+					Apply filters
+				</Button>
+			</div>
+		</Card>
+	{/if}
+
+	<div class="flex flex-wrap gap-2 border-b">
+		<Button
+			type="button"
+			variant={activeTab === "all" ? "default" : "ghost"}
+			onclick={() => (activeTab = "all")}
+		>
+			All issues ({filteredSubmissions.length})
+		</Button>
+
+		<Button
+			type="button"
+			variant={activeTab === "payment" ? "default" : "ghost"}
+			onclick={() => (activeTab = "payment")}
+		>
+			Payment ({paymentIssues.length})
+		</Button>
+
+		<Button
+			type="button"
+			variant={activeTab === "email" ? "default" : "ghost"}
+			onclick={() => (activeTab = "email")}
+		>
+			Email ({emailIssues.length})
+		</Button>
+
+		<Button
+			type="button"
+			variant={activeTab === "ticket" ? "default" : "ghost"}
+			onclick={() => (activeTab = "ticket")}
+		>
+			Ticket ({ticketIssues.length})
+		</Button>
+	</div>
+
+	{#if visibleSubmissions.length === 0}
+		<Card class="p-8 text-center text-muted-foreground">
+			No submission issues found.
+		</Card>
+	{:else}
+		<div class="grid gap-4">
+			{#each visibleSubmissions as submission (submission.id)}
+				<Card class="space-y-5 p-5">
+					<div
+						class="flex flex-col justify-between gap-4 md:flex-row"
 					>
-						Reset
-					</Button>
+						<div>
+							<h2 class="text-lg font-semibold">
+								{submission.participant_name}
+							</h2>
 
-					<Button type="button" onclick={applyServerFilters}>
-						Apply filters
-					</Button>
-				</div>
-			</Card>
-		{/if}
+							<p class="text-sm text-muted-foreground">
+								{submission.participant_email}
+							</p>
 
-		<div class="flex flex-wrap gap-2 border-b">
-			<Button
-				type="button"
-				variant={activeTab === "all" ? "default" : "ghost"}
-				onclick={() => (activeTab = "all")}
-			>
-				All issues ({filteredSubmissions.length})
-			</Button>
-
-			<Button
-				type="button"
-				variant={activeTab === "payment" ? "default" : "ghost"}
-				onclick={() => (activeTab = "payment")}
-			>
-				Payment ({paymentIssues.length})
-			</Button>
-
-			<Button
-				type="button"
-				variant={activeTab === "email" ? "default" : "ghost"}
-				onclick={() => (activeTab = "email")}
-			>
-				Email ({emailIssues.length})
-			</Button>
-
-			<Button
-				type="button"
-				variant={activeTab === "ticket" ? "default" : "ghost"}
-				onclick={() => (activeTab = "ticket")}
-			>
-				Ticket ({ticketIssues.length})
-			</Button>
-		</div>
-
-		{#if visibleSubmissions.length === 0}
-			<Card class="p-8 text-center text-muted-foreground">
-				No submission issues found.
-			</Card>
-		{:else}
-			<div class="grid gap-4">
-				{#each visibleSubmissions as submission (submission.id)}
-					<Card class="space-y-5 p-5">
-						<div
-							class="flex flex-col justify-between gap-4 md:flex-row"
-						>
-							<div>
-								<h2 class="text-lg font-semibold">
-									{submission.participant_name}
-								</h2>
-
-								<p class="text-sm text-muted-foreground">
-									{submission.participant_email}
-								</p>
-
-								<p class="mt-1 text-xs text-muted-foreground">
-									{submission.id}
-								</p>
-							</div>
-
-							<div class="flex flex-wrap gap-2">
-								<span
-									class="rounded-full border px-2 py-1 text-xs capitalize"
-								>
-									{submission.status}
-								</span>
-
-								{#if hasPaymentIssue(submission)}
-									<Button
-										type="button"
-										variant="outline"
-										disabled={busyAction !== null}
-										onclick={() =>
-											repairPayment(submission)}
-									>
-										Repair payment references
-									</Button>
-
-									<Button
-										type="button"
-										disabled={busyAction !== null}
-										onclick={() =>
-											openCreatePayment(submission)}
-									>
-										Create replacement checkout
-									</Button>
-								{/if}
-
-								{#if submission.status === "approved" && (submission.checkout_session_id || submission.payment_intent_id)}
-									<Button
-										type="button"
-										variant="outline"
-										disabled={busyAction !== null}
-										onclick={() =>
-											retryApproval(submission)}
-									>
-										Retry approval/capture
-									</Button>
-								{/if}
-
-								{#if hasTicketIssue(submission)}
-									<Button
-										type="button"
-										variant="outline"
-										disabled={busyAction !== null}
-										onclick={() => retryTicket(submission)}
-									>
-										Retry ticket/email
-									</Button>
-								{/if}
-
-								{#if hasEmailIssue(submission) && submission.status === "approved"}
-									<Button
-										type="button"
-										variant="outline"
-										disabled={busyAction !== null}
-										onclick={() =>
-											resendApprovalEmail(submission)}
-									>
-										Resend approval email
-									</Button>
-								{/if}
-							</div>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{submission.id}
+							</p>
 						</div>
-
-						<div class="grid gap-4 text-sm md:grid-cols-4">
-							<div>
-								<p class="text-muted-foreground">Event</p>
-								<p class="font-medium">
-									{getEventName(submission)}
-								</p>
-							</div>
-
-							<div>
-								<p class="text-muted-foreground">Vehicle</p>
-								<p class="font-medium">
-									{submission.vehicle_year}
-									{submission.vehicle_make}
-									{submission.vehicle_model}
-								</p>
-							</div>
-
-							<div>
-								<p class="text-muted-foreground">Submitted</p>
-								<p class="font-medium">
-									{formatDate(submission.submitted_at, {
-										dateStyle: "medium",
-									})}
-								</p>
-							</div>
-
-							<!-- <div>
-								<p class="text-muted-foreground">Reviewed</p>
-								<p class="font-medium">
-									{formatDate(submission.reviewed_at, {
-										dateStyle: "medium",
-									})}
-								</p>
-							</div> -->
-						</div>
-
-						{#if submission.issues?.length}
-							<div
-								class="rounded-xl border border-yellow-300/50 bg-yellow-50 p-4 dark:bg-yellow-950/20"
-							>
-								<p class="font-medium">Issues detected</p>
-
-								<ul class="mt-2 list-inside list-disc text-sm">
-									{#each submission.issues as issue}
-										<li class="capitalize">
-											{formatIssue(issue)}
-										</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
 
 						<div class="flex flex-wrap gap-2">
+							<span
+								class="rounded-full border px-2 py-1 text-xs capitalize"
+							>
+								{submission.status}
+							</span>
+
 							{#if hasPaymentIssue(submission)}
 								<Button
 									type="button"
 									variant="outline"
-									onclick={() =>
-										checkPaymentStatus(submission)}
-									disabled={checkingPayment}
+									disabled={busyAction !== null}
+									onclick={() => repairPayment(submission)}
 								>
-									{checkingPayment
-										? "Checking…"
-										: "Check payment"}
+									Repair payment references
 								</Button>
 
 								<Button
 									type="button"
+									disabled={busyAction !== null}
 									onclick={() =>
 										openCreatePayment(submission)}
 								>
-									Create payment
+									Create replacement checkout
+								</Button>
+							{/if}
+
+							{#if submission.status === "approved" && (submission.checkout_session_id || submission.payment_intent_id)}
+								<Button
+									type="button"
+									variant="outline"
+									disabled={busyAction !== null}
+									onclick={() => retryApproval(submission)}
+								>
+									Retry approval/capture
+								</Button>
+							{/if}
+
+							{#if hasTicketIssue(submission)}
+								<Button
+									type="button"
+									variant="outline"
+									disabled={busyAction !== null}
+									onclick={() => retryTicket(submission)}
+								>
+									Retry ticket/email
 								</Button>
 							{/if}
 
@@ -706,43 +592,125 @@
 								<Button
 									type="button"
 									variant="outline"
+									disabled={busyAction !== null}
 									onclick={() =>
 										resendApprovalEmail(submission)}
-									disabled={resendingEmail}
 								>
-									{resendingEmail
-										? "Sending…"
-										: "Resend approval email"}
+									Resend approval email
 								</Button>
 							{/if}
 						</div>
+					</div>
 
-						<div
-							class="flex flex-wrap gap-3 border-t pt-3 text-xs text-muted-foreground"
-						>
-							{#if submission.checkout_session_id}
-								<span>
-									Session:
-									{submission.checkout_session_id.slice(
-										0,
-										8,
-									)}…
-								</span>
-							{/if}
-
-							{#if submission.payment_intent_id}
-								<span>
-									Payment:
-									{submission.payment_intent_id.slice(0, 8)}…
-								</span>
-							{/if}
+					<div class="grid gap-4 text-sm md:grid-cols-4">
+						<div>
+							<p class="text-muted-foreground">Event</p>
+							<p class="font-medium">
+								{getEventName(submission)}
+							</p>
 						</div>
-					</Card>
-				{/each}
-			</div>
-		{/if}
-	</div>
-{/if}
+
+						<div>
+							<p class="text-muted-foreground">Vehicle</p>
+							<p class="font-medium">
+								{submission.vehicle_year}
+								{submission.vehicle_make}
+								{submission.vehicle_model}
+							</p>
+						</div>
+
+						<div>
+							<p class="text-muted-foreground">Submitted</p>
+							<p class="font-medium">
+								{formatDate(submission.submitted_at, {
+									dateStyle: "medium",
+								})}
+							</p>
+						</div>
+
+						<!-- <div>
+								<p class="text-muted-foreground">Reviewed</p>
+								<p class="font-medium">
+									{formatDate(submission.reviewed_at, {
+										dateStyle: "medium",
+									})}
+								</p>
+							</div> -->
+					</div>
+
+					{#if submission.issues?.length}
+						<div
+							class="rounded-xl border border-yellow-300/50 bg-yellow-50 p-4 dark:bg-yellow-950/20"
+						>
+							<p class="font-medium">Issues detected</p>
+
+							<ul class="mt-2 list-inside list-disc text-sm">
+								{#each submission.issues as issue}
+									<li class="capitalize">
+										{formatIssue(issue)}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+
+					<div class="flex flex-wrap gap-2">
+						{#if hasPaymentIssue(submission)}
+							<Button
+								type="button"
+								variant="outline"
+								onclick={() => checkPaymentStatus(submission)}
+								disabled={checkingPayment}
+							>
+								{checkingPayment
+									? "Checking…"
+									: "Check payment"}
+							</Button>
+
+							<Button
+								type="button"
+								onclick={() => openCreatePayment(submission)}
+							>
+								Create payment
+							</Button>
+						{/if}
+
+						{#if hasEmailIssue(submission) && submission.status === "approved"}
+							<Button
+								type="button"
+								variant="outline"
+								onclick={() => resendApprovalEmail(submission)}
+								disabled={resendingEmail}
+							>
+								{resendingEmail
+									? "Sending…"
+									: "Resend approval email"}
+							</Button>
+						{/if}
+					</div>
+
+					<div
+						class="flex flex-wrap gap-3 border-t pt-3 text-xs text-muted-foreground"
+					>
+						{#if submission.checkout_session_id}
+							<span>
+								Session:
+								{submission.checkout_session_id.slice(0, 8)}…
+							</span>
+						{/if}
+
+						{#if submission.payment_intent_id}
+							<span>
+								Payment:
+								{submission.payment_intent_id.slice(0, 8)}…
+							</span>
+						{/if}
+					</div>
+				</Card>
+			{/each}
+		</div>
+	{/if}
+</div>
 
 {#if showPaymentStatus && paymentStatus}
 	<div
