@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/dandychux/euro-haus/internal/handlers"
@@ -86,11 +88,6 @@ func init() {
 	// Initialize Postgres
 	services.InitDB()
 
-	workerCtx, cancelWorker := context.WithCancel(context.Background())
-	defer cancelWorker()
-
-	services.StartEmailJobWorker(workerCtx)
-
 	// Initialize event listeners
 	handlers.InitEventListeners()
 
@@ -131,6 +128,15 @@ func (rw *responseWriter) WriteHeader(code int) {
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	services.StartEmailJobWorker(ctx)
+
 	router := mux.NewRouter()
 
 	// API Routes
