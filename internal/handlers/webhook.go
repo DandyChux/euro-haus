@@ -218,7 +218,7 @@ func insertParticipantTicket(
 				token,
 				event_id,
 				stripe_product_id,
-				stripe_checkout_session_id,
+				stripe_session_id,
 				stripe_payment_intent_id,
 				customer_email,
 				customer_name,
@@ -299,7 +299,7 @@ func insertParticipantTicketTx(
 			token,
 			event_id,
 			stripe_product_id,
-			stripe_checkout_session_id,
+			stripe_session_id,
 			stripe_payment_intent_id,
 			customer_email,
 			customer_name,
@@ -2457,16 +2457,16 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 	err := db.WithContext(ctx).Raw(`
 		SELECT token,
 		       COALESCE(stripe_payment_intent_id, ''),
-		       COALESCE(stripe_checkout_session_id, '')
+		       COALESCE(stripe_session_id, '')
 		FROM tickets
-		WHERE stripe_checkout_session_id = ? OR stripe_payment_intent_id = ?
+		WHERE stripe_session_id = ? OR stripe_payment_intent_id = ?
 	`, session.ID, submissionNullableString(paymentIntentID)).Row().Scan(&existingToken, &existingPaymentIntentID, &existingCheckoutSessionID)
 
 	if err == nil && existingToken != "" {
 		if existingCheckoutSessionID != session.ID {
 			_ = db.WithContext(ctx).Exec(`
 				UPDATE tickets
-				SET stripe_checkout_session_id = ?
+				SET stripe_session_id = ?
 				WHERE token = ?
 			`, session.ID, existingToken).Error
 		}
@@ -2503,7 +2503,7 @@ func storeTicketPurchase(session stripe.CheckoutSession, lineItem stripe.LineIte
 				token,
 				event_id,
 				stripe_product_id,
-				stripe_checkout_session_id,
+				stripe_session_id,
 				stripe_payment_intent_id,
 				customer_email,
 				customer_name,
