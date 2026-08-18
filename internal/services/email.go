@@ -43,6 +43,7 @@ type EmailMessage struct {
 	Cc           []string          `json:"cc"`
 	Bcc          []string          `json:"bcc"`
 	Subject      string            `json:"subject"`
+	ReplyTo      string            `json:"reply_to"`
 	BodyHTML     string            `json:"body_html"`
 	BodyText     string            `json:"body_text"`
 	Attachments  []EmailAttachment `json:"attachments"`
@@ -55,6 +56,7 @@ func SendEmail(msg *EmailMessage) error {
 	// Get email configuration from environment
 	apiKey := os.Getenv("MAILGUN_API_KEY")
 	fromEmail := os.Getenv("MAIL_FROM_ADDRESS")
+	replyTo := os.Getenv("MAIL_REPLY_TO")
 
 	if apiKey == "" || fromEmail == "" {
 		return fmt.Errorf("missing email configuration: MAILGUN_API_KEY and MAIL_FROM_ADDRESS are required")
@@ -70,15 +72,19 @@ func SendEmail(msg *EmailMessage) error {
 		emailTemplatesOnce.Do(func() {
 			loadEmailTemplates()
 		})
+	}
 
-		// Get template
-		if tmpl, ok := emailTemplates[msg.TemplateID]; ok {
-			var buf bytes.Buffer
-			if err := tmpl.Execute(&buf, msg.TemplateData); err != nil {
-				return fmt.Errorf("failed to render email template: %w", err)
-			}
-			msg.BodyHTML = buf.String()
+	if replyTo != "" {
+		msg.ReplyTo = replyTo
+	}
+
+	// Get template
+	if tmpl, ok := emailTemplates[msg.TemplateID]; ok {
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, msg.TemplateData); err != nil {
+			return fmt.Errorf("failed to render email template: %w", err)
 		}
+		msg.BodyHTML = buf.String()
 	}
 
 	if msg.BodyHTML == "" && msg.BodyText == "" {
@@ -107,6 +113,10 @@ func SendEmail(msg *EmailMessage) error {
 
 	for _, bcc := range msg.Bcc {
 		mgMessage.AddBCC(bcc)
+	}
+
+	if msg.ReplyTo != "" {
+		mgMessage.SetReplyTo(msg.ReplyTo)
 	}
 
 	if len(msg.Attachments) > 0 {
