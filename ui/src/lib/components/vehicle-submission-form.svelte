@@ -185,7 +185,7 @@
 	}
 
 	function validateRequirements(): boolean {
-		const missing = requirements?.filter((requirement) => {
+		const missing = (requirements ?? []).filter((requirement) => {
 			if (!requirement.required) return false;
 
 			const value = requirementAnswers[requirement.id];
@@ -197,11 +197,11 @@
 			);
 		});
 
-		if (missing?.length === 0) return true;
+		if (missing.length === 0) return true;
 
 		errorMessage = `Complete: ${missing
-			?.map((requirement) => requirement.label)
-			?.join(", ")}.`;
+			.map((requirement) => requirement.label)
+			.join(", ")}.`;
 
 		return false;
 	}
