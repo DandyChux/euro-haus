@@ -3,7 +3,9 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -282,8 +285,22 @@ func CreateSubmission(w http.ResponseWriter, r *http.Request) {
 	// DigitalOcean Spaces uses object keys, not real folders. This creates
 	// keys like:
 	//
-	// events/summer-show/SUB-123-ABC123/car-1234abcd.jpg
-	folder := fmt.Sprintf("events/%s/%s", event.Slug, submission.ID)
+	// events/summer-show/john-doe-<identifier>/car-1234abcd.jpg
+	nameSlug := strings.ToLower(strings.TrimSpace(submission.ParticipantName))
+	nameSlug = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(nameSlug, "-")
+	nameSlug = strings.Trim(nameSlug, "-")
+
+	emailHash := sha256.Sum256(
+		[]byte(strings.ToLower(strings.TrimSpace(submission.ParticipantEmail))),
+	)
+	personIdentifier := hex.EncodeToString(emailHash[:])[:12]
+
+	folder := fmt.Sprintf(
+		"events/%s/%s-%s",
+		event.Slug,
+		nameSlug,
+		personIdentifier,
+	)
 
 	for i, fileHeader := range files {
 		if i >= 5 {
