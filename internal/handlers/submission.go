@@ -972,125 +972,6 @@ func GetPendingSubmissionsCount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateSubmissionCheckout creates a checkout session for an approved submission
-func CreateSubmissionCheckout(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		SubmissionID string `json:"submission_id"`
-		PriceID      string `json:"price_id"`
-		EventName    string `json:"event_name"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-
-	submission, err := getSubmissionByID(req.SubmissionID)
-	if err != nil {
-		http.Error(w, "Submission not found", http.StatusNotFound)
-		return
-	}
-
-	if submission.Status != "approved" {
-		http.Error(w, "Submission is not approved", http.StatusBadRequest)
-		return
-	}
-
-	baseURL := os.Getenv("BASE_URL")
-	params := &stripe.CheckoutSessionParams{
-		PaymentMethodTypes: []*string{
-			stripe.String("card"),
-		},
-		LineItems: []*stripe.CheckoutSessionLineItemParams{
-			{
-				Price:    stripe.String(req.PriceID),
-				Quantity: stripe.Int64(1),
-			},
-		},
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
-		SuccessURL: stripe.String(
-			fmt.Sprintf(
-				"%s/checkout/success?session_id={CHECKOUT_SESSION_ID}&event_id=%s",
-				baseURL,
-				url.QueryEscape(submission.EventID),
-			),
-		),
-		CancelURL: stripe.String(
-			fmt.Sprintf(
-				"%s/checkout/cancel?event_id=%s",
-				baseURL,
-				url.QueryEscape(submission.EventID),
-			),
-		),
-		Metadata: map[string]string{
-			"submission_id": req.SubmissionID,
-			"event_id":      submission.EventID,
-			"event_name":    req.EventName,
-			"participant":   "true",
-		},
-		CustomerEmail: stripe.String(submission.ParticipantEmail),
-	}
-
-	s, err := session.New(params)
-	if err != nil {
-		http.Error(w, "Failed to create checkout session", http.StatusInternalServerError)
-		return
-	}
-
-	db := services.GetDB()
-	if db == nil {
-		http.Error(
-			w,
-			"Database is unavailable",
-			http.StatusInternalServerError,
-		)
-		return
-	}
-
-	result := db.WithContext(r.Context()).Exec(`
-		UPDATE vehicle_submissions
-		SET
-			checkout_session_id = ?,
-			price_id = NULLIF(?, ''),
-			checkout_created_at = NOW()
-		WHERE id = ?
-	`,
-		s.ID,
-		strings.TrimSpace(req.PriceID),
-		req.SubmissionID,
-	)
-
-	if result.Error != nil {
-		log.Printf(
-			"Failed to persist checkout session %s for submission %s: %v",
-			s.ID,
-			req.SubmissionID,
-			result.Error,
-		)
-
-		http.Error(
-			w,
-			"Checkout session was created but could not be saved. Contact support before retrying.",
-			http.StatusInternalServerError,
-		)
-		return
-	}
-
-	if result.RowsAffected != 1 {
-		http.Error(
-			w,
-			"Submission not found while saving checkout session",
-			http.StatusNotFound,
-		)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"sessionUrl": s.URL,
-	})
-}
-
 // CreateParticipantCheckout creates a checkout session with manual capture for submissions
 func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -1279,6 +1160,11 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 				"requires_approval": "true",
 			},
 		}
+		// params.PaymentMethodOptions = &stripe.CheckoutSessionCreatePaymentMethodOptionsParams{
+		// 	Card: &stripe.CheckoutSessionCreatePaymentMethodOptionsCardParams{
+		// 		RequestExtendedAuthorization: stripe.String(stripe.CheckoutSessionPaymentMethodOptionsCardRequestExtendedAuthorizationIfAvailable),
+		// 	},
+		// }
 		fmt.Printf("Creating participant checkout with manual capture for submission %s (requires approval)", req.SubmissionID)
 	} else {
 		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
@@ -2944,6 +2830,7 @@ func getSubmissionByID(
 		ticketCreatedAt     sql.NullTime
 		ticketEmailSentAt   sql.NullTime
 		emailUpdatedAt      sql.NullTime
+		recoveryLastSentAt sql.NullTime
 		refundIssuedAt      sql.NullTime
 		revokedAt           sql.NullTime
 	)
@@ -3011,6 +2898,9 @@ func getSubmissionByID(
 			COALESCE(previous_email, ''),
 			COALESCE(email_resent_count, 0),
 
+			COALESCE(recovery_attempts, 0),
+			recovery_last_sent_at,
+
 			COALESCE(refund_id, ''),
 			COALESCE(refund_amount, 0),
 			refund_issued_at,
@@ -3073,6 +2963,9 @@ func getSubmissionByID(
 		&submission.PreviousEmail,
 		&submission.EmailResentCount,
 
+		&submission.RecoveryAttempts,
+		&recoveryLastSentAt,
+
 		&submission.RefundID,
 		&submission.RefundAmount,
 		&refundIssuedAt,
@@ -3127,6 +3020,7 @@ func getSubmissionByID(
 	submission.TicketCreatedAt = submissionFormatNullTime(ticketCreatedAt)
 	submission.TicketEmailSentAt = submissionFormatNullTime(ticketEmailSentAt)
 	submission.EmailUpdatedAt = submissionFormatNullTime(emailUpdatedAt)
+	submission.RecoveryLastSentAt = submissionFormatNullTime(recoveryLastSentAt)
 	submission.RefundIssuedAt = submissionFormatNullTime(refundIssuedAt)
 	submission.RevokedAt = submissionFormatNullTime(revokedAt)
 

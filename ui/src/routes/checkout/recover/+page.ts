@@ -2,13 +2,9 @@ import type { PageLoad } from "./$types";
 import { getEventByID, getSubmission } from "$lib/services/event";
 import { getDefaultPrice } from "$lib/schemas/price";
 
-function normalize(value?: string) {
-	return (value ?? "").trim().toLowerCase();
-}
-
 export const load: PageLoad = async ({ fetch, url }) => {
 	const sessionId = url.searchParams.get("session");
-	const submissionId = url.searchParams.get("submission");
+	const submissionId = url.searchParams.get("id");
 
 	if (!submissionId && !sessionId) {
 		return {

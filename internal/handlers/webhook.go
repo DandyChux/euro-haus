@@ -33,7 +33,7 @@ import (
 
 // Constants for recovery limits and timeframes
 const (
-	MaxRecoveryAttempts = 2
+	MaxRecoveryAttempts = 5
 	MaxSubmissionAge    = 7 * 24 * time.Hour // 7 days
 	MinRecoveryInterval = 1 * time.Hour      // Minimum time between recovery attempts
 )
@@ -308,46 +308,103 @@ func insertParticipantTicketTx(
 	return token, nil
 }
 
-// isSubmissionEligibleForRecovery checks if a submission should have a recovery session created
-func isSubmissionEligibleForRecovery(submission *models.VehicleSubmissionDTO) (bool, string) {
-	sess, err := services.GetSubmissionPayment(submission.PaymentIntentID)
-	if err != nil {
-		return false, fmt.Sprintf("get payment intent: %v", err)
-	}
-
-	if sess.Status != "succeeded" {
-		return false, "Payment not completed"
+func isSubmissionEligibleForRecovery(
+	submission *models.VehicleSubmissionDTO,
+) (bool, string) {
+	if submission == nil {
+		return false, "Submission is missing"
 	}
 
 	if submission.TicketID != "" {
 		return false, "Ticket already exists"
 	}
 
+	switch submission.Status {
+	case "cancelled", "rejected", "denied", "abandoned", "revoked":
+		return false, fmt.Sprintf(
+			"Submission status is %s",
+			submission.Status,
+		)
+	}
+
 	createdAt := submission.CreatedAt
 	if createdAt == "" {
 		createdAt = submission.SubmittedAt
 	}
+
 	if createdAt != "" {
-		if created, err := time.Parse(time.RFC3339, createdAt); err == nil {
-			if time.Since(created) > MaxSubmissionAge {
-				return false, "Submission too old"
-			}
+		created, err := time.Parse(time.RFC3339, createdAt)
+		if err == nil && time.Since(created) > MaxSubmissionAge {
+			return false, "Submission too old"
 		}
 	}
 
-	if lastRecovery := strconv.FormatInt(sess.LatestCharge.Created, 10); lastRecovery != "" {
-		if lastTime, err := time.Parse(time.RFC3339, lastRecovery); err == nil {
-			if time.Since(lastTime) < MinRecoveryInterval {
-				return false, "Too soon since last recovery attempt"
-			}
-		}
-	}
-
-	if status := submission.Status; status == "cancelled" || status == "rejected" || status == "denied" || status == "abandoned" || status == "revoked" {
-		return false, fmt.Sprintf("Submission status is %s", status)
+	if submission.RecoveryAttempts >= MaxRecoveryAttempts {
+		return false, "Maximum recovery attempts reached"
 	}
 
 	return true, ""
+}
+
+func claimSubmissionRecoveryAttempt(
+	ctx context.Context,
+	submissionID string,
+) (int, bool, error) {
+	db := services.GetDB()
+	if db == nil {
+		return 0, false, fmt.Errorf("database is unavailable")
+	}
+
+	var attempt int
+	var claimed bool
+
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var attempts int
+
+		err := tx.Raw(`
+			SELECT COALESCE(recovery_attempts, 0)
+			FROM vehicle_submissions
+			WHERE id = ?
+			FOR UPDATE
+		`, submissionID).Scan(&attempts).Error
+		if err != nil {
+			return fmt.Errorf("load recovery attempts: %w", err)
+		}
+
+		if attempts >= MaxRecoveryAttempts {
+			return nil
+		}
+
+		attempt = attempts + 1
+
+		result := tx.Exec(`
+			UPDATE vehicle_submissions
+			SET
+				recovery_attempts = ?,
+				recovery_last_sent_at = NOW()
+			WHERE id = ?
+		`, attempt, submissionID)
+
+		if result.Error != nil {
+			return fmt.Errorf("update recovery attempts: %w", result.Error)
+		}
+
+		if result.RowsAffected != 1 {
+			return fmt.Errorf(
+				"submission %s was not found while claiming recovery",
+				submissionID,
+			)
+		}
+
+		claimed = true
+		return nil
+	})
+
+	if err != nil {
+		return 0, false, err
+	}
+
+	return attempt, claimed, nil
 }
 
 func handlePaymentIntentSucceeded(pi stripe.PaymentIntent) {
@@ -1139,7 +1196,7 @@ func handlePaymentIntentFailed(pi stripe.PaymentIntent) {
 		"ErrorMessage":  errorMessage,
 		"PaymentDate":   time.Now().Format(time.RFC1123),
 		"PaymentStatus": "Failed",
-		"RecoveryURL":   os.Getenv("BASE_URL") + "/checkout/recover?session=" + pi.ID,
+		"RecoveryURL":   os.Getenv("BASE_URL") + "/checkout/recover?id=" + pi.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -1209,43 +1266,168 @@ func handleCheckoutSessionExpired(checkoutSession stripe.CheckoutSession) {
 	}
 }
 
-func handleExpiredParticipantCheckout(expiredSession stripe.CheckoutSession, submissionID string, customerEmail string) {
-	fmt.Printf("Handling expired participant checkout for submission: %s\n", submissionID)
+func handleExpiredParticipantCheckout(
+	expiredSession stripe.CheckoutSession,
+	submissionID string,
+	customerEmail string,
+) {
+	log.Printf(
+		"Handling expired participant checkout for submission %s",
+		submissionID,
+	)
 
-	db := services.GetDB()
 	ctx := context.Background()
 
 	submission, err := getSubmissionByID(submissionID)
 	if err != nil {
-		log.Printf("Failed to get submission %s: %v", submissionID, err)
+		log.Printf(
+			"Failed to load submission %s after checkout expiration: %v",
+			submissionID,
+			err,
+		)
 		return
+	}
+
+	// A ticket means the payment flow already completed successfully.
+	if submission.TicketID != "" || submission.PaymentCaptured {
+		log.Printf(
+			"Submission %s already has a completed payment/ticket; skipping recovery",
+			submissionID,
+		)
+		return
+	}
+
+	// If there is a PaymentIntent, avoid creating a second payment session
+	// when the original payment actually succeeded.
+	if submission.PaymentIntentID != "" {
+		pi, paymentErr := paymentintent.Get(
+			submission.PaymentIntentID,
+			nil,
+		)
+
+		if paymentErr != nil {
+			log.Printf(
+				"Unable to retrieve PaymentIntent %s for submission %s: %v",
+				submission.PaymentIntentID,
+				submissionID,
+				paymentErr,
+			)
+		} else {
+			switch pi.Status {
+			case stripe.PaymentIntentStatusSucceeded,
+				stripe.PaymentIntentStatusRequiresCapture,
+				stripe.PaymentIntentStatusProcessing:
+				log.Printf(
+					"Submission %s has PaymentIntent %s in status %s; skipping replacement checkout",
+					submissionID,
+					pi.ID,
+					pi.Status,
+				)
+				return
+			}
+		}
 	}
 
 	eligible, reason := isSubmissionEligibleForRecovery(submission)
 	if !eligible {
-		log.Printf("Submission %s not eligible for recovery: %s", submissionID, reason)
+		log.Printf(
+			"Submission %s is not eligible for recovery: %s",
+			submissionID,
+			reason,
+		)
 
-		if strings.Contains(reason, "Maximum recovery attempts") {
-			err := db.WithContext(ctx).Exec(`
-				UPDATE vehicle_submissions
-				SET status = 'abandoned',
-				    abandoned_at = NOW(),
-				    abandoned_reason = ?
-				WHERE id = ?
-			`, reason, submissionID).Error
-			if err != nil {
-				log.Printf("Failed to mark submission %s abandoned: %v", submissionID, err)
+		if reason == "Maximum recovery attempts reached" {
+			if err := services.GetDB().
+				WithContext(ctx).
+				Exec(`
+					UPDATE vehicle_submissions
+					SET
+						status = 'abandoned',
+						abandoned_at = NOW(),
+						abandoned_reason = ?
+					WHERE id = ?
+						AND status NOT IN (
+							'cancelled',
+							'rejected',
+							'denied',
+							'abandoned',
+							'revoked'
+						)
+				`, reason, submissionID).
+				Error; err != nil {
+				log.Printf(
+					"Failed to mark submission %s abandoned: %v",
+					submissionID,
+					err,
+				)
+			} else {
+				sendFinalAbandonmentEmail(customerEmail, submission)
 			}
-
-			sendFinalAbandonmentEmail(customerEmail, submission)
 		}
+
 		return
 	}
 
-	sendManualRecoveryEmail(customerEmail, submission, submissionID, 1)
+	attempt, claimed, err := claimSubmissionRecoveryAttempt(
+		ctx,
+		submissionID,
+	)
+	if err != nil {
+		log.Printf(
+			"Failed to claim recovery attempt for submission %s: %v",
+			submissionID,
+			err,
+		)
+		return
+	}
 
-	log.Printf("Sent recovery email for submission %s (attempt %d of %d)",
-		submissionID, 1, MaxRecoveryAttempts)
+	if !claimed {
+		log.Printf(
+			"Submission %s has reached the recovery attempt limit",
+			submissionID,
+		)
+		return
+	}
+
+	recoverySession, err := createSubmissionRecoverySession(
+		ctx,
+		submission,
+	)
+	if err != nil {
+		log.Printf(
+			"Failed to create recovery checkout for submission %s: %v",
+			submissionID,
+			err,
+		)
+		return
+	}
+
+	if customerEmail == "" {
+		customerEmail = submission.ParticipantEmail
+	}
+
+	if customerEmail == "" {
+		log.Printf(
+			"No email address available for submission %s recovery",
+			submissionID,
+		)
+		return
+	}
+
+	sendManualRecoveryEmail(
+		customerEmail,
+		submission,
+		submissionID,
+		attempt,
+		recoverySession.URL,
+	)
+
+	log.Printf(
+		"Created and emailed recovery checkout for submission %s, attempt %d of %d",
+		submissionID,
+		attempt,
+		MaxRecoveryAttempts,
+	)
 }
 
 // handleChargeRefunded processes refund events and invalidates associated tickets
@@ -1529,23 +1711,30 @@ func generateRefundNotificationHTML(data map[string]interface{}) string {
 	return html
 }
 
-// sendManualRecoveryEmail sends an email asking the user to manually restart checkout
-func sendManualRecoveryEmail(customerEmail string, submissionData *models.VehicleSubmissionDTO, submissionID string, attemptNumber int) {
+func sendManualRecoveryEmail(
+	customerEmail string,
+	submissionData *models.VehicleSubmissionDTO,
+	submissionID string,
+	attemptNumber int,
+	recoveryLink string,
+) {
 	participantName := submissionData.ParticipantName
-	vehicleDetails := fmt.Sprintf("%s %s %s",
+	vehicleDetails := fmt.Sprintf(
+		"%s %s %s",
 		submissionData.VehicleYear,
 		submissionData.VehicleMake,
-		submissionData.VehicleModel)
+		submissionData.VehicleModel,
+	)
+
 	eventName := submissionData.EventSlug
 	if eventName == "" {
 		eventName = "Euro Haus Event"
 	}
 
-	baseURL := os.Getenv("BASE_URL")
-
-	// Create a recovery link that goes to your frontend to restart the process
-	recoveryLink := fmt.Sprintf("%s/submissions/recover?id=%s&email=%s",
-		baseURL, submissionID, customerEmail)
+	baseURL := strings.TrimRight(os.Getenv("BASE_URL"), "/")
+	if baseURL == "" {
+		baseURL = "https://eurohaus.shop"
+	}
 
 	emailData := map[string]interface{}{
 		"ParticipantName": participantName,
@@ -1576,7 +1765,7 @@ func sendManualRecoveryEmail(customerEmail string, submissionData *models.Vehicl
 		msg,
 	); err != nil {
 		log.Printf(
-			"Failed to queue manual recovery email for submission %s: %v",
+			"Failed to queue recovery email for submission %s: %v",
 			submissionID,
 			err,
 		)
@@ -1628,7 +1817,7 @@ func handleRegularAbandonedCart(checkoutSession stripe.CheckoutSession, customer
 	emailData := map[string]interface{}{
 		"SessionID":      checkoutSession.ID,
 		"ExpirationTime": time.Now().Format(time.RFC1123),
-		"RecoveryURL":    os.Getenv("BASE_URL") + "/checkout/recover?session=" + checkoutSession.ID,
+		"RecoveryURL":    os.Getenv("BASE_URL") + "/checkout/recover?id=" + checkoutSession.ID,
 	}
 
 	msg := &services.EmailMessage{
@@ -2707,7 +2896,7 @@ func sendGenericRecoveryEmail(customerEmail string, submissionID string) {
 	baseUrl := os.Getenv("BASE_URL")
 
 	// Create a recovery URL that leads to a page where they can re-initiate checkout
-	recoveryURL := fmt.Sprintf("%s/checkout/recover?submission=%s", baseUrl, submissionID)
+	recoveryURL := fmt.Sprintf("%s/checkout/recover?id=%s", baseUrl, submissionID)
 
 	emailData := map[string]interface{}{
 		"SessionID":      submissionID, // Using submission ID as reference
@@ -3082,4 +3271,112 @@ func findSubmissionByPaymentIntentID(
 	}
 
 	return getSubmissionByID(submissionID)
+}
+
+func createSubmissionRecoverySession(
+	ctx context.Context,
+	submission *models.VehicleSubmissionDTO,
+) (*stripe.CheckoutSession, error) {
+	if submission == nil {
+		return nil, fmt.Errorf("submission is nil")
+	}
+
+	priceID := strings.TrimSpace(submission.PriceID)
+	if priceID == "" {
+		return nil, fmt.Errorf("submission has no price ID")
+	}
+
+	baseURL := strings.TrimRight(os.Getenv("BASE_URL"), "/")
+	if baseURL == "" {
+		baseURL = "https://eurohaus.shop"
+	}
+
+	requiresApproval := submission.Status != "approved"
+
+	params := &stripe.CheckoutSessionParams{
+		PaymentMethodTypes: []*string{
+			stripe.String("card"),
+		},
+		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(priceID),
+				Quantity: stripe.Int64(1),
+			},
+		},
+		SuccessURL: stripe.String(
+			fmt.Sprintf(
+				"%s/checkout/pending?submission_id=%s&event_id=%s",
+				baseURL,
+				url.QueryEscape(submission.ID),
+				url.QueryEscape(submission.EventID),
+			),
+		),
+		CancelURL: stripe.String(
+			fmt.Sprintf(
+				"%s/checkout/cancel?event_id=%s",
+				baseURL,
+				url.QueryEscape(submission.EventID),
+			),
+		),
+		Metadata: map[string]string{
+			"submission_id":     submission.ID,
+			"event_id":          submission.EventID,
+			"event_slug":        submission.EventSlug,
+			"participant":       "true",
+			"requires_approval": strconv.FormatBool(requiresApproval),
+			"recovery":          "true",
+		},
+	}
+
+	if submission.ParticipantEmail != "" {
+		params.CustomerEmail = stripe.String(submission.ParticipantEmail)
+	}
+
+	if requiresApproval {
+		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
+			CaptureMethod: stripe.String("manual"),
+			Metadata: map[string]string{
+				"submission_id":     submission.ID,
+				"event_id":          submission.EventID,
+				"participant":       "true",
+				"requires_approval": "true",
+				"recovery":          "true",
+			},
+		}
+	} else {
+		params.PaymentIntentData = &stripe.CheckoutSessionPaymentIntentDataParams{
+			Metadata: map[string]string{
+				"submission_id":     submission.ID,
+				"event_id":          submission.EventID,
+				"participant":       "true",
+				"requires_approval": "false",
+				"recovery":          "true",
+			},
+		}
+	}
+
+	recoverySession, err := session.New(params)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"create replacement checkout session: %w",
+			err,
+		)
+	}
+
+	if err := persistCheckoutSessionAfterCreation(
+		ctx,
+		submission.ID,
+		recoverySession.ID,
+		priceID,
+		submission.PromotionCode,
+		requiresApproval,
+	); err != nil {
+		return nil, fmt.Errorf(
+			"persist replacement checkout session: %w",
+			err,
+		)
+	}
+
+	return recoverySession, nil
 }

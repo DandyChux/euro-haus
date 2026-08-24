@@ -165,7 +165,6 @@ func main() {
 	api.HandleFunc("/submissions", handlers.CreateSubmission).Methods("POST")
 	api.HandleFunc("/submissions/{submissionId}", handlers.GetSubmission).Methods("GET")
 	api.HandleFunc("/create-participant-checkout", handlers.CreateParticipantCheckout).Methods("POST")
-	api.HandleFunc("/checkout/submission", handlers.CreateSubmissionCheckout).Methods("POST")
 
 	// Newsletter endpoints
 	api.HandleFunc("/newsletter/subscribe", handlers.SubscribeToNewsletter).Methods("POST")

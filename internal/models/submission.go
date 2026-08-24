@@ -66,6 +66,9 @@ type VehicleSubmission struct {
 	PreviousEmail    string
 	EmailResentCount int
 
+	RecoveryAttempts  int        `gorm:"not null;default:0"`
+	RecoveryLastSentAt *time.Time
+
 	RefundID        string
 	RefundAmount    float64
 	RefundIssuedAt  *time.Time
@@ -222,6 +225,9 @@ type VehicleSubmissionDTO struct {
 	EmailUpdatedAt   string `json:"email_updated_at,omitempty"`
 	PreviousEmail    string `json:"previous_email,omitempty"`
 	EmailResentCount int    `json:"email_resent_count"`
+
+	RecoveryAttempts  int    `json:"recovery_attempts"`
+	RecoveryLastSentAt string `json:"recovery_last_sent_at,omitempty"`
 
 	RefundID       string  `json:"refund_id,omitempty"`
 	RefundAmount   float64 `json:"refund_amount,omitempty"`
