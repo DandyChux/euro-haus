@@ -1123,6 +1123,9 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 			"submission_status": submission.Status,
 		},
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
+		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+			Enabled: stripe.Bool(true),
+		},
 	}
 
 	if req.PromotionCode != "" {
