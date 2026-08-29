@@ -29,8 +29,6 @@
 
 	interface PaymentResponse {
 		success?: boolean;
-		sessionUrl?: string;
-		sessionId?: string;
 		message?: string;
 	}
 
@@ -319,10 +317,8 @@
 				},
 			);
 
-			if (response.sessionUrl) {
-				toast.success("Payment link created.");
-
-				window.open(response.sessionUrl, "_blank");
+			if (response.success) {
+				toast.success(response.message ?? "Payment link email queued.");
 
 				showCreatePayment = false;
 				selectedPriceId = "";

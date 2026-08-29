@@ -1406,7 +1406,7 @@ func CreateSubmissionPayment(
 			)
 		}
 
-		message := buildApprovalEmail(
+		message := buildSubmissionPaymentLinkEmail(
 			*submission,
 			checkoutSession.URL,
 		)
@@ -1444,8 +1444,7 @@ func CreateSubmissionPayment(
 
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
-		"sessionUrl": checkoutSession.URL,
-		"sessionId":  checkoutSession.ID,
+		"message": "Payment link email queued successfully",
 	}); err != nil {
 		log.Printf(
 			"Failed to encode payment response for submission %s: %v",

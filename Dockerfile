@@ -41,6 +41,7 @@ RUN go mod download
 
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY templates/ ./templates/
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
 	-a -installsuffix cgo \
@@ -65,6 +66,7 @@ WORKDIR /app
 COPY --from=builder /app/euro-haus .
 COPY --from=builder /app/create-admin .
 COPY --from=builder /app/migrate-stripe .
+COPY --from=builder /app/templates ./templates/
 
 # Copy the SvelteKit build output
 COPY --from=frontend /ui/build ./static/

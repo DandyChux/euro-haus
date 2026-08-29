@@ -583,6 +583,21 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 		}
 
 		if !approvalEmailSent {
+			if err := tx.
+				Where(
+					"submission_id = ? AND email_type = ? AND status = ?",
+					submissionID,
+					"submission_approved",
+					models.EmailJobPending,
+				).
+				Delete(&models.EmailJob{}).
+				Error; err != nil {
+					return fmt.Errorf(
+						"remove pending approval email: %w",
+						err,
+					)
+				}
+
 			approvalMessage := buildApprovalWithTicketEmail(
 				submission,
 				ticketToken,
@@ -596,6 +611,18 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 			); err != nil {
 				return fmt.Errorf(
 					"enqueue approval-with-ticket email: %w",
+					err,
+				)
+			}
+		} else {
+			if err := services.QueueEmailTx(
+				ctx,
+				tx,
+				submissionID,
+				ticketMessage,
+			); err != nil {
+				return fmt.Errorf(
+					"enqueue participant ticket email: %w",
 					err,
 				)
 			}
