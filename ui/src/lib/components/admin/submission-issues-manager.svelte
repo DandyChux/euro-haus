@@ -356,14 +356,6 @@
 			resendingEmail = false;
 		}
 	}
-
-	async function sendPaymentLink(submission: IssueSubmission) {
-		await runAction(
-			submission.id,
-			`/admin/submissions/${submission.id}/send-payment-link`,
-			"Payment link email queued.",
-		);
-	}
 </script>
 
 <div class="space-y-6">
@@ -577,17 +569,6 @@
 										openCreatePayment(submission)}
 								>
 									Create replacement checkout
-								</Button>
-							{/if}
-
-							{#if hasUnpaidCheckout(submission)}
-								<Button
-									type="button"
-									variant="outline"
-									disabled={busyAction !== null}
-									onclick={() => sendPaymentLink(submission)}
-								>
-									Send payment link
 								</Button>
 							{/if}
 
@@ -814,17 +795,6 @@
 					>
 						{paymentStatus.error_message}
 					</p>
-				{/if}
-
-				{#if paymentStatus.checkout_url}
-					<Button
-						type="button"
-						class="w-full"
-						onclick={() =>
-							window.open(paymentStatus?.checkout_url, "_blank")}
-					>
-						Open checkout
-					</Button>
 				{/if}
 			</Card>
 		</div>
