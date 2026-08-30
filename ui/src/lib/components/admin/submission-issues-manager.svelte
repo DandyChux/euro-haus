@@ -552,26 +552,6 @@
 								{submission.status}
 							</Badge>
 
-							{#if hasPaymentIssue(submission)}
-								<Button
-									type="button"
-									variant="outline"
-									disabled={busyAction !== null}
-									onclick={() => repairPayment(submission)}
-								>
-									Repair payment references
-								</Button>
-
-								<Button
-									type="button"
-									disabled={busyAction !== null}
-									onclick={() =>
-										openCreatePayment(submission)}
-								>
-									Create replacement checkout
-								</Button>
-							{/if}
-
 							{#if submission.status === "approved" && (submission.checkout_session_id || submission.payment_intent_id)}
 								<Button
 									type="button"
