@@ -614,14 +614,12 @@
 							</p>
 						</div>
 
-						<!-- <div>
-								<p class="text-muted-foreground">Reviewed</p>
-								<p class="font-medium">
-									{formatDate(submission.reviewed_at, {
-										dateStyle: "medium",
-									})}
-								</p>
-							</div> -->
+						<div>
+							<p class="text-muted-foreground">Reviewed</p>
+							<p class="font-medium">
+								{submission.ticket_type}
+							</p>
+						</div>
 					</div>
 
 					{#if submission.issues?.length}

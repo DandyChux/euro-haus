@@ -52,6 +52,7 @@ const issueSubmissionSchema = z.object({
 	checkout_session_id: z.string().optional(),
 	payment_intent_id: z.string().optional(),
 	ticket_id: z.string().optional(),
+	ticket_type: z.string().optional(),
 });
 
 export const vehicleSubmissionSchema = z.object({

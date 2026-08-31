@@ -2841,77 +2841,81 @@ func getSubmissionByID(
 
 	err := db.Raw(`
 		SELECT
-			id,
-			event_id,
-			COALESCE(event_slug, ''),
-			participant_name,
-			participant_email,
-			COALESCE(participant_phone, ''),
-			COALESCE(vehicle_year, ''),
-			COALESCE(vehicle_make, ''),
-			COALESCE(vehicle_model, ''),
-			COALESCE(vehicle_description, ''),
-			COALESCE(vehicle_modifications, ''),
-			COALESCE(images, '[]'::jsonb),
+			vs.id,
+			vs.event_id,
+			COALESCE(vs.event_slug, ''),
+			vs.participant_name,
+			vs.participant_email,
+			COALESCE(vs.participant_phone, ''),
+			COALESCE(vs.vehicle_year, ''),
+			COALESCE(vs.vehicle_make, ''),
+			COALESCE(vs.vehicle_model, ''),
+			COALESCE(vs.vehicle_description, ''),
+			COALESCE(vs.vehicle_modifications, ''),
+			COALESCE(vs.images, '[]'::jsonb),
 
-			status,
-			submitted_at,
-			created_at,
+			vs.status,
+			vs.submitted_at,
+			vs.created_at,
 
-			reviewed_at,
-			COALESCE(reviewed_by, ''),
-			COALESCE(review_notes, ''),
+			vs.reviewed_at,
+			COALESCE(vs.reviewed_by, ''),
+			COALESCE(vs.review_notes, ''),
 
-			COALESCE(checkout_session_id, ''),
-			checkout_created_at,
-			COALESCE(checkout_completed, FALSE),
-			checkout_completed_at,
+			COALESCE(vs.checkout_session_id, ''),
+			vs.checkout_created_at,
+			COALESCE(vs.checkout_completed, FALSE),
+			vs.checkout_completed_at,
 
-			COALESCE(payment_intent_id, ''),
-			COALESCE(payment_succeeded_before_approval, FALSE),
-			payment_succeeded_at,
-			COALESCE(payment_captured, FALSE),
-			payment_captured_at,
+			COALESCE(vs.payment_intent_id, ''),
+			COALESCE(vs.payment_succeeded_before_approval, FALSE),
+			vs.payment_succeeded_at,
+			COALESCE(vs.payment_captured, FALSE),
+			vs.payment_captured_at,
 
-			COALESCE(price_id, ''),
+			COALESCE(vs.price_id, ''),
 			COALESCE(
 				(
-					SELECT nickname
-					FROM prices
-					WHERE prices.id = vehicle_submissions.price_id
+					SELECT p.nickname
+					FROM prices p
+					WHERE p.id = vs.price_id
 				),
 				''
 			),
-			COALESCE(promotion_code, ''),
+			COALESCE(vs.promotion_code, ''),
 
-			COALESCE(requires_approval, TRUE),
-			COALESCE(awaiting_approval, FALSE),
+			COALESCE(vs.requires_approval, TRUE),
+			COALESCE(vs.awaiting_approval, FALSE),
 
-			COALESCE(approval_email_sent, FALSE),
-			approval_email_sent_at,
-			COALESCE(approval_email_resent, FALSE),
+			COALESCE(vs.approval_email_sent, FALSE),
+			vs.approval_email_sent_at,
+			COALESCE(vs.approval_email_resent, FALSE),
 
-			COALESCE(ticket_id, ''),
-			ticket_created_at,
-			COALESCE(ticket_email_sent, FALSE),
-			ticket_email_sent_at,
+			COALESCE(vs.ticket_id, ''),
+			vs.ticket_created_at,
+			COALESCE(vs.ticket_email_sent, FALSE),
+			vs.ticket_email_sent_at,
 
-			email_updated_at,
-			COALESCE(previous_email, ''),
-			COALESCE(email_resent_count, 0),
+			COALESCE(t.ticket_type, ''),
 
-			COALESCE(recovery_attempts, 0),
-			recovery_last_sent_at,
+			vs.email_updated_at,
+			COALESCE(vs.previous_email, ''),
+			COALESCE(vs.email_resent_count, 0),
 
-			COALESCE(refund_id, ''),
-			COALESCE(refund_amount, 0),
-			refund_issued_at,
+			COALESCE(vs.recovery_attempts, 0),
+			vs.recovery_last_sent_at,
 
-			revoked_at,
-			COALESCE(revoked_by, ''),
-			COALESCE(revocation_reason, '')
-		FROM vehicle_submissions
-		WHERE id = ?
+			COALESCE(vs.refund_id, ''),
+			COALESCE(vs.refund_amount, 0),
+			vs.refund_issued_at,
+
+			vs.revoked_at,
+			COALESCE(vs.revoked_by, ''),
+			COALESCE(vs.revocation_reason, '')
+		FROM vehicle_submissions vs
+		LEFT JOIN tickets t
+			ON t.token = vs.ticket_id
+		WHERE vs.id = ?
 	`, submissionID).Row().Scan(
 		&submission.ID,
 		&submission.EventID,
@@ -2960,6 +2964,8 @@ func getSubmissionByID(
 		&ticketCreatedAt,
 		&submission.TicketEmailSent,
 		&ticketEmailSentAt,
+
+		&submission.TicketType,
 
 		&emailUpdatedAt,
 		&submission.PreviousEmail,
