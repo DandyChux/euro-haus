@@ -615,9 +615,9 @@
 						</div>
 
 						<div>
-							<p class="text-muted-foreground">Reviewed</p>
+							<p class="text-muted-foreground">Ticket Type</p>
 							<p class="font-medium">
-								{submission.ticket_type}
+								{submission.price_nickname}
 							</p>
 						</div>
 					</div>

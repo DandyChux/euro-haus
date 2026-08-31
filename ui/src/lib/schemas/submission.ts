@@ -36,46 +36,75 @@ export const submissionRequirementAnswerSchema = z.object({
 	value: requirementAnswerSchema,
 });
 
-const issueSubmissionSchema = z.object({
-	id: z.string(),
-	event_id: z.string(),
-	event_slug: z.string(),
-	participant_name: z.string(),
-	participant_email: z.string(),
-	vehicle_year: z.string(),
-	vehicle_make: z.string(),
-	vehicle_model: z.string(),
-	status: z.string(),
-	submitted_at: z.string(),
-	issues: z.array(z.string()).optional(),
-	email_sent: z.boolean().optional(),
-	checkout_session_id: z.string().optional(),
-	payment_intent_id: z.string().optional(),
-	ticket_id: z.string().optional(),
-	ticket_type: z.string().optional(),
-});
-
 export const vehicleSubmissionSchema = z.object({
 	id: z.string(),
+
 	event_id: z.string(),
+	event_slug: z.string().optional(),
+
 	participant_name: z.string(),
 	participant_email: z.email(),
 	participant_phone: z.string().optional(),
+
 	vehicle_year: z.string(),
 	vehicle_make: z.string(),
 	vehicle_model: z.string(),
 	vehicle_description: z.string().optional(),
 	vehicle_modifications: z.string().optional(),
 	images: z.array(z.string()),
+
 	status: z.enum(["pending", "approved", "denied"]),
 	submitted_at: z.string(),
+
 	reviewed_at: z.string().optional(),
 	reviewed_by: z.string().optional(),
 	review_notes: z.string().optional(),
+
 	checkout_session_id: z.string().optional(),
+	checkout_created_at: z.string().optional(),
+	checkout_completed: z.boolean(),
+	checkout_completed_at: z.string().optional(),
+
 	payment_intent_id: z.string().optional(),
+	payment_succeeded_before_approval: z.boolean(),
+	payment_succeeded_at: z.string().optional(),
+	payment_captured: z.boolean(),
+	payment_captured_at: z.string().optional(),
+
 	price_id: z.string().optional(),
 	price_nickname: z.string().optional(),
+	promotion_code: z.string().optional(),
+
+	requires_approval: z.boolean(),
+	awaiting_approval: z.boolean(),
+
+	approval_email_sent: z.boolean(),
+	approval_email_sent_at: z.string().optional(),
+	approval_email_resent: z.boolean(),
+
+	ticket_id: z.string().optional(),
+	ticket_created_at: z.string().optional(),
+	ticket_email_sent: z.boolean(),
+	ticket_email_sent_at: z.string().optional(),
+
+	email_updated_at: z.string().optional(),
+	previous_email: z.string().optional(),
+	email_resent_count: z.number(),
+
+	recovery_attempts: z.number(),
+	recovery_last_sent_at: z.string().optional(),
+
+	refund_id: z.string().optional(),
+	refund_amount: z.number(),
+	refund_issued_at: z.string().optional(),
+
+	revoked_at: z.string().optional(),
+	revoked_by: z.string().optional(),
+	revocation_reason: z.string().optional(),
+
+	created_at: z.string(),
+	updated_at: z.string(),
+
 	requirement_answers: z
 		.array(
 			z.object({
@@ -88,6 +117,11 @@ export const vehicleSubmissionSchema = z.object({
 			}),
 		)
 		.optional(),
+});
+
+export const issueSubmissionSchema = vehicleSubmissionSchema.extend({
+	issues: z.array(z.string()).optional(),
+	email_sent: z.boolean().optional(),
 });
 
 export type VehicleSubmission = z.infer<typeof vehicleSubmissionSchema>;

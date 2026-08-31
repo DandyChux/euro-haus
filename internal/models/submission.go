@@ -216,7 +216,6 @@ type VehicleSubmissionDTO struct {
 	ApprovalEmailResent bool   `json:"approval_email_resent"`
 
 	TicketID          string `json:"ticket_id,omitempty"`
-	TicketType        string `json:"ticket_type,omitempty"`
 	TicketCreatedAt   string `json:"ticket_created_at,omitempty"`
 	TicketEmailSent   bool   `json:"ticket_email_sent"`
 	TicketEmailSentAt string `json:"ticket_email_sent_at,omitempty"`
