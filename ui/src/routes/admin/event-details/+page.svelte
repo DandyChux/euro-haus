@@ -127,7 +127,7 @@
 							rel="noreferrer"
 							class="block rounded-2xl border border-white/10 px-4 py-3 text-sm hover:border-white/20 hover:text-primary"
 						>
-							{product.title} · {formatCurrency(product.price)}
+							{product.name} · {formatCurrency(product.price)}
 						</a>
 					{/each}
 				</div>

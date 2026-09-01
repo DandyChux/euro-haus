@@ -2,15 +2,14 @@ import type { PageLoad } from "./$types";
 import { superValidate } from "sveltekit-superforms";
 import { zod4 } from "sveltekit-superforms/adapters";
 
-import { productVariantsSchema } from "$lib/schemas/product";
+import { ProductVariantsSchema } from "$lib/schemas/product";
 
 export const load: PageLoad = async () => {
 	const form = await superValidate(
 		{
 			id: "",
-			price_id: undefined,
 
-			title: "",
+			name: "",
 			description: "",
 			price: 0,
 			compare_at_price: undefined,
@@ -27,7 +26,7 @@ export const load: PageLoad = async () => {
 
 			variants: [],
 		},
-		zod4(productVariantsSchema),
+		zod4(ProductVariantsSchema),
 	);
 
 	return {

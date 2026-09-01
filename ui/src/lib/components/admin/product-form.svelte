@@ -12,7 +12,7 @@
 	import { Card } from "$lib/components/ui/card";
 
 	import {
-		productVariantsSchema,
+		ProductVariantsSchema,
 		type ProductVariant,
 		type ProductVariants,
 	} from "$lib/schemas/product";
@@ -33,7 +33,7 @@
 		untrack(() => data.form),
 		{
 			SPA: true,
-			validators: zod4Client(productVariantsSchema),
+			validators: zod4Client(ProductVariantsSchema),
 
 			async onUpdate({ form }) {
 				if (!form.valid) return;
@@ -97,7 +97,7 @@
 	}
 
 	function productImageFolder(): string {
-		const key = ($formData.id || $formData.title)
+		const key = ($formData.id || $formData.name)
 			.trim()
 			.toLowerCase()
 			.normalize("NFKD")
@@ -202,12 +202,12 @@
 <form method="POST" use:enhance class="space-y-6">
 	<Card class="space-y-6 p-5">
 		<div class="grid gap-4 md:grid-cols-2">
-			<Form.Field {form} name="title">
+			<Form.Field {form} name="name">
 				<Form.Control>
 					{#snippet children({ props })}
 						<Form.Label>Product title</Form.Label>
 
-						<Input {...props} bind:value={$formData.title} />
+						<Input {...props} bind:value={$formData.name} />
 					{/snippet}
 				</Form.Control>
 

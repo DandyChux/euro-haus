@@ -2,38 +2,31 @@ import { error } from "@sveltejs/kit";
 import type { PageLoad } from "./$types";
 import {
 	findBundlesForProduct,
-	getBundleProduct,
 	getProductWithVariants,
-	getProduct,
-	transformStripeProduct,
 } from "$lib/services/stripe";
 
 export const load: PageLoad = async ({ fetch, params }) => {
-	const raw = await getProduct(fetch, params.id);
+	const product = await getProductWithVariants(fetch, params.id);
 
-	if (!raw) {
+	if (!product) {
 		error(404, "Product not found");
 	}
 
-	if (raw.metadata.type === "bundle") {
-		const bundle = await getBundleProduct(fetch, params.id);
+	if (product.type === "bundle") {
+		const bundle = await findBundlesForProduct(fetch, params.id);
 
 		if (!bundle) error(404, "Bundle not found");
 
 		return {
-			product: bundle,
-			containingBundles: [],
-			title: bundle.title,
+			product: product,
+			containingBundles: bundle,
+			title: product.name,
 		};
 	}
 
-	const product =
-		(await getProductWithVariants(fetch, params.id)) ??
-		transformStripeProduct(raw);
-
 	return {
 		product,
-		containingBundles: await findBundlesForProduct(fetch, params.id),
-		title: product.title,
+		containingBundles: [],
+		title: product.name,
 	};
 };

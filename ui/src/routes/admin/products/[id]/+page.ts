@@ -4,7 +4,7 @@ import { superValidate } from "sveltekit-superforms";
 import { zod4 } from "sveltekit-superforms/adapters";
 
 import { getProduct } from "$lib/services/stripe";
-import { productVariantsSchema } from "$lib/schemas/product";
+import { ProductVariantsSchema } from "$lib/schemas/product";
 
 export const load: PageLoad = async ({ fetch, params }) => {
 	const product = await getProduct(fetch, params.id);
@@ -16,9 +16,8 @@ export const load: PageLoad = async ({ fetch, params }) => {
 	const form = await superValidate(
 		{
 			id: product.id,
-			price_id: product.price_id,
 
-			title: product.title,
+			name: product.name,
 			description: product.description ?? "",
 			price: product.price ?? 0,
 			compare_at_price: product.compare_at_price ?? undefined,
@@ -35,7 +34,7 @@ export const load: PageLoad = async ({ fetch, params }) => {
 
 			variants: [],
 		},
-		zod4(productVariantsSchema),
+		zod4(ProductVariantsSchema),
 	);
 
 	return {

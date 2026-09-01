@@ -331,7 +331,7 @@
 						<input
 							type="checkbox"
 							onchange={(event) => {
-								if (!product.price_id) {
+								if (!product.default_price) {
 									return;
 								}
 
@@ -339,21 +339,22 @@
 									selectedAddOns = [
 										...selectedAddOns,
 										{
-											price_id: product.price_id,
+											price_id: product.default_price.id,
 											quantity: 1,
 										},
 									];
 								} else {
 									selectedAddOns = selectedAddOns.filter(
 										(item) =>
-											item.price_id !== product.price_id,
+											item.price_id !==
+											product.default_price?.id,
 									);
 								}
 							}}
 						/>
 
 						<span>
-							<strong>{product.title}</strong>
+							<strong>{product.name}</strong>
 							<small>{product.description}</small>
 						</span>
 					</label>

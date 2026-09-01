@@ -50,8 +50,8 @@
 
 		addToCart({
 			id: data.product.id,
-			price_id: selectedVariant?.price_id ?? data.product.price_id,
-			title: `${data.product.title}${variantLabel}`,
+			price_id: selectedVariant?.price_id,
+			title: `${data.product.name}${variantLabel}`,
 			description: data.product.description,
 			price: currentPrice,
 			quantity,
@@ -66,7 +66,7 @@
 
 		if (navigator.share) {
 			await navigator.share({
-				title: data.product.title,
+				title: data.product.name,
 				text: data.product.description,
 				url: href,
 			});
@@ -78,13 +78,13 @@
 </script>
 
 <svelte:head>
-	<title>{data.product.title} · Euro Haus</title>
+	<title>{data.product.name} · Euro Haus</title>
 </svelte:head>
 
 <section class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
 	<div class="mb-6 text-sm">
 		<a href="/catalog" class="hover:text-primary">Catalog</a> /
-		<span>{data.product.title}</span>
+		<span>{data.product.name}</span>
 	</div>
 
 	<div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.9fr)]">
@@ -95,7 +95,7 @@
 				{#if images[activeImage]}
 					<img
 						src={images[activeImage]}
-						alt={data.product.title}
+						alt={data.product.name}
 						class="h-full w-full object-contain"
 					/>
 				{:else}
@@ -121,7 +121,7 @@
 						>
 							<img
 								src={image}
-								alt={`${data.product.title} ${index + 1}`}
+								alt={`${data.product.name} ${index + 1}`}
 								class="aspect-square w-full object-cover"
 							/>
 						</button>
@@ -136,7 +136,7 @@
 					{data.product.category}
 				</p>
 				<h1 class="mt-3 text-4xl font-semibold">
-					{data.product.title}
+					{data.product.name}
 				</h1>
 				<p class="mt-4 text-base leading-7">
 					{data.product.description}
@@ -242,7 +242,7 @@
 								href={`/catalog/${bundle.id}`}
 								class="block rounded-2xl border border-white/10 px-4 py-3 text-sm hover:border-white/20 hover:text-primary"
 							>
-								{bundle.title} · Save {formatCurrency(
+								{bundle.name} · Save {formatCurrency(
 									bundle.discount_value,
 								)}
 							</a>

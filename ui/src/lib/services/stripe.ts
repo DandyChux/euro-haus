@@ -85,7 +85,7 @@ export async function getFeaturedProducts(fetcher: Fetcher, limit = 3) {
 export async function getEventLinkedProducts(
 	fetcher: Fetcher,
 	eventId: string,
-) {
+): Promise<Product[]> {
 	try {
 		const response = await request<{ linkedProducts?: Product[] }>(
 			fetcher,

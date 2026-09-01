@@ -10,7 +10,7 @@
 
 	async function saveProduct(product: ProductVariants) {
 		await apiClient.put(`/admin/update-product/${data.product.id}`, {
-			name: product.title,
+			name: product.name,
 			description: product.description,
 			price: Math.round(product.price * 100),
 			currency: "usd",

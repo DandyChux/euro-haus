@@ -63,22 +63,22 @@
 				<p>{data.products.length} pieces · Small runs</p>
 			</div>
 			<div class="product-grid">
-				{#each paginatedProducts as product (product.title)}
+				{#each paginatedProducts as product (product.name)}
 					<a
 						class="product-card"
 						href={`/catalog/${product.id}`}
-						aria-label={`View ${product.title} in the live store`}
+						aria-label={`View ${product.name} in the live store`}
 					>
 						<div class="product-image">
 							<img
 								src={product.images[0]}
-								alt={product.title}
+								alt={product.name}
 							/><span>View item ↗</span>
 						</div>
 						<div class="product-info">
 							<div>
 								<p>{product.category}</p>
-								<h2>{product.title}</h2>
+								<h2>{product.name}</h2>
 							</div>
 							<strong>{product.price.toFixed(2)}</strong>
 							{#if product.compare_at_price}
