@@ -169,7 +169,6 @@
 						variant="link"
 						href={`/admin/products/${product.id}`}
 						class={buttonVariants({ variant: "circle" })}
-						onclick={() => void deleteProduct(product)}
 					>
 						Edit product
 					</Button>
