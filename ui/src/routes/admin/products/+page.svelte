@@ -8,7 +8,7 @@
 
 	let { data } = $props();
 
-	let products = $state.raw([...data.products]);
+	let products = $derived([...data.products]);
 	let search = $state("");
 	let typeFilter = $state<"all" | "product" | "bundle" | "event">("all");
 	let statusMessage = $state("");

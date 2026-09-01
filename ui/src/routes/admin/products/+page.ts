@@ -18,8 +18,10 @@ export const load: PageLoad = async ({ fetch }) => {
 		zod4(priceEditSchema),
 	);
 
+	const products = await getProducts(fetch, true);
+
 	return {
-		products: await getProducts(fetch, true),
+		products,
 		form,
 	};
 };

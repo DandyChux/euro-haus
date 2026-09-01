@@ -27,9 +27,12 @@ export async function getProducts(
 ): Promise<Product[]> {
 	const query = includeInactive ? "?include_inactive=true" : "";
 
-	const response = await request<Product[]>(fetcher, `/products${query}`);
+	const response = await request<{ products: Product[] }>(
+		fetcher,
+		`/products${query}`,
+	);
 
-	return response ?? [];
+	return response.products ?? [];
 }
 
 export async function getProduct(
