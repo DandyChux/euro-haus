@@ -14,9 +14,19 @@
 		}>("/admin/create-product", {
 			name: product.name,
 			description: product.description,
+			type: product.type,
 			price: product.price,
-			currency: "usd",
+			currency: product.currency,
+			compare_at_price: product.compare_at_price,
 			images: product.images,
+			is_new: product.is_new,
+			in_stock: product.in_stock,
+			active: product.active,
+			featured: product.featured,
+			category: product.category,
+			subcategory: product.subcategory,
+			tags: product.tags,
+			max_quantity: product.max_quantity,
 		});
 
 		toast.success("Product created.");

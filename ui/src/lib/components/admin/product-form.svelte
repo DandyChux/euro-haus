@@ -18,6 +18,7 @@
 	} from "$lib/schemas/product";
 	import VariantForm from "./variant-form.svelte";
 	import apiClient from "$lib/api";
+	import { Label } from "../ui/label";
 
 	interface Props {
 		data: {
@@ -99,7 +100,7 @@
 	}
 
 	function productImageFolder(): string {
-		const key = ($formData.id || $formData.name)
+		const key = $formData.name
 			.trim()
 			.toLowerCase()
 			.normalize("NFKD")
@@ -523,9 +524,9 @@
 				{/if}
 			</div>
 
-			<label
+			<Label
 				class="block cursor-pointer rounded-xl border border-dashed p-6 text-center"
-				for="imageInput"
+				for="product-image-upload"
 			>
 				{#if uploadingImage}
 					<p class="font-medium">
@@ -539,10 +540,10 @@
 						default.
 					</p>
 				{/if}
-			</label>
+			</Label>
 
 			<input
-				id="imageInput"
+				id="product-image-upload"
 				bind:this={imageInput}
 				class="sr-only"
 				type="file"

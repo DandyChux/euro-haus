@@ -283,7 +283,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		Updates(map[string]interface{}{
 			"title":            req.Name,
 			"description":     req.Description,
-			"images":          req.Images,
+			"images":          models.ProductStringList(req.Images),
 			"type":             req.Type,
 			"price":            req.Price,
 			"currency":         req.Currency,
@@ -293,7 +293,7 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			"featured":         req.Featured,
 			"category":         req.Category,
 			"subcategory":      req.Subcategory,
-			"tags":             req.Tags,
+			"tags":             models.ProductStringList(req.Tags),
 			"max_quantity":     req.MaxQuantity,
 		}).
 		Error
