@@ -79,7 +79,6 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 
 		err := services.GetDB().
 			WithContext(r.Context()).
-			Preload("Prices").
 			Preload("BundleItems").
 			Where("id = ?", p.ID).
 			First(&localProduct).
