@@ -742,25 +742,20 @@
 		<Form.Fieldset {form} name={"tags"}>
 			<Form.Legend>Tags</Form.Legend>
 			{#each $formData.tags as _, index (index)}
-				<Form.Control>
-					{#snippet children({ props })}
-						<div class="flex gap-2">
-							<Input
-								{...props}
-								bind:value={$formData.tags[index]}
-								placeholder="BMW, Track Day"
-							/>
+				<div class="flex gap-2">
+					<Input
+						bind:value={$formData.tags[index]}
+						placeholder="BMW, Track Day"
+					/>
 
-							<Button
-								type="button"
-								variant="ghost"
-								onclick={() => removeTag(index)}
-							>
-								Remove
-							</Button>
-						</div>
-					{/snippet}
-				</Form.Control>
+					<Button
+						type="button"
+						variant="ghost"
+						onclick={() => removeTag(index)}
+					>
+						Remove
+					</Button>
+				</div>
 
 				<Form.FieldErrors />
 			{/each}
@@ -786,56 +781,48 @@
 			<Form.Legend>Agenda</Form.Legend>
 
 			{#each $formData.agenda as _, index (index)}
-				<Form.Control>
-					{#snippet children({ props })}
-						<div
-							class="grid gap-3 rounded-2xl border p-4 md:grid-cols-[10rem_minmax(0,1fr)_auto] md:items-start"
+				<div
+					class="grid gap-3 rounded-2xl border p-4 md:grid-cols-[10rem_minmax(0,1fr)_auto] md:items-start"
+				>
+					<div class="space-y-2">
+						<Label
+							for={`agenda-time-${index}`}
+							class="text-sm font-medium"
 						>
-							<div class="space-y-2">
-								<Label
-									for={`agenda-time-${index}`}
-									class="text-sm font-medium"
-								>
-									Time
-								</Label>
+							Time
+						</Label>
 
-								<Input
-									{...props}
-									id={`agenda-time-${index}`}
-									bind:value={$formData.agenda[index].time}
-									placeholder="9:00 AM"
-								/>
-							</div>
+						<Input
+							id={`agenda-time-${index}`}
+							bind:value={$formData.agenda[index].time}
+							placeholder="9:00 AM"
+						/>
+					</div>
 
-							<div class="space-y-2">
-								<Label
-									for={`agenda-activity-${index}`}
-									class="text-sm font-medium"
-								>
-									Activity
-								</Label>
+					<div class="space-y-2">
+						<Label
+							for={`agenda-activity-${index}`}
+							class="text-sm font-medium"
+						>
+							Activity
+						</Label>
 
-								<Input
-									{...props}
-									id={`agenda-activity-${index}`}
-									bind:value={
-										$formData.agenda[index].activity
-									}
-									placeholder="Registration and welcome"
-								/>
-							</div>
+						<Input
+							id={`agenda-activity-${index}`}
+							bind:value={$formData.agenda[index].activity}
+							placeholder="Registration and welcome"
+						/>
+					</div>
 
-							<Button
-								type="button"
-								variant="ghost"
-								class="md:mt-7"
-								onclick={() => removeAgendaItem(index)}
-							>
-								Remove
-							</Button>
-						</div>
-					{/snippet}
-				</Form.Control>
+					<Button
+						type="button"
+						variant="ghost"
+						class="md:mt-7"
+						onclick={() => removeAgendaItem(index)}
+					>
+						Remove
+					</Button>
+				</div>
 			{/each}
 
 			<Form.FieldErrors />
@@ -861,26 +848,21 @@
 			<Form.Legend>Included items</Form.Legend>
 
 			{#each $formData.includes as _, index (index)}
-				<Form.Control>
-					{#snippet children({ props })}
-						<div class="flex gap-2">
-							<Input
-								{...props}
-								id={`included-item-${index}`}
-								bind:value={$formData.includes[index]}
-								placeholder="Lunch and refreshments"
-							/>
+				<div class="flex gap-2">
+					<Input
+						id={`included-item-${index}`}
+						bind:value={$formData.includes[index]}
+						placeholder="Lunch and refreshments"
+					/>
 
-							<Button
-								type="button"
-								variant="ghost"
-								onclick={() => removeIncludedItem(index)}
-							>
-								Remove
-							</Button>
-						</div>
-					{/snippet}
-				</Form.Control>
+					<Button
+						type="button"
+						variant="ghost"
+						onclick={() => removeIncludedItem(index)}
+					>
+						Remove
+					</Button>
+				</div>
 			{/each}
 
 			<Form.FieldErrors />
@@ -906,117 +888,98 @@
 			<Form.Legend>Sponsors</Form.Legend>
 
 			{#each $formData.sponsors as _, index (index)}
-				<Form.Control>
-					{#snippet children({ props })}
-						<div class="space-y-4 rounded-2xl border p-4">
-							<div class="flex justify-between">
-								<h3 class="font-medium">
-									Sponsor {index + 1}
-								</h3>
+				<div class="space-y-4 rounded-2xl border p-4">
+					<div class="flex justify-between">
+						<h3 class="font-medium">
+							Sponsor {index + 1}
+						</h3>
 
-								<Button
-									type="button"
-									variant="ghost"
-									onclick={() => removeSponsor(index)}
-								>
-									Remove
-								</Button>
-							</div>
+						<Button
+							type="button"
+							variant="ghost"
+							onclick={() => removeSponsor(index)}
+						>
+							Remove
+						</Button>
+					</div>
 
-							<div class="grid gap-4 md:grid-cols-2">
-								<div class="space-y-2">
-									<Label
-										for={`sponsor-name-${index}`}
-										class="text-sm font-medium"
-									>
-										Company name
-									</Label>
+					<div class="grid gap-4 md:grid-cols-2">
+						<div class="space-y-2">
+							<Label
+								for={`sponsor-name-${index}`}
+								class="text-sm font-medium"
+							>
+								Company name
+							</Label>
 
-									<Input
-										{...props}
-										id={`sponsor-name-${index}`}
-										bind:value={
-											$formData.sponsors[index].name
-										}
-										placeholder="Porsche USA"
-									/>
-								</div>
-
-								<div class="space-y-2">
-									<Label
-										for={`sponsor-tier-${index}`}
-										class="text-sm font-medium"
-									>
-										Sponsor tier
-									</Label>
-
-									<Input
-										{...props}
-										id={`sponsor-tier-${index}`}
-										bind:value={
-											$formData.sponsors[index].tier
-										}
-										placeholder="Platinum"
-									/>
-								</div>
-
-								<div class="space-y-2">
-									<Label
-										for={`sponsor-logo-${index}`}
-										class="text-sm font-medium"
-									>
-										Logo URL
-									</Label>
-
-									<Input
-										{...props}
-										id={`sponsor-logo-${index}`}
-										bind:value={
-											$formData.sponsors[index].logo
-										}
-										placeholder="https://example.com/logo.png"
-									/>
-								</div>
-
-								<div class="space-y-2">
-									<Label
-										for={`sponsor-url-${index}`}
-										class="text-sm font-medium"
-									>
-										Website
-									</Label>
-
-									<Input
-										{...props}
-										id={`sponsor-url-${index}`}
-										bind:value={
-											$formData.sponsors[index].url
-										}
-										placeholder="https://example.com"
-									/>
-								</div>
-							</div>
-
-							<div class="space-y-2">
-								<Label
-									for={`sponsor-description-${index}`}
-									class="text-sm font-medium"
-								>
-									Description
-								</Label>
-
-								<Textarea
-									{...props}
-									id={`sponsor-description-${index}`}
-									bind:value={
-										$formData.sponsors[index].description
-									}
-									placeholder="Describe the sponsor contribution"
-								/>
-							</div>
+							<Input
+								id={`sponsor-name-${index}`}
+								bind:value={$formData.sponsors[index].name}
+								placeholder="Porsche USA"
+							/>
 						</div>
-					{/snippet}
-				</Form.Control>
+
+						<div class="space-y-2">
+							<Label
+								for={`sponsor-tier-${index}`}
+								class="text-sm font-medium"
+							>
+								Sponsor tier
+							</Label>
+
+							<Input
+								id={`sponsor-tier-${index}`}
+								bind:value={$formData.sponsors[index].tier}
+								placeholder="Platinum"
+							/>
+						</div>
+
+						<div class="space-y-2">
+							<Label
+								for={`sponsor-logo-${index}`}
+								class="text-sm font-medium"
+							>
+								Logo URL
+							</Label>
+
+							<Input
+								id={`sponsor-logo-${index}`}
+								bind:value={$formData.sponsors[index].logo}
+								placeholder="https://example.com/logo.png"
+							/>
+						</div>
+
+						<div class="space-y-2">
+							<Label
+								for={`sponsor-url-${index}`}
+								class="text-sm font-medium"
+							>
+								Website
+							</Label>
+
+							<Input
+								id={`sponsor-url-${index}`}
+								bind:value={$formData.sponsors[index].url}
+								placeholder="https://example.com"
+							/>
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						<Label
+							for={`sponsor-description-${index}`}
+							class="text-sm font-medium"
+						>
+							Description
+						</Label>
+
+						<Textarea
+							id={`sponsor-description-${index}`}
+							bind:value={$formData.sponsors[index].description}
+							placeholder="Describe the sponsor contribution"
+						/>
+					</div>
+				</div>
 			{/each}
 
 			<Form.FieldErrors />
@@ -1182,22 +1145,16 @@
 		<Form.Fieldset {form} name="prices">
 			<Form.Legend>Ticket prices</Form.Legend>
 
-			<Form.Control>
-				{#snippet children({ props })}
-					<div class="flex items-center gap-3">
-						<Checkbox
-							{...props}
-							checked={hasTiers}
-							onCheckedChange={(value) =>
-								setHasTiers(value === true)}
-						/>
+			<div class="flex items-center gap-3">
+				<Checkbox
+					checked={hasTiers}
+					onCheckedChange={(value) => setHasTiers(value === true)}
+				/>
 
-						<Form.Label class="font-normal">
-							This event has multiple ticket tiers
-						</Form.Label>
-					</div>
-				{/snippet}
-			</Form.Control>
+				<Form.Label class="font-normal">
+					This event has multiple ticket tiers
+				</Form.Label>
+			</div>
 
 			{#if $formData.prices.length === 0}
 				<div
@@ -1212,142 +1169,184 @@
 			{:else}
 				{#each $formData.prices as _, index (index)}
 					{#if hasTiers || index === 0}
-						<Card class="space-y-5 border p-4 shadow-none">
-							<div
-								class="flex items-center justify-between gap-4"
-							>
-								<h3 class="font-medium">
-									{hasTiers
-										? `Ticket tier ${index + 1}`
-										: "Ticket price"}
-								</h3>
+						<fieldset class="space-y-5 border p-4 rounded-2xl">
+							<legend class="font-medium">
+								{hasTiers
+									? `Ticket tier ${index + 1}`
+									: "Ticket price"}
+							</legend>
 
-								{#if hasTiers}
-									<Button
-										type="button"
-										variant="ghost"
-										onclick={() => removePrice(index)}
-									>
-										Remove
-									</Button>
-								{/if}
-							</div>
+							{#if hasTiers}
+								<Button
+									type="button"
+									variant="ghost"
+									onclick={() => removePrice(index)}
+								>
+									Remove
+								</Button>
+							{/if}
 
 							<div class="grid gap-4 md:grid-cols-2">
+								<Form.Field
+									{form}
+									name={`prices[${index}].nickname`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<Form.Label>Tier name</Form.Label>
+
+											<Input
+												{...props}
+												bind:value={
+													$formData.prices[index]
+														.nickname
+												}
+												placeholder="VIP Experience"
+											/>
+										{/snippet}
+									</Form.Control>
+
+									<Form.FieldErrors />
+								</Form.Field>
+
+								<Form.Field
+									{form}
+									name={`prices[${index}].unit_amount`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<Form.Label>Price</Form.Label>
+
+											<div
+												class="flex items-center gap-2"
+											>
+												<span
+													class="text-sm text-muted-foreground"
+													>$</span
+												>
+
+												<Input
+													{...props}
+													type="number"
+													inputmode="decimal"
+													min="0"
+													step="0.01"
+													value={(
+														$formData.prices[index]
+															.unit_amount / 100
+													).toFixed(2)}
+													oninput={(event) =>
+														setPriceAmount(
+															index,
+															event,
+														)}
+													placeholder="49.99"
+												/>
+											</div>
+										{/snippet}
+									</Form.Control>
+
+									<Form.FieldErrors />
+								</Form.Field>
+							</div>
+
+							<Form.Field
+								{form}
+								name={`prices[${index}].description`}
+							>
 								<Form.Control>
 									{#snippet children({ props })}
-										<Form.Label>Tier name</Form.Label>
+										<Form.Label>Description</Form.Label>
 
-										<Input
+										<Textarea
 											{...props}
 											bind:value={
-												$formData.prices[index].nickname
+												$formData.prices[index]
+													.description
 											}
-											placeholder="VIP Experience"
+											placeholder="What's included in this tier..."
+											rows={3}
 										/>
 									{/snippet}
 								</Form.Control>
 
-								<Form.Control>
-									{#snippet children({ props })}
-										<Form.Label>Price</Form.Label>
+								<Form.FieldErrors />
+							</Form.Field>
 
-										<div class="flex items-center gap-2">
-											<span
-												class="text-sm text-muted-foreground"
-											>
-												$
-											</span>
+							<div class="grid gap-4 md:grid-cols-2">
+								<Form.Field
+									{form}
+									name={`prices[${index}].quantity`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<Form.Label>
+												Max tickets per order
+											</Form.Label>
 
 											<Input
 												{...props}
 												type="number"
-												inputmode="decimal"
-												min="0"
-												value={(
-													$formData.prices[index]
-														.unit_amount / 100
-												).toFixed(2)}
+												min="1"
+												value={$formData.prices[index]
+													.quantity ?? ""}
 												oninput={(event) =>
-													setPriceAmount(
+													setPriceQuantity(
 														index,
 														event,
 													)}
-												placeholder="49.99"
+												placeholder="10"
 											/>
-										</div>
-									{/snippet}
-								</Form.Control>
-							</div>
+										{/snippet}
+									</Form.Control>
+								</Form.Field>
 
-							<Form.Control>
-								{#snippet children({ props })}
-									<Form.Label>Description</Form.Label>
+								<Form.Field
+									{form}
+									name={`prices[${index}].stock_quantity`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<Form.Label>Ticket stock</Form.Label
+											>
 
-									<Textarea
-										{...props}
-										bind:value={
-											$formData.prices[index].description
-										}
-										placeholder="What's included in this tier..."
-										rows={3}
-									/>
-								{/snippet}
-							</Form.Control>
+											<Input
+												{...props}
+												type="number"
+												min="0"
+												value={$formData.prices[index]
+													.stock_quantity ?? ""}
+												oninput={(event) =>
+													setPriceStockQuantity(
+														index,
+														event,
+													)}
+												placeholder="Leave blank for unlimited"
+											/>
+										{/snippet}
+									</Form.Control>
+								</Form.Field>
 
-							<div class="grid gap-4 md:grid-cols-2">
-								<Form.Control>
-									{#snippet children({ props })}
-										<Form.Label>
-											Max tickets per order
-										</Form.Label>
+								<Form.Field
+									{form}
+									name={`prices[${index}].currency`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<Form.Label>Currency</Form.Label>
 
-										<Input
-											{...props}
-											type="number"
-											min="1"
-											value={$formData.prices[index]
-												.quantity ?? ""}
-											oninput={(event) =>
-												setPriceQuantity(index, event)}
-											placeholder="10"
-										/>
-									{/snippet}
-								</Form.Control>
+											<Input
+												{...props}
+												value={$formData.prices[
+													index
+												].currency.toUpperCase()}
+												readonly
+											/>
+										{/snippet}
+									</Form.Control>
 
-								<Form.Control>
-									{#snippet children({ props })}
-										<Form.Label>Ticket stock</Form.Label>
-
-										<Input
-											{...props}
-											type="number"
-											min="0"
-											value={$formData.prices[index]
-												.stock_quantity ?? ""}
-											oninput={(event) =>
-												setPriceStockQuantity(
-													index,
-													event,
-												)}
-											placeholder="Leave blank for unlimited"
-										/>
-									{/snippet}
-								</Form.Control>
-
-								<Form.Control>
-									{#snippet children({ props })}
-										<Form.Label>Currency</Form.Label>
-
-										<Input
-											{...props}
-											value={$formData.prices[
-												index
-											].currency.toUpperCase()}
-											readonly
-										/>
-									{/snippet}
-								</Form.Control>
+									<Form.FieldErrors />
+								</Form.Field>
 							</div>
 
 							<fieldset class="space-y-3">
@@ -1372,35 +1371,43 @@
 									</p>
 								{:else}
 									{#each $formData.prices[index].features as _, featureIndex (featureIndex)}
-										<Form.Control>
-											{#snippet children({ props })}
-												<div class="flex gap-2">
-													<Input
-														{...props}
-														bind:value={
-															$formData.prices[
-																index
-															].features[
-																featureIndex
-															]
-														}
-														placeholder="Meet & Greet, Premium Parking"
-													/>
+										<Form.Field
+											{form}
+											name={`prices[${index}].features[${featureIndex}]`}
+										>
+											<Form.Control>
+												{#snippet children({ props })}
+													<div class="flex gap-2">
+														<Input
+															{...props}
+															bind:value={
+																$formData
+																	.prices[
+																	index
+																].features[
+																	featureIndex
+																]
+															}
+															placeholder="Meet & Greet, Premium Parking"
+														/>
 
-													<Button
-														type="button"
-														variant="ghost"
-														onclick={() =>
-															removePriceFeature(
-																index,
-																featureIndex,
-															)}
-													>
-														Remove
-													</Button>
-												</div>
-											{/snippet}
-										</Form.Control>
+														<Button
+															type="button"
+															variant="ghost"
+															onclick={() =>
+																removePriceFeature(
+																	index,
+																	featureIndex,
+																)}
+														>
+															Remove
+														</Button>
+													</div>
+												{/snippet}
+											</Form.Control>
+
+											<Form.FieldErrors />
+										</Form.Field>
 									{/each}
 								{/if}
 							</fieldset>
@@ -1668,28 +1675,10 @@
 							</fieldset>
 
 							<div class="flex flex-wrap gap-4">
-								<Form.Control>
-									{#snippet children({ props })}
-										<div class="flex items-center gap-2">
-											<Checkbox
-												{...props}
-												checked={$formData.prices[index]
-													.requires_submission}
-												onCheckedChange={(value) =>
-													setRequiresSubmission(
-														index,
-														value === true,
-													)}
-											/>
-
-											<Form.Label>
-												Requires vehicle submission
-											</Form.Label>
-										</div>
-									{/snippet}
-								</Form.Control>
-
-								{#if $formData.prices[index].requires_submission}
+								<Form.Field
+									{form}
+									name={`prices[${index}].requires_submission`}
+								>
 									<Form.Control>
 										{#snippet children({ props })}
 											<div
@@ -1699,63 +1688,113 @@
 													{...props}
 													checked={$formData.prices[
 														index
-													].requires_approval}
+													].requires_submission}
 													onCheckedChange={(value) =>
-														($formData.prices[
-															index
-														].requires_approval =
-															value === true)}
+														setRequiresSubmission(
+															index,
+															value === true,
+														)}
 												/>
 
 												<Form.Label>
-													Requires approval
+													Requires vehicle submission
 												</Form.Label>
 											</div>
 										{/snippet}
 									</Form.Control>
+								</Form.Field>
+
+								{#if $formData.prices[index].requires_submission}
+									<Form.Field
+										{form}
+										name={`prices[${index}].requires_approval`}
+									>
+										<Form.Control>
+											{#snippet children({ props })}
+												<div
+													class="flex items-center gap-2"
+												>
+													<Checkbox
+														{...props}
+														checked={$formData
+															.prices[index]
+															.requires_approval}
+														onCheckedChange={(
+															value,
+														) =>
+															($formData.prices[
+																index
+															].requires_approval =
+																value === true)}
+													/>
+
+													<Form.Label>
+														Requires approval
+													</Form.Label>
+												</div>
+											{/snippet}
+										</Form.Control>
+									</Form.Field>
 								{/if}
 
-								<Form.Control>
-									{#snippet children({ props })}
-										<div class="flex items-center gap-2">
-											<Checkbox
-												{...props}
-												checked={$formData.prices[index]
-													.most_popular}
-												onCheckedChange={(value) =>
-													($formData.prices[
+								<Form.Field
+									{form}
+									name={`prices[${index}].most_popular`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<div
+												class="flex items-center gap-2"
+											>
+												<Checkbox
+													{...props}
+													checked={$formData.prices[
 														index
-													].most_popular =
-														value === true)}
-											/>
+													].most_popular}
+													onCheckedChange={(value) =>
+														($formData.prices[
+															index
+														].most_popular =
+															value === true)}
+												/>
 
-											<Form.Label>
-												Most popular tier
-											</Form.Label>
-										</div>
-									{/snippet}
-								</Form.Control>
+												<Form.Label>
+													Most popular tier
+												</Form.Label>
+											</div>
+										{/snippet}
+									</Form.Control>
+								</Form.Field>
 
-								<Form.Control>
-									{#snippet children({ props })}
-										<div class="flex items-center gap-2">
-											<Checkbox
-												{...props}
-												checked={$formData.prices[index]
-													.sold_out ?? false}
-												onCheckedChange={(value) =>
-													($formData.prices[
+								<Form.Field
+									{form}
+									name={`prices[${index}].sold_out`}
+								>
+									<Form.Control>
+										{#snippet children({ props })}
+											<div
+												class="flex items-center gap-2"
+											>
+												<Checkbox
+													{...props}
+													checked={$formData.prices[
 														index
-													].sold_out =
-														value === true)}
-											/>
+													].sold_out ?? false}
+													onCheckedChange={(value) =>
+														($formData.prices[
+															index
+														].sold_out =
+															value === true)}
+												/>
 
-											<Form.Label>Sold out</Form.Label>
-										</div>
-									{/snippet}
-								</Form.Control>
+												<Form.Label>Sold out</Form.Label
+												>
+											</div>
+										{/snippet}
+									</Form.Control>
+								</Form.Field>
 							</div>
-						</Card>
+						</fieldset>
 					{/if}
 				{/each}
 

@@ -450,8 +450,8 @@
 	</Card>
 
 	<Card class="space-y-4 p-5">
-		<Form.Fieldset {form} name="tags">
-			<Form.Legend>Tags</Form.Legend>
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-medium"> Tags </legend>
 
 			<div class="flex gap-2">
 				<Input
@@ -484,17 +484,48 @@
 					{/each}
 				</div>
 			{/if}
-
-			<Form.FieldErrors />
-		</Form.Fieldset>
+		</fieldset>
 	</Card>
 
 	<Card class="space-y-4 p-5">
-		<Form.Fieldset {form} name="images">
-			<Form.Legend>Product images</Form.Legend>
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-medium"> Product images </legend>
+
+			<div class="space-y-2">
+				<label for="product-image-url" class="text-sm font-medium">
+					Add an existing image URL
+				</label>
+
+				<div class="flex gap-2">
+					<Input
+						id="product-image-url"
+						bind:value={imageUrl}
+						type="url"
+						placeholder="https://cdn.example.com/product-image.jpg"
+						aria-invalid={imageUrlError ? "true" : undefined}
+						onkeydown={(event) => {
+							if (event.key === "Enter") {
+								event.preventDefault();
+								addImageUrl();
+							}
+						}}
+					/>
+
+					<Button type="button" onclick={addImageUrl}>
+						Add image
+					</Button>
+				</div>
+
+				{#if imageUrlError}
+					<p class="text-sm text-destructive">
+						{imageUrlError}
+					</p>
+				{/if}
+			</div>
 
 			<label
 				class="block cursor-pointer rounded-xl border border-dashed p-6 text-center"
+				for="imageInput"
 			>
 				{#if uploadingImage}
 					<p class="font-medium">
@@ -508,17 +539,18 @@
 						default.
 					</p>
 				{/if}
-
-				<input
-					bind:this={imageInput}
-					class="sr-only"
-					type="file"
-					accept="image/*"
-					multiple
-					disabled={uploadingImage}
-					onchange={onFileUpload}
-				/>
 			</label>
+
+			<input
+				id="imageInput"
+				bind:this={imageInput}
+				class="sr-only"
+				type="file"
+				accept="image/*"
+				multiple
+				disabled={uploadingImage}
+				onchange={onFileUpload}
+			/>
 
 			{#if $formData.images.length > 0}
 				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -554,9 +586,7 @@
 					{/each}
 				</div>
 			{/if}
-
-			<Form.FieldErrors />
-		</Form.Fieldset>
+		</fieldset>
 	</Card>
 
 	<Card class="space-y-5 p-5">
