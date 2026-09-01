@@ -447,14 +447,15 @@ func claimNextEmailJob(
 				time.Now().UTC(),
 			).
 			Order("available_at ASC, id ASC").
-			First(&job)
-
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil
-		}
+			Limit(1).
+			Find(&job)
 
 		if result.Error != nil {
 			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			return nil
 		}
 
 		now := time.Now().UTC()

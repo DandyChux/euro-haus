@@ -1070,6 +1070,35 @@
 		<fieldset class="space-y-3">
 			<legend class="text-sm font-medium"> Event images </legend>
 
+			<div class="space-y-2">
+				<Form.Label>Image URL</Form.Label>
+
+				<div class="flex gap-2">
+					<Input
+						bind:value={imageUrl}
+						type="url"
+						placeholder="https://cdn.example.com/product-image.jpg"
+						aria-invalid={imageUrlError ? "true" : undefined}
+						onkeydown={(event) => {
+							if (event.key === "Enter") {
+								event.preventDefault();
+								addImageUrl();
+							}
+						}}
+					/>
+
+					<Button type="button" onclick={addImageUrl}>
+						Add image
+					</Button>
+				</div>
+
+				{#if imageUrlError}
+					<p class="text-sm text-destructive">
+						{imageUrlError}
+					</p>
+				{/if}
+			</div>
+
 			<Label
 				for="event-image-upload"
 				class="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-colors hover:border-primary"

@@ -56,6 +56,8 @@
 	let uploadingImage = $state(false);
 	let uploadProgress = $state(0);
 	let imageInput: HTMLInputElement;
+	let imageUrl = $state("");
+	let imageUrlError = $state("");
 
 	interface UploadedMediaResponse {
 		success: boolean;
@@ -107,10 +109,68 @@
 		return key ? `products/${key}/images` : "";
 	}
 
+	function addImageUrl() {
+		const url = imageUrl.trim();
+
+		if (!url) return;
+
+		try {
+			const parsedUrl = new URL(url);
+
+			if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+				throw new Error("Unsupported URL protocol");
+			}
+		} catch {
+			imageUrlError = "Enter a valid HTTP or HTTPS image URL.";
+			return;
+		}
+
+		if ($formData.images.includes(url)) {
+			imageUrlError = "This image has already been added.";
+			return;
+		}
+
+		$formData.images = [...$formData.images, url];
+		imageUrl = "";
+		imageUrlError = "";
+	}
+
 	function removeImage(index: number) {
 		$formData.images = $formData.images.filter(
 			(_, imageIndex) => imageIndex !== index,
 		);
+	}
+
+	function displayDollars(cents: number | null | undefined): number | string {
+		if (cents == null || !Number.isFinite(cents)) {
+			return "";
+		}
+
+		return cents / 100;
+	}
+
+	function setProductPrice(event: Event) {
+		const rawValue = (event.currentTarget as HTMLInputElement).value;
+		const dollars = Number(rawValue);
+
+		$formData.price = Number.isFinite(dollars)
+			? Math.round(Math.max(0, dollars) * 100)
+			: 0;
+	}
+
+	function setCompareAtPrice(event: Event) {
+		const rawValue = (event.currentTarget as HTMLInputElement).value;
+
+		if (!rawValue.trim()) {
+			$formData.compare_at_price = undefined;
+			return;
+		}
+
+		const dollars = Number(rawValue);
+
+		$formData.compare_at_price = Number.isFinite(dollars)
+			? Math.round(Math.max(0, dollars) * 100)
+			: undefined;
 	}
 
 	async function onFileUpload(event: Event) {
@@ -186,7 +246,13 @@
 		} catch (error) {
 			console.error("Failed to upload product images:", error);
 
-			toast.error("Failed to upload product images.");
+			toast.error(
+				uploadedUrls.length > 0
+					? `Uploaded ${uploadedUrls.length} image${
+							uploadedUrls.length === 1 ? "" : "s"
+						}, but another upload failed.`
+					: "Failed to upload product images.",
+			);
 
 			// Preserve files that uploaded before the failure.
 			if (uploadedUrls.length > 0) {
@@ -243,12 +309,16 @@
 					{#snippet children({ props })}
 						<Form.Label>Price</Form.Label>
 
+						<span class="text-sm text-muted-foreground"> $ </span>
+
 						<Input
 							{...props}
 							type="number"
-							min="0"
+							inputmode="decimal"
+							min="1"
 							step="0.01"
-							bind:value={$formData.price}
+							value={displayDollars($formData.price)}
+							oninput={setProductPrice}
 						/>
 					{/snippet}
 				</Form.Control>
@@ -264,9 +334,11 @@
 						<Input
 							{...props}
 							type="number"
-							min="0"
+							inputmode="decimal"
+							min="1"
 							step="0.01"
-							bind:value={$formData.compare_at_price}
+							value={displayDollars($formData.compare_at_price)}
+							oninput={setCompareAtPrice}
 						/>
 
 						<Form.Description>

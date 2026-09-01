@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { apiClient } from "$lib/api";
-	import { buttonVariants } from "$lib/components/ui/button/button.svelte";
+	import Button, {
+		buttonVariants,
+	} from "$lib/components/ui/button/button.svelte";
 	import Input from "$lib/components/ui/input/input.svelte";
 	import type { Product } from "$lib/schemas/product";
 	import { formatCurrency } from "$lib/utils";
@@ -163,12 +165,20 @@
 					>
 						View live
 					</a>
-					<button
+					<Button
+						variant="link"
+						href={`/admin/products/${product.id}`}
+						class={buttonVariants({ variant: "circle" })}
+						onclick={() => void deleteProduct(product)}
+					>
+						Edit product
+					</Button>
+					<!-- <button
 						class="rounded-full border border-destructive/30 px-4 py-2 text-sm text-destructive"
 						onclick={() => void deleteProduct(product)}
 					>
 						Delete
-					</button>
+					</button> -->
 				</div>
 			</article>
 		{/each}

@@ -14,7 +14,7 @@
 		}>("/admin/create-product", {
 			name: product.name,
 			description: product.description,
-			price: Math.round(product.price * 100),
+			price: product.price,
 			currency: "usd",
 			images: product.images,
 		});

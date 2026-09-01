@@ -48,18 +48,33 @@ type CreateProductResponse struct {
 }
 
 func CreateProduct(w http.ResponseWriter, r *http.Request) {
-	// Parse request
 	var req ProductWriteRequest
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Validate required fields
+	req.Name = strings.TrimSpace(req.Name)
+	req.Currency = strings.ToLower(strings.TrimSpace(req.Currency))
+
 	if req.Name == "" {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
+	}
+
+	if req.Price > 0 && len(req.Currency) != 3 {
+		http.Error(
+			w,
+			"Currency must be a three-letter ISO currency code",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	if req.Currency == "" {
+		req.Currency = "usd"
 	}
 
 	productParams := &stripe.ProductParams{
@@ -77,47 +92,107 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	stripeProduct, err := product.New(productParams)
 	if err != nil {
-		log.Printf("Failed to create product: %v", err)
-		http.Error(w, "Failed to create product: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("Failed to create Stripe product: %v", err)
+		http.Error(
+			w,
+			"Failed to create product: "+err.Error(),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
+	cleanupStripeProduct := func() {
+		if _, cleanupErr := product.Del(stripeProduct.ID, nil); cleanupErr != nil {
+			log.Printf(
+				"Failed to clean up Stripe product %s: %v",
+				stripeProduct.ID,
+				cleanupErr,
+			)
+		}
+	}
+
+	priceID := ""
+
+	if req.Price > 0 {
+		priceParams := &stripe.PriceParams{
+			Product:    stripe.String(stripeProduct.ID),
+			UnitAmount: stripe.Int64(req.Price),
+			Currency:   stripe.String(req.Currency),
+		}
+
+		newPrice, err := price.New(priceParams)
+		if err != nil {
+			log.Printf(
+				"Failed to create Stripe price for product %s: %v",
+				stripeProduct.ID,
+				err,
+			)
+
+			cleanupStripeProduct()
+
+			http.Error(
+				w,
+				"Failed to create price: "+err.Error(),
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		priceID = newPrice.ID
+
+		updateParams := &stripe.ProductParams{
+			DefaultPrice: stripe.String(priceID),
+		}
+
+		if _, err := product.Update(stripeProduct.ID, updateParams); err != nil {
+			log.Printf(
+				"Failed to set default price %s for Stripe product %s: %v",
+				priceID,
+				stripeProduct.ID,
+				err,
+			)
+
+			cleanupStripeProduct()
+
+			http.Error(
+				w,
+				"Failed to set default price: "+err.Error(),
+				http.StatusInternalServerError,
+			)
+			return
+		}
+	}
+
 	localProduct := models.Product{
-		ID:          stripeProduct.ID,
-		Title:       req.Name,
-		Description: req.Description,
-		Type:        req.Type,
-		Images:      models.ProductStringList(req.Images),
-
-		Price:          req.Price,
-		Currency:       req.Currency,
+		ID:            stripeProduct.ID,
+		Title:         req.Name,
+		Description:   req.Description,
+		Type:          req.Type,
+		Images:        models.ProductStringList(req.Images),
+		Price:         req.Price,
+		Currency:      req.Currency,
 		CompareAtPrice: req.CompareAtPrice,
-
-		IsNew:    req.IsNew,
-		InStock: req.InStock,
-		Active: req.Active,
-		Featured: req.Featured,
-
-		Category:    req.Category,
-		Subcategory: req.Subcategory,
-		Tags:        req.Tags,
-
-		MaxQuantity: req.MaxQuantity,
+		IsNew:         req.IsNew,
+		InStock:       req.InStock,
+		Active:        req.Active,
+		Featured:      req.Featured,
+		Category:      req.Category,
+		Subcategory:   req.Subcategory,
+		Tags:          req.Tags,
+		MaxQuantity:   req.MaxQuantity,
 	}
 
 	if err := services.GetDB().
 		WithContext(r.Context()).
 		Create(&localProduct).
 		Error; err != nil {
-		// Product was created remotely but not locally.
-		// Clean it up because this is still pre-production.
-		if _, deleteErr := product.Del(stripeProduct.ID, nil); deleteErr != nil {
-			log.Printf(
-				"Failed to clean up Stripe product %s: %v",
-				stripeProduct.ID,
-				deleteErr,
-			)
-		}
+		log.Printf(
+			"Failed to save local product %s: %v",
+			stripeProduct.ID,
+			err,
+		)
+
+		cleanupStripeProduct()
 
 		http.Error(
 			w,
@@ -125,58 +200,6 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError,
 		)
 		return
-	}
-
-	response := CreateProductResponse{
-		Success:   true,
-		ProductID: stripeProduct.ID,
-		Message:   "Product created successfully",
-	}
-
-	// If Price is provided, create a price and set it as default
-	if req.Price > 0 {
-		if len(req.Currency) != 3 {
-			http.Error(
-				w,
-				"Currency must be a three-letter ISO currency code",
-				http.StatusBadRequest,
-			)
-			return
-		}
-
-		req.Currency = strings.ToLower(req.Currency)
-		priceParams := &stripe.PriceParams{
-			Product:    stripe.String(stripeProduct.ID),
-			UnitAmount: stripe.Int64(req.Price),
-			Currency:   &req.Currency,
-		}
-
-		newPrice, err := price.New(priceParams)
-		if err != nil {
-			// Delete the product if price creation fails
-			log.Printf("Failed to create price, deleting product %s: %v", stripeProduct.ID, err)
-			_, delErr := product.Del(stripeProduct.ID, nil)
-			if delErr != nil {
-				log.Printf("Failed to delete product after price creation failure: %v", delErr)
-			}
-			http.Error(w, "Failed to create price: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Update product with default price
-		updateParams := &stripe.ProductParams{
-			DefaultPrice: stripe.String(newPrice.ID),
-		}
-		_, err = product.Update(stripeProduct.ID, updateParams)
-		if err != nil {
-			log.Printf("Warning: Failed to set default price for product %s: %v", stripeProduct.ID, err)
-			// Continue anyway, the product and price were created successfully
-		}
-
-		response.PriceID = newPrice.ID
-		log.Printf("Successfully created product %s with price %s", stripeProduct.ID, newPrice.ID)
-	} else {
-		log.Printf("Successfully created product %s without a default price", stripeProduct.ID)
 	}
 
 	if err := services.SyncStripeProductPrices(
@@ -190,11 +213,18 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Return success response
+	response := CreateProductResponse{
+		Success:   true,
+		ProductID: stripeProduct.ID,
+		PriceID:   priceID,
+		Message:   "Product created successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+
 	if err := json.NewEncoder(w).Encode(&response); err != nil {
 		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
