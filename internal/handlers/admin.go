@@ -29,6 +29,7 @@ type ProductWriteRequest struct {
 
 	IsNew    bool `json:"is_new"`
 	InStock bool `json:"in_stock"`
+	Active bool `json:"active"`
 	Featured bool `json:"featured"`
 
 	Category    string `json:"category"`
@@ -63,7 +64,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	productParams := &stripe.ProductParams{
 		Name:   stripe.String(req.Name),
-		Active: stripe.Bool(true),
+		Active: stripe.Bool(req.Active),
 	}
 
 	if req.Description != "" {
@@ -94,6 +95,7 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 		IsNew:    req.IsNew,
 		InStock: req.InStock,
+		Active: req.Active,
 		Featured: req.Featured,
 
 		Category:    req.Category,

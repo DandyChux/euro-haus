@@ -24,6 +24,7 @@ type Product struct {
 
 	IsNew    bool `gorm:"column:is_new;not null;default:false" json:"is_new"`
 	InStock bool `gorm:"column:in_stock;not null;default:true" json:"in_stock"`
+	Active bool `gorm:"not null;default:true" json:"active"`
 	Featured bool `gorm:"not null;default:false" json:"featured"`
 
 	Category    string `json:"category,omitempty"`
@@ -53,7 +54,6 @@ type BundleItem struct {
 func (BundleItem) TableName() string {
 	return "bundle_items"
 }
-
 
 type ProductStringList []string
 

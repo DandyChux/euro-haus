@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -15,11 +16,8 @@ import (
 	"gorm.io/gorm"
 )
 
-type ProductResponse struct {
-	Products []EnrichedProduct `json:"products"`
-}
 
-type EnrichedProduct struct {
+type ProductResponse struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -41,96 +39,101 @@ type EnrichedProduct struct {
 	MaxQuantity *int     `json:"max_quantity"`
 
 	Active       bool         `json:"active"`
-	DefaultPrice *StripePrice `json:"default_price"`
+	DefaultPrice *models.PriceInfo `json:"default_price,omitempty"`
+	Prices []models.PriceInfo `json:"prices"`
+
+	BundleItems  []BundleItemResponse `json:"bundle_items,omitempty"`
+	DiscountType string               `json:"discount_type,omitempty"`
+	DiscountValue float64             `json:"discount_value,omitempty"`
 
 	Created int64 `json:"created"`
 	Updated int64 `json:"updated"`
 }
 
-type StripePrice struct {
-	ID         string `json:"id"`
-	UnitAmount int64  `json:"unit_amount"`
-	Currency   string `json:"currency"`
+type BundleItemResponse struct {
+	ProductID string  `json:"productId"`
+	ProductName string `json:"productName"`
+	Quantity  int     `json:"quantity"`
+	Price     int64   `json:"price"`
 }
 
+
 func GetProducts(w http.ResponseWriter, r *http.Request) {
-	// Check if we should include inactive products
 	includeInactive := r.URL.Query().Get("include_inactive") == "true"
 
-	// Fetch products from Stripe
-	params := &stripe.ProductListParams{
-		Expand: []*string{stripe.String("data.default_price")},
-	}
+	query := services.GetDB().
+		WithContext(r.Context()).
+		Preload("BundleItems")
 
-	// Only filter by active status if we're not including inactive products
 	if !includeInactive {
-		params.Active = stripe.Bool(true)
+		query = query.Where("active = ?", true)
 	}
 
-	params.Filters.AddFilter("limit", "", "100")
+	var products []models.Product
 
-	iter := product.List(params)
-	var enrichedProducts []EnrichedProduct
+	if err := query.
+		Order("created_at DESC").
+		Find(&products).
+		Error; err != nil {
+		log.Printf("Error loading products from database: %v", err)
+		http.Error(
+			w,
+			"Failed to load products",
+			http.StatusInternalServerError,
+		)
+		return
+	}
 
-	for iter.Next() {
-		p := iter.Product()
+	responses := make([]ProductResponse, 0, len(products))
 
-		var localProduct models.Product
-
-		err := services.GetDB().
-			WithContext(r.Context()).
-			Preload("BundleItems").
-			Where("id = ?", p.ID).
-			First(&localProduct).
-			Error
-
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Do not reconstruct application fields from Stripe metadata.
-			// Either skip the product or return it as an unclassified product.
-			continue
-		}
-
-		if err != nil {
+	for _, product := range products {
+		if err := loadProductPrices(r.Context(), &product); err != nil {
+			log.Printf(
+				"Error loading prices for product %s: %v",
+				product.ID,
+				err,
+			)
 			http.Error(
 				w,
-				"Failed to load local product data",
+				"Failed to load product prices",
 				http.StatusInternalServerError,
 			)
 			return
 		}
 
-		enrichedProducts = append(
-			enrichedProducts,
-			productToResponse(localProduct, p),
+		bundleItems, err := loadBundleItems(r.Context(), &product)
+		if err != nil {
+			log.Printf(
+				"Error loading bundle items for product %s: %v",
+				product.ID,
+				err,
+			)
+			http.Error(
+				w,
+				"Failed to load bundle items",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		responses = append(
+			responses,
+			productToResponse(&product, bundleItems),
 		)
 	}
 
-	if err := iter.Err(); err != nil {
-		log.Printf("Error fetching products: %v", err)
-		http.Error(w, "Failed to fetch products", http.StatusInternalServerError)
-		return
-	}
-
-	// Ensure we always return an array, even if empty
-	if enrichedProducts == nil {
-		enrichedProducts = []EnrichedProduct{}
-	}
-
-	response := ProductResponse{
-		Products: enrichedProducts,
-	}
-
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"products": responses,
+	}); err != nil {
+		log.Printf("Error encoding products response: %v", err)
 	}
 }
 
 // GetProduct returns a single product by ID
 func GetProduct(w http.ResponseWriter, r *http.Request) {
-	// Set CORS headers
-
 	// Get product ID from URL path
 	vars := mux.Vars(r)
 	productID := vars["id"]
@@ -161,34 +164,103 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build price info
-	var priceInfo *StripePrice
-	if p.DefaultPrice != nil {
-		priceInfo = &StripePrice{
-			ID:         p.DefaultPrice.ID,
-			UnitAmount: p.DefaultPrice.UnitAmount,
-			Currency:   string(p.DefaultPrice.Currency),
-		}
+	var localProduct models.Product
+
+	err = services.GetDB().
+		WithContext(r.Context()).
+		Preload("BundleItems").
+		Where("id = ?", productID).
+		First(&localProduct).
+		Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
 	}
 
-	// Build enriched product
-	enrichedProduct := EnrichedProduct{
-		ID:           p.ID,
-		Name:         p.Name,
-		Description:  p.Description,
-		Images:       p.Images,
-		Active:       p.Active,
-		DefaultPrice: priceInfo,
-		Created:      p.Created,
-		Updated:      p.Updated,
+	if err != nil {
+		http.Error(w, "Failed to load local product data", http.StatusInternalServerError)
+		return
 	}
 
-	// Return single product
+	if err := loadProductPrices(r.Context(), &localProduct); err != nil {
+		http.Error(w, "Failed to load product prices", http.StatusInternalServerError)
+		return
+	}
+
+	bundleItems, err := loadBundleItems(r.Context(), &localProduct)
+	if err != nil {
+		http.Error(w, "Failed to load bundle items", http.StatusInternalServerError)
+		return
+	}
+
+	response := productToResponse(&localProduct, bundleItems)
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(enrichedProduct); err != nil {
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
+}
+
+func GetBundleProducts(w http.ResponseWriter, r *http.Request) {
+	includeInactive := r.URL.Query().Get("include_inactive") == "true"
+
+	var products []models.Product
+
+	query := services.GetDB().
+		WithContext(r.Context()).
+		Preload("BundleItems").
+		Where("type = ?", "bundle")
+
+	if !includeInactive {
+		query = query.Where("active = ?", true)
+	}
+
+	if err := query.Order("created_at DESC").Find(&products).Error; err != nil {
+		http.Error(
+			w,
+			"Failed to load bundled products",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	response := make([]ProductResponse, 0, len(products))
+
+	for index := range products {
+		product := &products[index]
+
+		if err := loadProductPrices(r.Context(), product); err != nil {
+			http.Error(
+				w,
+				"Failed to load bundled product prices",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		bundleItems, err := loadBundleItems(r.Context(), product)
+		if err != nil {
+			http.Error(
+				w,
+				"Failed to load bundled product items",
+				http.StatusInternalServerError,
+			)
+			return
+		}
+
+		response = append(response, productToResponse(
+			product,
+			bundleItems,
+		))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"products": response,
+	})
 }
 
 type UpdateVariantStockRequest struct {
@@ -329,45 +401,59 @@ func GetProductVariants(w http.ResponseWriter, r *http.Request) {
 }
 
 func productToResponse(
-	local models.Product,
-	stripeProduct *stripe.Product,
-) EnrichedProduct {
-	var defaultPrice *StripePrice
+	product *models.Product,
+	bundleItems []BundleItemResponse,
+) ProductResponse {
+	prices := product.Prices
 
-	if stripeProduct.DefaultPrice != nil {
-		defaultPrice = &StripePrice{
-			ID:         stripeProduct.DefaultPrice.ID,
-			UnitAmount: stripeProduct.DefaultPrice.UnitAmount,
-			Currency:   string(stripeProduct.DefaultPrice.Currency),
+	if prices == nil {
+		prices = []models.PriceInfo{}
+	}
+
+	created := product.CreatedAt.Unix()
+	updated := product.UpdatedAt.Unix()
+
+	response := ProductResponse{
+		ID:            product.ID,
+		Name:          product.Title,
+		Description:   product.Description,
+		Images:        []string(product.Images),
+		Type:          product.Type,
+		Price:         product.Price,
+		Currency:      product.Currency,
+		CompareAtPrice: product.CompareAtPrice,
+		IsNew:         product.IsNew,
+		InStock:       product.InStock,
+		Featured:      product.Featured,
+		Category:      product.Category,
+		Subcategory:   product.Subcategory,
+		Tags:          []string(product.Tags),
+		MaxQuantity:   product.MaxQuantity,
+		Active:        product.Active,
+		DefaultPrice:  defaultProductPrice(prices),
+		Prices:        prices,
+		BundleItems:   bundleItems,
+		Created:       created,
+		Updated:       updated,
+	}
+
+	return response
+}
+
+func defaultProductPrice(prices []models.PriceInfo) *models.PriceInfo {
+	for index := range prices {
+		if prices[index].IsDefault && prices[index].Active {
+			return &prices[index]
 		}
 	}
 
-	return EnrichedProduct{
-		ID:          local.ID,
-		Name:        local.Title,
-		Description: local.Description,
-		Images:      local.Images,
-		Type:        local.Type,
-
-		Price:    local.Price,
-		Currency: local.Currency,
-
-		CompareAtPrice: local.CompareAtPrice,
-
-		IsNew:    local.IsNew,
-		InStock: local.InStock,
-		Featured: local.Featured,
-
-		Category:    local.Category,
-		Subcategory: local.Subcategory,
-		Tags:        local.Tags,
-		MaxQuantity: local.MaxQuantity,
-
-		Active:       stripeProduct.Active,
-		DefaultPrice: defaultPrice,
-		Created:      stripeProduct.Created,
-		Updated:      stripeProduct.Updated,
+	for index := range prices {
+		if prices[index].Active {
+			return &prices[index]
+		}
 	}
+
+	return nil
 }
 
 func loadProductPrices(
@@ -398,4 +484,40 @@ func loadProductPrices(
 	product.Prices = prices
 
 	return nil
+}
+
+func loadBundleItems(
+	ctx context.Context,
+	product *models.Product,
+) ([]BundleItemResponse, error) {
+	if product.Type != "bundle" {
+		return []BundleItemResponse{}, nil
+	}
+
+	result := make([]BundleItemResponse, 0, len(product.BundleItems))
+
+	for _, item := range product.BundleItems {
+		var bundledProduct models.Product
+
+		if err := services.GetDB().
+			WithContext(ctx).
+			Where("id = ?", item.ProductID).
+			First(&bundledProduct).
+			Error; err != nil {
+			return nil, fmt.Errorf(
+				"load bundled product %s: %w",
+				item.ProductID,
+				err,
+			)
+		}
+
+		result = append(result, BundleItemResponse{
+			ProductID:   bundledProduct.ID,
+			ProductName: bundledProduct.Title,
+			Quantity:    item.Quantity,
+			Price:       bundledProduct.Price,
+		})
+	}
+
+	return result, nil
 }

@@ -149,6 +149,7 @@ func main() {
 
 	// Public endpoints (no auth required)
 	api.HandleFunc("/products", handlers.GetProducts).Methods("GET")
+	api.HandleFunc("/products/bundles", handlers.GetBundleProducts).Methods("GET")
 	api.HandleFunc("/products/{id}", handlers.GetProduct).Methods("GET")
 	api.HandleFunc("/products/{id}/prices", handlers.GetProductPrices).Methods("GET")
 

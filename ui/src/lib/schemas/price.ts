@@ -20,6 +20,8 @@ export const priceSchema = z.object({
 	requires_submission: z.boolean(),
 
 	requirements: z.array(submissionRequirementSchema).default([]),
+	size: z.string().optional(),
+	color: z.string().optional(),
 
 	included_products: z
 		.array(z.custom<IncludedProduct>())
@@ -41,16 +43,7 @@ export const priceEditSchema = priceSchema.pick({
 	requires_submission: true,
 });
 
-export const stripePriceSchema = z.object({
-	id: z.string(),
-	unit_amount: z.number(),
-	currency: z.string(),
-	nickname: z.string().nullable().optional(),
-	metadata: z.record(z.string(), z.string()),
-});
-
 export type Price = z.infer<typeof priceSchema>;
-export type StripePrice = z.infer<typeof stripePriceSchema>;
 export type PriceEditData = z.infer<typeof priceEditSchema>;
 
 /* Helper functions */

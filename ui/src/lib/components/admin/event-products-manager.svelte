@@ -9,12 +9,7 @@
 
 	import type { IncludedProduct } from "$lib/schemas/event";
 	import type { Price } from "$lib/schemas/price";
-	import type { Product, StripeProduct } from "$lib/schemas/product";
-
-	import {
-		transformStripeBundleProduct,
-		transformStripeProduct,
-	} from "$lib/services/stripe";
+	import type { Product } from "$lib/schemas/product";
 
 	type Tab = "linked" | "tiers" | "add";
 
@@ -76,20 +71,14 @@
 		{ value: "add", label: "Add products" },
 	];
 
-	function normalizeProducts(products: StripeProduct[]): Product[] {
-		return products
-			.filter((product) => product.metadata.type !== "event")
-			.map((product) =>
-				product.metadata.type === "bundle"
-					? transformStripeBundleProduct(product)
-					: transformStripeProduct(product),
-			);
+	function normalizeProducts(products: Product[]): Product[] {
+		return products.filter((product) => product.type !== "event");
 	}
 
 	async function loadCatalogProducts() {
-		const response = await apiClient.get<{
-			products?: StripeProduct[];
-		}>("/products");
+		const response = await apiClient.get<{ products: Product[] }>(
+			"/products",
+		);
 
 		allProducts = normalizeProducts(response.products ?? []);
 	}
@@ -224,7 +213,7 @@
 				...currentProducts,
 				{
 					id: product.id,
-					name: product.title,
+					name: product.name,
 					description: product.description,
 					images: product.images,
 					quantity: 1,
@@ -343,7 +332,7 @@
 								{#if product.images[0]}
 									<img
 										src={product.images[0]}
-										alt={product.title}
+										alt={product.name}
 										class="h-12 w-12 rounded object-cover"
 									/>
 								{:else}
@@ -357,7 +346,7 @@
 
 								<div class="min-w-0">
 									<p class="truncate font-medium">
-										{product.title}
+										{product.name}
 									</p>
 
 									<p class="text-sm text-muted-foreground">
@@ -498,7 +487,7 @@
 
 							{#each allProducts as product (product.id)}
 								<option value={product.id}>
-									{product.title} ·
+									{product.name} ·
 									{formatProductPrice(product)}
 								</option>
 							{/each}
@@ -534,7 +523,7 @@
 
 							<div class="min-w-0 flex-1">
 								<p class="truncate font-medium">
-									{product.title}
+									{product.name}
 								</p>
 
 								<p class="text-sm text-muted-foreground">

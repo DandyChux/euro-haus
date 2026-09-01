@@ -19,7 +19,7 @@ export const load: PageLoad = async ({ fetch }) => {
 	try {
 		const [productsRes, mediaRes, pendingRes, couponRes] =
 			await Promise.all([
-				apiClient.get<{ products?: Product[] }>(
+				apiClient.get<{ products: Product[] }>(
 					"/products?include_inactive=true",
 					{},
 					fetch,
@@ -42,13 +42,13 @@ export const load: PageLoad = async ({ fetch }) => {
 		const coupons = couponRes.coupons ?? [];
 
 		stats.totalProducts = products.filter(
-			(item: any) => item.metadata?.type !== "event",
+			(item: any) => item.type !== "event",
 		).length;
 		stats.totalEvents = products.filter(
-			(item: any) => item.metadata?.type === "event",
+			(item: any) => item.type === "event",
 		).length;
 		stats.featuredItems = products.filter(
-			(item: any) => item.metadata?.featured === "true",
+			(item: any) => item.featured,
 		).length;
 		stats.mediaFiles = media.length;
 		stats.pendingSubmissions = pendingRes.count ?? 0;

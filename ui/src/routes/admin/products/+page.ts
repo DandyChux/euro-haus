@@ -1,5 +1,5 @@
 import type { PageLoad } from "./$types";
-import { getStripeProducts } from "$lib/services/stripe";
+import { getProducts } from "$lib/services/stripe";
 import { superValidate } from "sveltekit-superforms";
 import { zod4 } from "sveltekit-superforms/adapters";
 import { priceEditSchema } from "$lib/schemas/price";
@@ -19,7 +19,7 @@ export const load: PageLoad = async ({ fetch }) => {
 	);
 
 	return {
-		products: await getStripeProducts(fetch, true),
+		products: await getProducts(fetch, true),
 		form,
 	};
 };

@@ -1,47 +1,59 @@
 import { z } from "zod";
-import { stripePriceSchema } from "./price";
+import { priceSchema } from "./price";
 
-export const stripeProductSchema = z.object({
+export const BundleItemSchema = z.object({
+	productId: z.string(),
+	productName: z.string(),
+	quantity: z.number(),
+	price: z.number(),
+});
+
+export type BundleItem = z.infer<typeof BundleItemSchema>;
+
+export const ProductSchema = z.object({
 	id: z.string(),
 	name: z.string(),
-	description: z.string().nullable(),
-	images: z.array(z.string()),
-	metadata: z.record(z.string(), z.string()),
-	active: z.boolean(),
-	default_price: z
-		.object({
-			id: z.string(),
-			unit_amount: z.number(),
-			currency: z.string(),
-		})
-		.nullable(),
-	prices: z.array(stripePriceSchema).optional(),
-	created: z.number().optional(),
-	updated: z.number().optional(),
-});
-
-export type StripeProduct = z.infer<typeof stripeProductSchema>;
-
-export const productSchema = z.object({
-	id: z.string(),
-	price_id: z.string().optional(),
-	title: z.string(),
 	description: z.string(),
-	price: z.number(),
-	compare_at_price: z.number().optional(),
 	images: z.array(z.string()),
-	is_new: z.boolean().optional(),
+	type: z.string(),
+
+	price: z.number(),
+	currency: z.string(),
+	compare_at_price: z.number().nullable().optional(),
+
+	is_new: z.boolean(),
 	in_stock: z.boolean(),
-	featured: z.boolean().optional(),
-	category: z.string().optional(),
-	subcategory: z.string().optional(),
+	featured: z.boolean(),
+
+	category: z.string(),
+	subcategory: z.string(),
 	tags: z.array(z.string()),
-	max_quantity: z.number().optional(),
+	max_quantity: z.number().nullable().optional(),
+
+	active: z.boolean(),
+
+	default_price: priceSchema.nullable(),
+	prices: z.array(priceSchema).default([]),
+
+	bundle_items: z.array(BundleItemSchema).optional(),
+	discount_type: z.enum(["percentage", "fixed"]).optional(),
+	discount_value: z.number().optional(),
+
+	created: z.number(),
+	updated: z.number(),
 });
 
-export type Product = z.infer<typeof productSchema>;
+export type Product = z.infer<typeof ProductSchema>;
 
-export const productVariantSchema = z.object({
+export const BundleSchema = ProductSchema.extend({
+	bundle_items: z.array(BundleItemSchema),
+	discount_type: z.enum(["percentage", "fixed"]),
+	discount_value: z.number(),
+});
+
+export type BundleProduct = z.infer<typeof BundleSchema>;
+
+export const ProductVariantSchema = z.object({
 	id: z.string(),
 	price_id: z.string(),
 	size: z.string().optional(),
@@ -53,33 +65,13 @@ export const productVariantSchema = z.object({
 	images: z.array(z.string()),
 });
 
-export type ProductVariant = z.infer<typeof productVariantSchema>;
+export type ProductVariant = z.infer<typeof ProductVariantSchema>;
 
-export const productVariantsSchema = productSchema.extend({
-	variants: z.array(productVariantSchema),
+export const ProductVariantsSchema = ProductSchema.extend({
+	variants: z.array(ProductVariantSchema),
 });
 
-export type ProductVariants = z.infer<typeof productVariantsSchema>;
-
-export const bundleItemSchema = z.object({
-	productId: z.string(),
-	productName: z.string(),
-	quantity: z.number(),
-	price: z.number(),
-});
-
-export type BundleItem = z.infer<typeof bundleItemSchema>;
-
-export const bundleSchema = productSchema.extend({
-	bundle_items: z.array(bundleItemSchema),
-	discount_type: z.enum(["percentage", "fixed"]),
-	discount_value: z.number(),
-	price: z.number().nonnegative(),
-	in_stock: z.boolean(),
-	max_quantity: z.number().int().min(1).optional(),
-});
-
-export type BundleProduct = z.infer<typeof bundleSchema>;
+export type ProductVariants = z.infer<typeof ProductVariantsSchema>;
 
 /* Helper functions */
 export function isProductWithVariants(

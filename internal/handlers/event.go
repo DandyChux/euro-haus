@@ -118,7 +118,7 @@ type IncludedProductResponse struct {
 	Images      []string `json:"images,omitempty"`
 	Quantity    int      `json:"quantity"`
 	SortOrder   int      `json:"sortOrder,omitempty"`
-	DefaultPrice *StripePrice `json:"default_price,omitempty"`
+	DefaultPrice *models.PriceInfo `json:"default_price,omitempty"`
 }
 
 type EventResponse struct {

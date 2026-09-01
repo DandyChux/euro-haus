@@ -12,7 +12,7 @@
 		const response = await apiClient.post<{
 			product_id: string;
 		}>("/admin/create-product", {
-			name: product.title,
+			name: product.name,
 			description: product.description,
 			price: Math.round(product.price * 100),
 			currency: "usd",

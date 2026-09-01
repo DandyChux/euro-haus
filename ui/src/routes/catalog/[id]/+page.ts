@@ -4,12 +4,12 @@ import {
 	findBundlesForProduct,
 	getBundleProduct,
 	getProductWithVariants,
-	getStripeProduct,
+	getProduct,
 	transformStripeProduct,
 } from "$lib/services/stripe";
 
 export const load: PageLoad = async ({ fetch, params }) => {
-	const raw = await getStripeProduct(fetch, params.id);
+	const raw = await getProduct(fetch, params.id);
 
 	if (!raw) {
 		error(404, "Product not found");

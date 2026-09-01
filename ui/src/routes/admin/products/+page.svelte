@@ -2,7 +2,7 @@
 	import { apiClient } from "$lib/api";
 	import { buttonVariants } from "$lib/components/ui/button/button.svelte";
 	import Input from "$lib/components/ui/input/input.svelte";
-	import type { StripeProduct } from "$lib/schemas/product";
+	import type { Product } from "$lib/schemas/product";
 	import { formatCurrency } from "$lib/utils";
 	import { CirclePlus } from "@lucide/svelte";
 
@@ -14,13 +14,13 @@
 	let statusMessage = $state("");
 	let errorMessage = $state("");
 
-	function liveHref(product: StripeProduct) {
+	function liveHref(product: Product) {
 		return `/catalog/${product.id}`;
 	}
 
 	let filteredProducts = $derived.by(() => {
 		return products.filter((product) => {
-			if (typeFilter !== "all" && product.metadata.type !== typeFilter)
+			if (typeFilter !== "all" && product.type !== typeFilter)
 				return false;
 
 			if (!search.trim()) return true;
@@ -33,7 +33,7 @@
 		});
 	});
 
-	async function deleteProduct(product: StripeProduct) {
+	async function deleteProduct(product: Product) {
 		if (!window.confirm(`Delete "${product.name}"?`)) return;
 
 		statusMessage = "";
@@ -138,7 +138,7 @@
 					<div
 						class="flex flex-wrap gap-2 text-xs uppercase tracking-[0.2em]"
 					>
-						<span>{product.metadata.type || "product"}</span>
+						<span>{product.type || "product"}</span>
 						<span>{product.active ? "active" : "inactive"}</span>
 					</div>
 					<h2 class="mt-2 truncate text-lg font-medium">

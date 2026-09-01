@@ -14,9 +14,9 @@
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Card } from "$lib/components/ui/card";
 	import {
-		bundleSchema,
+		BundleSchema,
 		type BundleProduct,
-		type StripeProduct,
+		type Product,
 	} from "$lib/schemas/product";
 	import { apiClient } from "$lib/api";
 
@@ -34,7 +34,7 @@
 		untrack(() => data.form),
 		{
 			SPA: true,
-			validators: zod4Client(bundleSchema),
+			validators: zod4Client(BundleSchema),
 
 			async onUpdate({ form }) {
 				if (!form.valid) return;
@@ -52,7 +52,7 @@
 
 	const { form: formData, enhance, submitting } = form;
 
-	let availableProducts = $state<StripeProduct[]>([]);
+	let availableProducts = $state<Product[]>([]);
 	let isLoadingProducts = $state(true);
 
 	let selectedProductId = $state("");
@@ -89,13 +89,13 @@
 		isLoadingProducts = true;
 
 		try {
-			const response = await apiClient.get<{
-				products?: StripeProduct[];
-			}>("/products");
+			const response = await apiClient.get<{ products: Product[] }>(
+				"/products",
+			);
 
 			availableProducts = (response.products ?? []).filter(
 				(product) =>
-					product.metadata.type === "product" &&
+					product.type === "product" &&
 					product.default_price !== null,
 			);
 		} catch (error) {
@@ -129,7 +129,7 @@
 				productId: product.id,
 				productName: product.name,
 				quantity: Math.max(1, selectedQuantity),
-				price: product.default_price.unit_amount / 100,
+				price: product.price,
 			},
 		];
 
@@ -178,10 +178,10 @@
 					<option value=""> Select a product </option>
 
 					{#each availableProducts as product (product.id)}
-						{#if product.default_price}
+						{#if product.price}
 							<option value={product.id}>
 								{product.name} ·
-								{money(product.default_price.unit_amount / 100)}
+								{money(product.price)}
 							</option>
 						{/if}
 					{/each}

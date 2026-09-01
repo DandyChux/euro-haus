@@ -61,7 +61,7 @@ func main() {
 
 	ctx := context.Background()
 
-	stripeProduct, err := getStripeProduct(productID)
+	stripeProduct, err := getProduct(productID)
 	if err != nil {
 		log.Fatalf("unable to retrieve Stripe product: %v", err)
 	}
@@ -103,7 +103,7 @@ func loadEnvironment() {
 	}
 }
 
-func getStripeProduct(productID string) (*stripe.Product, error) {
+func getProduct(productID string) (*stripe.Product, error) {
 	params := &stripe.ProductParams{}
 	params.AddExpand("default_price")
 
