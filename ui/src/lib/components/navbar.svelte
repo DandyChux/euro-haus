@@ -5,6 +5,7 @@
 	import { Button, buttonVariants } from "$lib/components/ui/button";
 	import { cart } from "$lib/stores/cart.svelte";
 	import { resolve } from "$app/paths";
+	import { generateSrcSet } from "$lib/utils";
 
 	type NavLink = {
 		title: string;
@@ -54,6 +55,8 @@
 				height="50"
 				class="nav-logo"
 				loading="eager"
+				sizes="150px"
+				srcset={generateSrcSet(logoUrl, [150], "webp", 85)}
 			/>
 		</a>
 

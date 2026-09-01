@@ -80,7 +80,7 @@
 								<p>{product.category}</p>
 								<h2>{product.name}</h2>
 							</div>
-							<strong>{product.price.toFixed(2)}</strong>
+							<strong>{(product.price / 100).toFixed(2)}</strong>
 							{#if product.compare_at_price}
 								<s>{product.compare_at_price.toFixed(2)}</s>
 							{/if}
