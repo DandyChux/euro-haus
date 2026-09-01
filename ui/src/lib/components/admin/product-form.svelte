@@ -309,17 +309,21 @@
 					{#snippet children({ props })}
 						<Form.Label>Price</Form.Label>
 
-						<span class="text-sm text-muted-foreground"> $ </span>
+						<div class="flex items-center gap-2">
+							<span class="text-sm text-muted-foreground">
+								$
+							</span>
 
-						<Input
-							{...props}
-							type="number"
-							inputmode="decimal"
-							min="1"
-							step="0.01"
-							value={displayDollars($formData.price)}
-							oninput={setProductPrice}
-						/>
+							<Input
+								{...props}
+								type="number"
+								inputmode="decimal"
+								min="1"
+								step="0.01"
+								value={displayDollars($formData.price)}
+								oninput={setProductPrice}
+							/>
+						</div>
 					{/snippet}
 				</Form.Control>
 
