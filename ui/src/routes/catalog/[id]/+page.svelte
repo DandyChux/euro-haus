@@ -1,63 +1,50 @@
 <script lang="ts">
 	import { addToCart } from "$lib/stores/cart.svelte";
 	import { cn, formatCurrency } from "$lib/utils";
-	import type { PageProps } from "./$types";
 	import { Button } from "$lib/components/ui/button";
-	import {
-		isBundleProduct,
-		isProductWithVariants,
-	} from "$lib/schemas/product";
 
-	let { data }: PageProps = $props();
+	let { data } = $props();
 
 	let activeImage = $state(0);
 	let quantity = $state(1);
-	let selectedVariantId = $state("");
+	let selectedPriceId = $state("");
 
-	let activeVariantId = $derived(
-		selectedVariantId ||
-			(isProductWithVariants(data.product)
-				? (data.product.variants[0]?.id ?? "")
-				: ""),
+	// let activePriceId = $derived(
+	// 	data.product.prices.find((price) => price.id === activePriceId),
+	// );
+	let activePriceId = $derived(
+		selectedPriceId || data.product.prices[0]?.id || "",
 	);
 
-	let selectedVariant = $derived.by(() =>
-		isProductWithVariants(data.product)
-			? (data.product.variants.find(
-					(variant) => variant.id === activeVariantId,
-				) ?? null)
-			: null,
+	let selectedPrice = $derived(
+		data.product.prices.find((price) => price.id === activePriceId) ?? null,
 	);
 
-	let images = $derived(
-		selectedVariant?.images.length
-			? selectedVariant.images
-			: data.product.images,
-	);
+	let images = $derived(data.product.images);
 
-	let currentPrice = $derived(selectedVariant?.price ?? data.product.price);
+	let currentPrice = $derived(
+		selectedPrice?.unit_amount ?? data.product.price,
+	);
 	let maxQuantity = $derived(
-		selectedVariant?.stock_quantity ?? data.product.max_quantity ?? 10,
+		selectedPrice?.stock_quantity ?? data.product.max_quantity ?? 10,
 	);
 
 	function handleAddToCart() {
 		if (!data.product.in_stock) return;
-		if (isProductWithVariants(data.product) && !activeVariantId) return;
-
-		const variantLabel = selectedVariant
-			? ` · ${selectedVariant.variant}`
-			: "";
 
 		addToCart({
 			id: data.product.id,
-			price_id: selectedVariant?.price_id,
-			title: `${data.product.name}${variantLabel}`,
+			price_id: selectedPrice?.id,
+			title: selectedPrice?.nickname
+				? `${data.product.name} · ${selectedPrice.nickname}`
+				: data.product.name,
+			price: selectedPrice?.unit_amount
+				? selectedPrice.unit_amount / 100
+				: data.product.price / 100,
 			description: data.product.description,
-			price: currentPrice,
 			quantity,
 			imageUrl: images[activeImage] ?? images[0],
 			max_quantity: maxQuantity,
-			type: isBundleProduct(data.product) ? "bundle" : "product",
 		});
 	}
 
@@ -153,6 +140,7 @@
 
 			<div class="flex items-center gap-3">
 				<strong class="text-3xl">{formatCurrency(currentPrice)}</strong>
+
 				{#if data.product.compare_at_price}
 					<span class="text-lg line-through">
 						{formatCurrency(data.product.compare_at_price)}
@@ -160,40 +148,48 @@
 				{/if}
 			</div>
 
-			{#if isProductWithVariants(data.product)}
+			{#if data.product.prices.length > 1}
 				<div class="space-y-3">
 					<h2 class="text-sm uppercase tracking-[0.2em]">Options</h2>
+
 					<div class="flex flex-wrap gap-3">
-						{#each data.product.variants as variant (variant.id)}
+						{#each data.product.prices as price (price.id)}
 							<Button
 								variant="outline"
 								class={cn("", {
 									"border-primary bg-primary/15":
-										activeVariantId === variant.id,
+										activePriceId === price.id,
 								})}
-								disabled={!variant.in_stock}
+								disabled={price.sold_out}
 								onclick={() => {
-									selectedVariantId = variant.id;
-									activeImage = 0;
+									selectedPriceId = price.id;
 								}}
 							>
-								{variant.size || variant.variant}
+								{price.size || price.nickname || "Standard"}
 							</Button>
 						{/each}
 					</div>
 				</div>
 			{/if}
 
-			{#if isBundleProduct(data.product) && data.product.bundle_items.length > 0}
+			{#if data.product.type === "bundle" && data.product.bundle_items?.length}
 				<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
-					<h2 class="text-lg font-medium">What’s inside</h2>
+					<h2 class="text-lg font-medium">What's inside</h2>
+
 					<ul class="mt-4 space-y-3 text-sm">
-						{#each data.product.bundle_items as item (`${item.productId}:${item.quantity}`)}
+						{#each data.product.bundle_items as item (`${item.product_id}:${item.quantity}`)}
 							<li class="flex items-center justify-between gap-4">
-								<span>{item.productName}</span>
-								<span>x{item.quantity}</span>
+								<span
+									>{item.product_name} x {item.quantity}</span
+								>
 							</li>
 						{/each}
+
+						{#if data.product.discount_value}
+							<span>
+								Discount: {data.product.discount_value}
+							</span>
+						{/if}
 					</ul>
 				</div>
 			{/if}
@@ -243,7 +239,7 @@
 								class="block rounded-2xl border border-white/10 px-4 py-3 text-sm hover:border-white/20 hover:text-primary"
 							>
 								{bundle.name} · Save {formatCurrency(
-									bundle.discount_value,
+									bundle.discount_value ?? 0,
 								)}
 							</a>
 						{/each}

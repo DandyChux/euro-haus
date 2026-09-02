@@ -4,11 +4,11 @@
 
 	import apiClient from "$lib/api";
 	import ProductForm from "$lib/components/admin/product-form.svelte";
-	import type { ProductVariants } from "$lib/schemas/product";
+	import type { Product } from "$lib/schemas/product";
 
 	let { data } = $props();
 
-	async function saveProduct(product: ProductVariants) {
+	async function saveProduct(product: Product) {
 		const response = await apiClient.post<{
 			product_id: string;
 		}>("/admin/create-product", {
@@ -27,10 +27,10 @@
 			subcategory: product.subcategory,
 			tags: product.tags,
 			max_quantity: product.max_quantity,
+			prices: product.prices,
 		});
 
 		toast.success("Product created.");
-
 		await goto(`/admin/products/${response.product_id}`);
 	}
 </script>

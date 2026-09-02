@@ -4,11 +4,11 @@
 
 	import apiClient from "$lib/api";
 	import ProductForm from "$lib/components/admin/product-form.svelte";
-	import type { ProductVariants } from "$lib/schemas/product";
+	import type { Product } from "$lib/schemas/product";
 
 	let { data } = $props();
 
-	async function saveProduct(product: ProductVariants) {
+	async function saveProduct(product: Product) {
 		await apiClient.put(`/admin/update-product/${data.product.id}`, {
 			name: product.name,
 			description: product.description,
@@ -25,10 +25,10 @@
 			subcategory: product.subcategory,
 			tags: product.tags,
 			max_quantity: product.max_quantity,
+			prices: product.prices,
 		});
 
 		toast.success("Product updated.");
-
 		await goto("/admin/products");
 	}
 </script>

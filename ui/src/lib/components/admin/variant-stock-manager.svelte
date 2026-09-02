@@ -3,23 +3,23 @@
 	import { toast } from "svelte-sonner";
 
 	import apiClient from "$lib/api";
-	import type { ProductVariant } from "$lib/schemas/product";
 
 	import { Button } from "$lib/components/ui/button";
 	import { Card } from "$lib/components/ui/card";
 	import { Input } from "$lib/components/ui/input";
+	import type { Price } from "$lib/schemas/price";
 
 	interface Props {
 		productId: string;
 	}
 
 	interface VariantResponse {
-		variants?: ProductVariant[];
+		variants?: Price[];
 	}
 
 	let { productId }: Props = $props();
 
-	let variants = $state<ProductVariant[]>([]);
+	let variants = $state<Price[]>([]);
 	let quantities = $state<Record<string, string>>({});
 
 	let loading = $state(true);
@@ -176,7 +176,7 @@
 				>
 					<div class="min-w-0 flex-1">
 						<p class="font-medium">
-							{variant.variant || "Default"}
+							{variant.nickname || "Default"}
 						</p>
 
 						{#if variant.size || variant.color}
@@ -190,7 +190,7 @@
 						{/if}
 
 						<p class="text-xs text-muted-foreground">
-							Price: {(variant.price / 100).toFixed(2)}
+							Price: {(variant.unit_amount / 100).toFixed(2)}
 						</p>
 					</div>
 

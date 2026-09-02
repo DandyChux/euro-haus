@@ -20,8 +20,6 @@ export const priceSchema = z.object({
 	requires_submission: z.boolean(),
 
 	requirements: z.array(submissionRequirementSchema).default([]),
-	size: z.string().optional(),
-	color: z.string().optional(),
 
 	included_products: z
 		.array(z.custom<IncludedProduct>())
@@ -31,6 +29,9 @@ export const priceSchema = z.object({
 	quantity: z.number().optional(),
 	stock_quantity: z.number().int().nonnegative().nullish(),
 	sold_out: z.boolean().nullish().default(false),
+
+	size: z.string().optional(),
+	color: z.string().optional(),
 });
 
 export const priceEditSchema = priceSchema.pick({

@@ -11,8 +11,6 @@ import (
 	"github.com/dandychux/euro-haus/internal/models"
 	"github.com/dandychux/euro-haus/internal/services"
 	"github.com/gorilla/mux"
-	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/product"
 	"gorm.io/gorm"
 )
 
@@ -132,41 +130,17 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetProduct returns a single product by ID
 func GetProduct(w http.ResponseWriter, r *http.Request) {
-	// Get product ID from URL path
-	vars := mux.Vars(r)
-	productID := vars["id"]
+	productID := mux.Vars(r)["id"]
 
 	if productID == "" {
 		http.Error(w, "Product ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Fetch product from Stripe
-	params := &stripe.ProductParams{}
-	params.AddExpand("default_price")
-
-	p, err := product.Get(productID, params)
-	if err != nil {
-		log.Printf("Error fetching product %s: %v", productID, err)
-		if stripeErr, ok := err.(*stripe.Error); ok && stripeErr.Code == stripe.ErrorCodeResourceMissing {
-			http.Error(w, "Product not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Failed to fetch product", http.StatusInternalServerError)
-		return
-	}
-
-	// Check if product is active
-	if !p.Active {
-		http.Error(w, "Product not found", http.StatusNotFound)
-		return
-	}
-
 	var localProduct models.Product
 
-	err = services.GetDB().
+	err := services.GetDB().
 		WithContext(r.Context()).
 		Preload("BundleItems").
 		Where("id = ?", productID).
@@ -179,28 +153,59 @@ func GetProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, "Failed to load local product data", http.StatusInternalServerError)
+		log.Printf(
+			"Error loading product %s from database: %v",
+			productID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to load product",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	if !localProduct.Active {
+		http.Error(w, "Product not found", http.StatusNotFound)
 		return
 	}
 
 	if err := loadProductPrices(r.Context(), &localProduct); err != nil {
-		http.Error(w, "Failed to load product prices", http.StatusInternalServerError)
+		log.Printf(
+			"Error loading prices for product %s: %v",
+			productID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to load product prices",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	bundleItems, err := loadBundleItems(r.Context(), &localProduct)
 	if err != nil {
-		http.Error(w, "Failed to load bundle items", http.StatusInternalServerError)
+		log.Printf(
+			"Error loading bundle items for product %s: %v",
+			productID,
+			err,
+		)
+		http.Error(
+			w,
+			"Failed to load bundle items",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	response := productToResponse(&localProduct, bundleItems)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Error encoding response: %v", err)
+		log.Printf("Error encoding product response: %v", err)
 	}
 }
 

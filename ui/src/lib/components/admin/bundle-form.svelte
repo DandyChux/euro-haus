@@ -13,19 +13,15 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Card } from "$lib/components/ui/card";
-	import {
-		BundleSchema,
-		type BundleProduct,
-		type Product,
-	} from "$lib/schemas/product";
+	import { type Product, ProductSchema } from "$lib/schemas/product";
 	import { apiClient } from "$lib/api";
 
 	interface Props {
 		data: {
-			form: SuperValidated<BundleProduct>;
+			form: SuperValidated<Product>;
 		};
 
-		onsaved: (data: BundleProduct) => Promise<void>;
+		onsaved: (data: Product) => Promise<void>;
 	}
 
 	let { data, onsaved }: Props = $props();
@@ -34,7 +30,7 @@
 		untrack(() => data.form),
 		{
 			SPA: true,
-			validators: zod4Client(BundleSchema),
+			validators: zod4Client(ProductSchema),
 
 			async onUpdate({ form }) {
 				if (!form.valid) return;
@@ -117,7 +113,9 @@
 		}
 
 		if (
-			$formData.bundle_items.some((item) => item.productId === product.id)
+			$formData.bundle_items.some(
+				(item) => item.product_id === product.id,
+			)
 		) {
 			toast.error("That product is already in the bundle.");
 			return;
@@ -126,8 +124,8 @@
 		$formData.bundle_items = [
 			...$formData.bundle_items,
 			{
-				productId: product.id,
-				productName: product.name,
+				product_id: product.id,
+				product_name: product.name,
 				quantity: Math.max(1, selectedQuantity),
 				price: product.price,
 			},
@@ -140,7 +138,7 @@
 
 	function removeProduct(productId: string) {
 		$formData.bundle_items = $formData.bundle_items.filter(
-			(item) => item.productId !== productId,
+			(item) => item.product_id !== productId,
 		);
 
 		recalculatePrice();
@@ -211,13 +209,13 @@
 				</div>
 			{:else}
 				<div class="space-y-3">
-					{#each $formData.bundle_items as item, index (item.productId)}
+					{#each $formData.bundle_items as item, index (item.product_id)}
 						<div
 							class="flex flex-col gap-3 rounded-xl border p-3 md:flex-row md:items-center md:justify-between"
 						>
 							<div>
 								<p class="font-medium">
-									{item.productName}
+									{item.product_name}
 								</p>
 
 								<p class="text-sm text-muted-foreground">
@@ -262,7 +260,7 @@
 									type="button"
 									variant="ghost"
 									onclick={() =>
-										removeProduct(item.productId)}
+										removeProduct(item.product_id)}
 								>
 									Remove
 								</Button>

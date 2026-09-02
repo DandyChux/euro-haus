@@ -11,21 +11,17 @@
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Card } from "$lib/components/ui/card";
 
-	import {
-		ProductVariantsSchema,
-		type ProductVariant,
-		type ProductVariants,
-	} from "$lib/schemas/product";
-	import VariantForm from "./variant-form.svelte";
+	import PriceForm from "./price-form.svelte";
 	import apiClient from "$lib/api";
 	import { Label } from "../ui/label";
+	import { ProductSchema, type Product } from "$lib/schemas/product";
 
 	interface Props {
 		data: {
-			form: SuperValidated<ProductVariants>;
+			form: SuperValidated<Product>;
 		};
 
-		onsaved: (data: ProductVariants) => Promise<void>;
+		onsaved: (data: Product) => Promise<void>;
 	}
 
 	let { data, onsaved }: Props = $props();
@@ -34,7 +30,7 @@
 		untrack(() => data.form),
 		{
 			SPA: true,
-			validators: zod4Client(ProductVariantsSchema),
+			validators: zod4Client(ProductSchema),
 
 			async onUpdate({ form }) {
 				if (!form.valid) return;
@@ -52,7 +48,7 @@
 
 	const { form: formData, enhance, submitting } = form;
 
-	let hasVariants = $state($formData.variants.length > 0);
+	let hasVariants = $state($formData.prices.length > 0);
 	let tagInput = $state("");
 	let uploadingImage = $state(false);
 	let uploadProgress = $state(0);
@@ -591,7 +587,7 @@
 	</Card>
 
 	<Card class="space-y-5 p-5">
-		<VariantForm {form} />
+		<PriceForm {form} />
 	</Card>
 
 	<div class="flex justify-end border-t pt-4">

@@ -1,11 +1,6 @@
 import apiClient, { apiRequest } from "$lib/api";
 import type { Price } from "$lib/schemas/price";
-import type {
-	BundleProduct,
-	Product,
-	ProductVariant,
-	ProductVariants,
-} from "$lib/schemas/product";
+import type { Product } from "$lib/schemas/product";
 import type { OrderSummary } from "$lib/schemas/session";
 
 type Fetcher = typeof fetch;
@@ -49,26 +44,16 @@ export async function getProduct(
 export async function getBundleProducts(
 	fetcher: Fetcher,
 	includeInactive = false,
-): Promise<BundleProduct[]> {
+): Promise<Product[]> {
 	const query = includeInactive ? "?include_inactive=true" : "";
 
-	const response = await request<{ products?: BundleProduct[] }>(
+	const response = await request<{ products?: Product[] }>(
 		fetcher,
 		`/products/bundles${query}`,
 	);
 
 	return response.products ?? [];
 }
-
-export function toBundleProduct(product: Product): BundleProduct {
-	return {
-		...product,
-		bundle_items: product.bundle_items ?? [],
-		discount_type: product.discount_type ?? "percentage",
-		discount_value: product.discount_value ?? 0,
-	};
-}
-toBundleProduct;
 
 export async function getCatalogProducts(fetcher: Fetcher): Promise<Product[]> {
 	const products = await getProducts(fetcher);
@@ -95,58 +80,54 @@ export async function getEventLinkedProducts(
 			`/events/${eventId}/linked-products`,
 		);
 
-		return (response.linkedProducts ?? [])
-			.filter((product) => product.type !== "event")
-			.map((product) =>
-				product.type === "bundle" ? toBundleProduct(product) : product,
-			);
+		return (response.linkedProducts ?? []).filter(
+			(product) => product.type !== "event",
+		);
 	} catch {
 		return [];
 	}
 }
 
-export async function getProductWithVariants(
-	fetcher: Fetcher,
-	productId: string,
-): Promise<ProductVariants | null> {
-	const product = await getProduct(fetcher, productId);
-	if (!product || product.type !== "product") return null;
+// export async function getProductWithVariants(
+// 	fetcher: Fetcher,
+// 	productId: string,
+// ): Promise<Product | null> {
+// 	const product = await getProduct(fetcher, productId);
+// 	if (!product || product.type !== "product") return null;
 
-	try {
-		const response = await request<{ prices?: Price[] }>(
-			fetcher,
-			`/products/${productId}/prices`,
-		);
+// 	try {
+// 		const response = await request<{ prices?: Price[] }>(
+// 			fetcher,
+// 			`/products/${productId}/prices`,
+// 		);
 
-		const variants: ProductVariant[] = (response.prices ?? []).map(
-			(price) => ({
-				id: price.id,
-				price_id: price.id,
-				size: price.size,
-				color: price.color,
-				variant: price.nickname || "Standard",
-				price: price.unit_amount / 100,
-				in_stock: price.active && !price.sold_out,
-				stock_quantity: price.stock_quantity ?? undefined,
-				images: [],
-			}),
-		);
+// 		const prices: Price[] = (response.prices ?? []).map((price) => ({
+// 			id: price.id,
+// 			price_id: price.id,
+// 			size: price.size,
+// 			color: price.color,
+// 			// variant: price.nickname || "Standard",
+// 			price: price.unit_amount / 100,
+// 			in_stock: price.active && !price.sold_out,
+// 			stock_quantity: price.stock_quantity ?? undefined,
+// 			images: [],
+// 		}));
 
-		return {
-			...product,
-			variants: variants.sort((a, b) => a.price - b.price),
-		};
-	} catch {
-		return null;
-	}
-}
+// 		return {
+// 			...product,
+// 			prices: prices.sort((a, b) => a.unit_amount - b.unit_amount),
+// 		};
+// 	} catch {
+// 		return null;
+// 	}
+// }
 
 export async function getBundleProduct(
 	fetcher: Fetcher,
 	productId: string,
-): Promise<BundleProduct | null> {
+): Promise<Product | null> {
 	try {
-		return await request<BundleProduct>(fetcher, `/products/${productId}`);
+		return await request<Product>(fetcher, `/products/${productId}`);
 	} catch {
 		return null;
 	}
@@ -155,11 +136,11 @@ export async function getBundleProduct(
 export async function findBundlesForProduct(
 	fetcher: Fetcher,
 	productId: string,
-): Promise<BundleProduct[]> {
+): Promise<Product[]> {
 	const bundles = await getBundleProducts(fetcher);
 
 	return bundles.filter((bundle) =>
-		bundle.bundle_items.some((item) => item.productId === productId),
+		bundle.bundle_items.some((item) => item.product_id === productId),
 	);
 }
 
@@ -170,10 +151,10 @@ export async function getCheckoutSession(fetcher: Fetcher, sessionId: string) {
 	);
 }
 
-async function saveBundle(productId: string, data: BundleProduct) {
-	const payload: Partial<BundleProduct> = {
+async function saveBundle(productId: string, data: Product) {
+	const payload: Partial<Product> = {
 		id: productId,
-		name: data.bundle_items.map((item) => item.productName).join(" + "),
+		name: data.bundle_items.map((item) => item.product_name).join(" + "),
 		description: "",
 		price: data.bundle_items.reduce(
 			(total, item) => total + item.price * item.quantity,

@@ -28,15 +28,34 @@ type ProductWriteRequest struct {
 	CompareAtPrice *int64 `json:"compare_at_price"`
 
 	IsNew    bool `json:"is_new"`
-	InStock bool `json:"in_stock"`
-	Active bool `json:"active"`
+	InStock  bool `json:"in_stock"`
+	Active   bool `json:"active"`
 	Featured bool `json:"featured"`
 
 	Category    string `json:"category"`
 	Subcategory string `json:"subcategory"`
 
 	Tags        models.ProductStringList `json:"tags"`
-	MaxQuantity *int              `json:"max_quantity"`
+	MaxQuantity *int                   `json:"max_quantity"`
+
+	Prices []ProductPriceRequest `json:"prices"`
+}
+
+type ProductPriceRequest struct {
+	ID            string   `json:"id"`
+	UnitAmount    int64    `json:"unit_amount"`
+	Currency      string   `json:"currency"`
+	Nickname      string   `json:"nickname"`
+	Description   string   `json:"description"`
+	Active        bool     `json:"active"`
+	Features      []string `json:"features"`
+	MostPopular   bool     `json:"most_popular"`
+	RequiresApproval bool `json:"requires_approval"`
+	RequiresSubmission bool `json:"requires_submission"`
+	Quantity      int      `json:"quantity"`
+	StockQuantity *int     `json:"stock_quantity"`
+	Size          string   `json:"size"`
+	Color         string   `json:"color"`
 }
 
 // CreateProductResponse represents the response body for creating a product
@@ -202,15 +221,23 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := services.SyncStripeProductPrices(
+	if err := services.SyncProductPrices(
 		r.Context(),
 		stripeProduct.ID,
+		productPriceInputs(req.Prices),
 	); err != nil {
 		log.Printf(
 			"Warning: failed to sync prices for product %s: %v",
 			stripeProduct.ID,
 			err,
 		)
+
+		http.Error(
+			w,
+			"Failed to save product prices",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	response := CreateProductResponse{
@@ -357,15 +384,23 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Successfully updated product %s", productID)
 
-	if err := services.SyncStripeProductPrices(
+	if err := services.SyncProductPrices(
 		r.Context(),
 		productID,
+		productPriceInputs(req.Prices),
 	); err != nil {
 		log.Printf(
-			"Warning: failed to sync prices for product %s: %v",
+			"Failed to sync prices for product %s: %v",
 			productID,
 			err,
 		)
+
+		http.Error(
+			w,
+			"Failed to save product prices",
+			http.StatusInternalServerError,
+		)
+		return
 	}
 
 	// Return success response
@@ -742,4 +777,31 @@ func SetDefaultPrice(w http.ResponseWriter, r *http.Request) {
 		"success":      true,
 		"defaultPrice": updatedProduct.DefaultPrice.ID,
 	})
+}
+
+func productPriceInputs(
+	prices []ProductPriceRequest,
+) []services.ProductPriceInput {
+	inputs := make([]services.ProductPriceInput, 0, len(prices))
+
+	for _, requestedPrice := range prices {
+		inputs = append(inputs, services.ProductPriceInput{
+			ID:                 requestedPrice.ID,
+			UnitAmount:         requestedPrice.UnitAmount,
+			Currency:           requestedPrice.Currency,
+			Nickname:           requestedPrice.Nickname,
+			Description:        requestedPrice.Description,
+			Active:             requestedPrice.Active,
+			Features:           requestedPrice.Features,
+			IsMostPopular:      requestedPrice.MostPopular,
+			RequiresApproval:   requestedPrice.RequiresApproval,
+			RequiresSubmission: requestedPrice.RequiresSubmission,
+			Quantity:           requestedPrice.Quantity,
+			StockQuantity:      requestedPrice.StockQuantity,
+			Size:               requestedPrice.Size,
+			Color:              requestedPrice.Color,
+		})
+	}
+
+	return inputs
 }

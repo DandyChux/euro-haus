@@ -6,41 +6,53 @@
 	import { Card } from "$lib/components/ui/card";
 	import { Checkbox } from "$lib/components/ui/checkbox";
 	import { Input } from "$lib/components/ui/input";
-
-	import type { ProductVariant, ProductVariants } from "$lib/schemas/product";
+	import type { Product } from "$lib/schemas/product";
+	import type { Price } from "$lib/schemas/price";
 
 	interface Props {
-		form: SuperForm<ProductVariants>;
+		form: SuperForm<Product>;
 	}
 
 	let { form }: Props = $props();
 
 	const { form: formData } = untrack(() => form);
 
-	let hasVariants = $state(untrack(() => $formData.variants.length > 0));
+	let hasVariants = $state(untrack(() => $formData.prices.length > 0));
 
 	let isApparel = $derived($formData.category === "apparel");
 
-	function emptyVariant(): ProductVariant {
+	function emptyPrice(): Price {
 		return {
 			id: "",
-			price_id: "",
-			variant: "",
-			price: 0,
-			in_stock: true,
+			stripe_product_id: $formData.id,
+			unit_amount: 0,
+			currency: $formData.currency || "usd",
+			nickname: "",
+			description: "",
+			active: true,
+			features: [],
+			default: $formData.prices.length === 0,
+			most_popular: false,
+			requires_approval: false,
+			requires_submission: false,
+			requirements: [],
+			included_products: [],
+			quantity: undefined,
 			stock_quantity: undefined,
-			images: [],
+			sold_out: false,
+			size: "",
+			color: "",
 		};
 	}
 
 	function addVariant() {
 		hasVariants = true;
 
-		$formData.variants = [...$formData.variants, emptyVariant()];
+		$formData.prices = [...$formData.prices, emptyPrice()];
 	}
 
 	function removeVariant(index: number) {
-		$formData.variants = $formData.variants.filter(
+		$formData.prices = $formData.prices.filter(
 			(_, variantIndex) => variantIndex !== index,
 		);
 	}
@@ -48,28 +60,41 @@
 	function moveVariant(index: number, direction: "up" | "down") {
 		const nextIndex = direction === "up" ? index - 1 : index + 1;
 
-		if (nextIndex < 0 || nextIndex >= $formData.variants.length) {
+		if (nextIndex < 0 || nextIndex >= $formData.prices.length) {
 			return;
 		}
 
-		const variants = [...$formData.variants];
+		const variants = [...$formData.prices];
 
 		[variants[index], variants[nextIndex]] = [
 			variants[nextIndex],
 			variants[index],
 		];
 
-		$formData.variants = variants;
+		$formData.prices = variants;
 	}
 
 	function setVariantMode(value: boolean | "indeterminate") {
 		hasVariants = value === true;
 
 		if (!hasVariants) {
-			$formData.variants = [];
-		} else if ($formData.variants.length === 0) {
+			$formData.prices = [];
+		} else if ($formData.prices.length === 0) {
 			addVariant();
 		}
+	}
+
+	function displayDollars(cents: number): number {
+		return cents / 100;
+	}
+
+	function setVariantPrice(index: number, event: Event) {
+		const rawValue = (event.currentTarget as HTMLInputElement).value;
+		const dollars = Number(rawValue);
+
+		$formData.prices[index].unit_amount = Number.isFinite(dollars)
+			? Math.round(Math.max(0, dollars) * 100)
+			: 0;
 	}
 </script>
 
@@ -100,13 +125,13 @@
 				</Button>
 			</div>
 
-			{#if $formData.variants.length === 0}
+			{#if $formData.prices.length === 0}
 				<p class="py-8 text-center text-sm text-muted-foreground">
 					No variants added yet.
 				</p>
 			{:else}
 				<div class="space-y-4">
-					{#each $formData.variants as variant, index (variant.id || index)}
+					{#each $formData.prices as price, index (price.id || index)}
 						<Card class="space-y-4 p-4">
 							<div
 								class="flex items-center justify-between gap-4"
@@ -131,7 +156,7 @@
 										variant="ghost"
 										size="sm"
 										disabled={index ===
-											$formData.variants.length - 1}
+											$formData.prices.length - 1}
 										onclick={() =>
 											moveVariant(index, "down")}
 									>
@@ -154,7 +179,7 @@
 									<span>Variant name</span>
 
 									<Input
-										bind:value={variant.variant}
+										bind:value={price.nickname}
 										placeholder="Black shirt - Large"
 									/>
 								</label>
@@ -166,7 +191,11 @@
 										type="number"
 										min="0"
 										step="0.01"
-										bind:value={variant.price}
+										value={displayDollars(
+											price.unit_amount,
+										)}
+										oninput={(event) =>
+											setVariantPrice(index, event)}
 									/>
 								</label>
 
@@ -177,7 +206,7 @@
 										<span>Size</span>
 
 										<Input
-											bind:value={variant.size}
+											bind:value={price.size}
 											placeholder="S, M, L, XL"
 										/>
 									</label>
@@ -188,7 +217,7 @@
 										<span>Color</span>
 
 										<Input
-											bind:value={variant.color}
+											bind:value={price.color}
 											placeholder="Black"
 										/>
 									</label>
@@ -200,7 +229,23 @@
 									<Input
 										type="number"
 										min="0"
-										bind:value={variant.stock_quantity}
+										value={price.stock_quantity ?? ""}
+										oninput={(event) => {
+											const rawValue = (
+												event.currentTarget as HTMLInputElement
+											).value;
+											price.stock_quantity =
+												rawValue.trim()
+													? Math.max(
+															0,
+															Math.floor(
+																Number(
+																	rawValue,
+																),
+															),
+														)
+													: undefined;
+										}}
 									/>
 
 									<span class="text-xs text-muted-foreground">
@@ -210,7 +255,7 @@
 							</div>
 
 							<label class="flex items-center gap-2 text-sm">
-								<Checkbox bind:checked={variant.in_stock} />
+								<Checkbox bind:checked={price.active} />
 
 								<span>In stock</span>
 							</label>
