@@ -51,9 +51,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 	-a -installsuffix cgo \
 	-o create-admin ./cmd/create-admin
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
-	-a -installsuffix cgo \
-	-o migrate-stripe ./cmd/migrate-stripe
+# RUN CGO_ENABLED=0 GOOS=linux go build \
+# 	-a -installsuffix cgo \
+# 	-o migrate-stripe ./cmd/migrate-stripe
 
 # ---------------------------------------------------------------------------
 # Stage 3: Prod — minimal image with binary + static assets
@@ -65,7 +65,7 @@ WORKDIR /app
 # Copy the Go binary
 COPY --from=builder /app/euro-haus .
 COPY --from=builder /app/create-admin .
-COPY --from=builder /app/migrate-stripe .
+# COPY --from=builder /app/migrate-stripe .
 COPY --from=builder /app/templates ./templates/
 
 # Copy the SvelteKit build output
