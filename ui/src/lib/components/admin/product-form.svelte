@@ -30,6 +30,7 @@
 		untrack(() => data.form),
 		{
 			SPA: true,
+			dataType: "json",
 			validators: zod4Client(ProductSchema),
 
 			async onUpdate({ form }) {

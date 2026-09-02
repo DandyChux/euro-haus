@@ -139,7 +139,9 @@
 			</div>
 
 			<div class="flex items-center gap-3">
-				<strong class="text-3xl">{formatCurrency(currentPrice)}</strong>
+				<strong class="text-3xl"
+					>{formatCurrency(currentPrice / 100)}</strong
+				>
 
 				{#if data.product.compare_at_price}
 					<span class="text-lg line-through">
