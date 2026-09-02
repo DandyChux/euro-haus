@@ -1080,7 +1080,7 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 
 	query := services.GetDB().
 		WithContext(r.Context()).
-		Order("event_date ASC")
+		Order("event_date DESC")
 
 	if !includeInactive {
 		query = query.Where("active = TRUE")
