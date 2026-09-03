@@ -20,31 +20,40 @@
 		 * Used by admin mutation endpoints.
 		 */
 		eventId: string;
-
-		/**
-		 * Stripe product ID for the event.
-		 *
-		 * The current GET linked-products backend handler retrieves
-		 * the event through Stripe, so it currently requires this ID.
-		 */
-		stripeProductId: string;
-
 		eventName: string;
 		prices?: Price[];
 	}
 
-	interface LinkedProductsResponse {
-		linkedProducts?: Array<{
+	interface LinkedProduct {
+		id: string;
+		name: string;
+		description?: string;
+		images?: string[];
+		active: boolean;
+		sort_order: number;
+		default_price?: {
 			id: string;
-		}>;
-
-		tier_products?: Array<{
-			tierId: string;
-			included_products?: IncludedProduct[];
-		}>;
+			unit_amount: number;
+			currency: string;
+		};
 	}
 
-	let { eventId, stripeProductId, eventName, prices = [] }: Props = $props();
+	interface TierProducts {
+		tierId: string;
+		tierName: string;
+		amount: number;
+		currency: string;
+		included_products?: IncludedProduct[];
+	}
+
+	interface LinkedProductsResponse {
+		event_id: string;
+		event_name: string;
+		linked_products?: LinkedProduct[];
+		tier_products?: TierProducts[];
+	}
+
+	let { eventId, eventName, prices = [] }: Props = $props();
 
 	let activeTab = $state<Tab>("linked");
 
@@ -85,10 +94,10 @@
 
 	async function loadEventProducts() {
 		const response = await apiClient.get<LinkedProductsResponse>(
-			`/events/${encodeURIComponent(stripeProductId)}/linked-products`,
+			`/events/${encodeURIComponent(eventId)}/linked-products`,
 		);
 
-		linkedProductIds = (response.linkedProducts ?? []).map(
+		linkedProductIds = (response.linked_products ?? []).map(
 			(product) => product.id,
 		);
 
