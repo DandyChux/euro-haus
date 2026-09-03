@@ -1323,6 +1323,7 @@ func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	eventID := mux.Vars(r)["eventId"]
+	priceId := mux.Vars(r)["priceId"]
 
 	if strings.TrimSpace(eventID) == "" {
 		http.Error(
@@ -1344,7 +1345,7 @@ func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if eventID == "" || req.PriceID == "" {
+	if eventID == "" || priceId == "" {
 		http.Error(
 			w,
 			"Event ID and price ID are required",
@@ -1375,7 +1376,7 @@ func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 	err = db.
 		Where(
 			"id = ? AND stripe_product_id = ?",
-			req.PriceID,
+			priceId,
 			event.StripeProductID,
 		).
 		First(&eventPrice).
@@ -1401,12 +1402,12 @@ func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 
 	if err := replacePriceIncludedProducts(
 		r.Context(),
-		req.PriceID,
+		priceId,
 		req.Products,
 	); err != nil {
 		log.Printf(
 			"Failed to replace included products for price %s: %v",
-			req.PriceID,
+			priceId,
 			err,
 		)
 
@@ -1422,7 +1423,7 @@ func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
-		"price_id": req.PriceID,
+		"price_id": priceId,
 	})
 }
 
