@@ -1322,7 +1322,7 @@ func InvalidateTicket(ticketToken string, reason string) error {
 func AddProductsToTier(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	eventID := mux.Vars(r)["id"]
+	eventID := mux.Vars(r)["eventId"]
 
 	if strings.TrimSpace(eventID) == "" {
 		http.Error(

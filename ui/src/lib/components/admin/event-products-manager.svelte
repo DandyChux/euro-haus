@@ -263,7 +263,7 @@
 	}
 
 	function formatProductPrice(product: Product) {
-		return `$${product.price.toFixed(2)}`;
+		return `$${(product.price / 100).toFixed(2)}`;
 	}
 
 	function formatTierPrice(price: Price) {
