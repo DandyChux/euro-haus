@@ -35,11 +35,15 @@ func replacePriceIncludedProducts(
 	}
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if deleteResult := tx.
+		deleteResult := tx.
 			Where("price_id = ?", priceID).
-			Delete(&models.PriceIncludedProduct{}).
-			Error; deleteResult.Error != nil {
-			return fmt.Errorf("delete existing included products: %w", deleteResult.Error)
+			Delete(&models.PriceIncludedProduct{})
+
+		if deleteResult.Error != nil {
+			return fmt.Errorf(
+				"delete existing included products: %w",
+				deleteResult.Error,
+			)
 		}
 
 		links := make([]models.PriceIncludedProduct, 0, len(products))
@@ -85,7 +89,10 @@ func replacePriceIncludedProducts(
 
 		insertResult := tx.Create(&links)
 		if insertResult.Error != nil {
-			return fmt.Errorf("insert included products: %w", insertResult.Error)
+			return fmt.Errorf(
+				"insert included products: %w",
+				insertResult.Error,
+			)
 		}
 
 		if insertResult.RowsAffected != int64(len(links)) {
@@ -98,14 +105,15 @@ func replacePriceIncludedProducts(
 
 		var persisted []models.PriceIncludedProduct
 
-		if err := tx.
+		verifyResult := tx.
 			Where("price_id = ?", priceID).
 			Order("sort_order ASC, product_id ASC").
-			Find(&persisted).
-			Error; err != nil {
+			Find(&persisted)
+
+		if verifyResult.Error != nil {
 			return fmt.Errorf(
 				"verify inserted included products: %w",
-				err,
+				verifyResult.Error,
 			)
 		}
 
