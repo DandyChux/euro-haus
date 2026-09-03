@@ -1,80 +1,126 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>Order Confirmation</title>
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #007bff; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; background-color: #f8f9fa; margin: 20px 0; }
-        .order-items { background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0; }
-        .footer { text-align: center; font-size: 12px; color: #777; margin-top: 30px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Order Confirmation</h1>
-        </div>
+	<head>
+		<meta charset="UTF-8" />
+		<title>Order Confirmation</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				line-height: 1.6;
+				color: #333;
+			}
+			.container {
+				max-width: 600px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			.header {
+				background-color: #007bff;
+				color: white;
+				padding: 20px;
+				text-align: center;
+			}
+			.content {
+				padding: 20px;
+				background-color: #f8f9fa;
+				margin: 20px 0;
+			}
+			.order-items {
+				background-color: white;
+				padding: 15px;
+				border-radius: 5px;
+				margin: 15px 0;
+			}
+			.footer {
+				text-align: center;
+				font-size: 12px;
+				color: #777;
+				margin-top: 30px;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+			}
+			th,
+			td {
+				padding: 10px;
+				text-align: left;
+				border-bottom: 1px solid #ddd;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div class="header">
+				<h1>Order Confirmation</h1>
+			</div>
 
-        <div class="content">
-            <p>Dear {{.CustomerName}},</p>
+			<div class="content">
+				<p>Dear {{.CustomerName}},</p>
 
-            <p>Thank you for your order! Your purchase has been confirmed.</p>
+				<p>
+					Thank you for your order! Your purchase has been confirmed.
+				</p>
 
-            <div class="order-items">
-                <h3>Order Details:</h3>
-                <p><strong>Order ID:</strong> {{.OrderID}}</p>
-                <p><strong>Order Date:</strong> {{.OrderDate}}</p>
+				<div class="order-items">
+					<h3>Order Details:</h3>
+					<p><strong>Order ID:</strong> {{.OrderID}}</p>
+					<p><strong>Order Date:</strong> {{.OrderDate}}</p>
 
-                <h4>Items:</h4>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th>Qty</th>
-                            <th>Price</th>
-                            <th>Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {{range .Products}}
-                        <tr>
-                            <td>{{.Name}}<br><small>{{.Description}}</small></td>
-                            <td>{{.Quantity}}</td>
-                            <td>{{.Currency}} {{.Price}}</td>
-                            <td>{{.Currency}} {{.Subtotal}}</td>
-                        </tr>
-                        {{end}}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <td colspan="3"><strong>Total:</strong></td>
-                            <td><strong>{{.Currency}} {{.TotalAmount}}</strong></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+					<h4>Items:</h4>
+					<table>
+						<thead>
+							<tr>
+								<th>Item</th>
+								<th>Qty</th>
+								<th>Price</th>
+								<th>Subtotal</th>
+							</tr>
+						</thead>
+						<tbody>
+							{{range .Products}}
+							<tr>
+								<td>
+									{{.Name}}<br /><small
+										>{{.Description}}</small
+									>
+								</td>
+								<td>{{.Quantity}}</td>
+								<td>{{.Currency}} {{.Price}}</td>
+								<td>{{.Currency}} {{.Subtotal}}</td>
+							</tr>
+							{{end}}
+						</tbody>
+						<tfoot>
+							<tr>
+								<td colspan="3"><strong>Total:</strong></td>
+								<td>
+									<strong
+										>{{.Currency}} {{.TotalAmount}}</strong
+									>
+								</td>
+							</tr>
+						</tfoot>
+					</table>
+				</div>
 
-            {{if .HasPhysicalItems}}
-            <div class="order-items">
-                <h4>Shipping Address:</h4>
-                <p>{{.ShippingAddress}}</p>
-            </div>
-            {{end}}
+				{{if .HasPhysicalItems}}
+				<div class="order-items">
+					<h4>Shipping Address:</h4>
+					<p>{{.ShippingAddress}}</p>
+				</div>
+				{{end}} {{if .HasEventTickets}}
+				<p>
+					<strong>Note:</strong> Event tickets will be sent in
+					separate emails.
+				</p>
+				{{end}}
+			</div>
 
-            {{if .HasEventTickets}}
-            <p><strong>Note:</strong> Event tickets will be sent in separate emails.</p>
-            {{end}}
-        </div>
-
-        <div class="footer">
-            <p>Thank you for your purchase!</p>
-            <p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
-        </div>
-    </div>
-</body>
+			<div class="footer">
+				<p>Thank you for your purchase!</p>
+				<p>&copy; Euro Haus Events - Premium Automotive Experiences</p>
+			</div>
+		</div>
+	</body>
 </html>

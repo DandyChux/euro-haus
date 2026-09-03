@@ -11,7 +11,7 @@
 	import type { Price } from "$lib/schemas/price";
 	import type { Product } from "$lib/schemas/product";
 
-	type Tab = "linked" | "tiers" | "add";
+	type Tab = "linked" | "prices" | "add";
 
 	interface Props {
 		/**
@@ -30,7 +30,7 @@
 		stripeProductId: string;
 
 		eventName: string;
-		tiers?: Price[];
+		prices?: Price[];
 	}
 
 	interface LinkedProductsResponse {
@@ -44,7 +44,7 @@
 		}>;
 	}
 
-	let { eventId, stripeProductId, eventName, tiers = [] }: Props = $props();
+	let { eventId, stripeProductId, eventName, prices = [] }: Props = $props();
 
 	let activeTab = $state<Tab>("linked");
 
@@ -67,7 +67,7 @@
 
 	const tabs: Array<{ value: Tab; label: string }> = [
 		{ value: "linked", label: "Linked products" },
-		{ value: "tiers", label: "Tier bundles" },
+		{ value: "prices", label: "Tier bundles" },
 		{ value: "add", label: "Add products" },
 	];
 
@@ -368,33 +368,33 @@
 				</div>
 			{/if}
 		</section>
-	{:else if activeTab === "tiers"}
+	{:else if activeTab === "prices"}
 		<section class="space-y-4">
 			<p class="text-sm text-muted-foreground">
-				Include products with specific ticket tiers. Customers buying
-				those tiers will receive the included products.
+				Include products with specific ticket prices. Customers buying
+				those prices will receive the included products.
 			</p>
 
-			{#if tiers.length === 0}
+			{#if prices.length === 0}
 				<div class="rounded-xl border border-dashed p-8 text-center">
 					<p class="text-sm text-muted-foreground">
-						This event does not have any ticket tiers.
+						This event does not have any ticket prices.
 					</p>
 				</div>
 			{:else}
-				{#each tiers as tier (tier.id)}
+				{#each prices as price (price.id)}
 					<Card class="space-y-4 border p-4 shadow-none">
 						<div>
 							<h3 class="font-medium">
-								{tier.nickname || "Standard"}
+								{price.nickname || "Standard"}
 							</h3>
 
 							<p class="text-sm text-muted-foreground">
-								{formatTierPrice(tier)}
+								{formatTierPrice(price)}
 							</p>
 						</div>
 
-						{#if (tierProducts[tier.id] ?? []).length === 0}
+						{#if (tierProducts[price.id] ?? []).length === 0}
 							<p
 								class="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground"
 							>
@@ -402,7 +402,7 @@
 							</p>
 						{:else}
 							<div class="space-y-2">
-								{#each tierProducts[tier.id] ?? [] as product (product.id)}
+								{#each tierProducts[price.id] ?? [] as product (product.id)}
 									<div
 										class="flex items-center justify-between gap-3 rounded-lg bg-muted p-2"
 									>
@@ -421,7 +421,7 @@
 													product.quantity <= 1}
 												onclick={() =>
 													updateProductQuantity(
-														tier.id,
+														price.id,
 														product.id,
 														product.quantity - 1,
 													)}
@@ -442,7 +442,7 @@
 												disabled={isSaving}
 												onclick={() =>
 													updateProductQuantity(
-														tier.id,
+														price.id,
 														product.id,
 														product.quantity + 1,
 													)}
@@ -457,7 +457,7 @@
 												disabled={isSaving}
 												onclick={() =>
 													removeProductFromTier(
-														tier.id,
+														price.id,
 														product.id,
 													)}
 											>
@@ -478,7 +478,7 @@
 								const productId = select.value;
 
 								if (productId) {
-									void addProductToTier(tier.id, productId);
+									void addProductToTier(price.id, productId);
 									select.value = "";
 								}
 							}}

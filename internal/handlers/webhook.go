@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2568,15 +2567,13 @@ func generateUniqueToken() string {
 	return string(b)
 }
 
-// generateQRCode creates a QR code image for a ticket token
-func generateQRCode(token string) (string, error) {
+func generateQRCode(token string) ([]byte, error) {
 	qr, err := qrcode.Encode(token, qrcode.Medium, 256)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Base64 encode the QR code for embedding in email
-	return base64.StdEncoding.EncodeToString(qr), nil
+	return qr, nil
 }
 
 func eventNameForStripeProduct(ctx context.Context, stripeProductID string) string {
@@ -2769,7 +2766,7 @@ func buildParticipantTicketEmail(
 		return nil, fmt.Errorf("submission is nil")
 	}
 
-	qrCodeURL, err := generateQRCode(ticketToken)
+	qrCode, err := generateQRCode(ticketToken)
 	if err != nil {
 		return nil, fmt.Errorf("generate QR code: %w", err)
 	}
@@ -2785,7 +2782,6 @@ func buildParticipantTicketEmail(
 		"CustomerName":   submission.ParticipantName,
 		"EventName":      eventName,
 		"TicketCode":     ticketToken,
-		"QRCodeURL":      qrCodeURL,
 		"VehicleDetails": vehicleDetails,
 		"TicketType":     "Event Participant",
 		"CheckInURL": fmt.Sprintf(
@@ -2833,9 +2829,11 @@ func buildParticipantTicketEmail(
 
 				<div style="text-align: center; margin: 30px 0;">
 					<img
-						src="%s"
+						src="cid:ticket-qr.png"
 						alt="QR Code"
-						style="width: 200px; height: 200px;"
+						width="200"
+						height="200"
+						style="display: block; width: 200px; height: 200px;"
 					>
 					<p style="font-size: 12px; color: #666;">
 						Show this QR code at check-in
@@ -2876,7 +2874,6 @@ func buildParticipantTicketEmail(
 		vehicleDetails,
 		eventName,
 		ticketToken,
-		qrCodeURL,
 	)
 
 	return &services.EmailMessage{
@@ -2888,6 +2885,15 @@ func buildParticipantTicketEmail(
 		TemplateID:   "participant-ticket",
 		TemplateData: emailData,
 		BodyHTML:     ticketHTML,
+		Attachments: []services.EmailAttachment{
+			{
+				Filename: "ticket-qr.png",
+				ContentType: "image/png",
+				ContentID: "ticket-qr.png",
+				Inline: true,
+				Data: qrCode,
+			},
+		},
 	}, nil
 }
 

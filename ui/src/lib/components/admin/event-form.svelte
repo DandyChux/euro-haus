@@ -16,6 +16,7 @@
 	import apiClient from "$lib/api";
 	import type { SubmissionRequirement } from "$lib/schemas/submission";
 	import { Label } from "../ui/label";
+	import EventProductsManager from "./event-products-manager.svelte";
 
 	interface Props {
 		data: {
@@ -988,40 +989,6 @@
 			</p>
 		</div>
 
-		<div class="space-y-2">
-			<Label for="event-image-url" class="text-sm font-medium">
-				Add an existing image URL
-			</Label>
-
-			<div class="flex gap-2">
-				<Input
-					id="event-image-url"
-					bind:value={imageUrl}
-					type="url"
-					placeholder="https://cdn.example.com/event-image.jpg"
-					aria-invalid={imageUrlError ? "true" : undefined}
-					onkeydown={(event) => {
-						if (event.key === "Enter") {
-							event.preventDefault();
-							addImageUrl();
-						}
-					}}
-				/>
-
-				<Button type="button" onclick={addImageUrl}>Add image</Button>
-			</div>
-
-			{#if imageUrlError}
-				<p class="text-sm text-destructive">
-					{imageUrlError}
-				</p>
-			{/if}
-
-			<p class="text-sm text-muted-foreground">
-				Use a publicly accessible HTTP or HTTPS image URL.
-			</p>
-		</div>
-
 		<fieldset class="space-y-3">
 			<legend class="text-sm font-medium">Event images</legend>
 
@@ -1800,6 +1767,13 @@
 			{/if}
 		</Form.Fieldset>
 	</Card>
+
+	<EventProductsManager
+		eventId={$formData.id}
+		stripeProductId={$formData.stripe_product_id}
+		eventName={$formData.name}
+		prices={$formData.prices}
+	/>
 
 	<div class="flex justify-end border-t pt-4">
 		<Button type="submit" disabled={$submitting}>

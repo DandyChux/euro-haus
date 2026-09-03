@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -35,6 +36,8 @@ const (
 type EmailAttachment struct {
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
+	ContentID   string `json:"content_id,omitempty"`
+	Inline      bool   `json:"inline,omitempty"`
 	Data        []byte `json:"data"`
 }
 
@@ -121,38 +124,19 @@ func SendEmail(msg *EmailMessage) error {
 
 	if len(msg.Attachments) > 0 {
 		for _, att := range msg.Attachments {
-			tempFile, err := os.CreateTemp("", "euro-haus-email-*")
-			if err != nil {
-				return fmt.Errorf(
-					"create temporary attachment file: %w",
-					err,
+			if att.Inline {
+				mgMessage.AddReaderInline(
+					att.Filename,
+					io.NopCloser(bytes.NewReader(att.Data)),
 				)
+				continue
 			}
 
-			tempPath := tempFile.Name()
-
-			if _, err := tempFile.Write(att.Data); err != nil {
-				tempFile.Close()
-				os.Remove(tempPath)
-
-				return fmt.Errorf(
-					"write temporary attachment file: %w",
-					err,
-				)
-			}
-
-			if err := tempFile.Close(); err != nil {
-				os.Remove(tempPath)
-
-				return fmt.Errorf(
-					"close temporary attachment file: %w",
-					err,
-				)
-			}
-
-			mgMessage.AddBufferAttachment(tempPath, att.Data)
-
-			defer os.Remove(tempPath)
+			// mgMessage.AddBufferAttachment(att.Filename, att.Data)
+			mgMessage.AddReaderAttachment(
+				att.Filename,
+				io.NopCloser(bytes.NewReader(att.Data)),
+			)
 		}
 	}
 
@@ -211,7 +195,7 @@ func BuildTicketEmail(
 	name string,
 	ticketToken string,
 	eventDetails map[string]interface{},
-	qrCode string,
+	qrCode []byte,
 ) (*EmailMessage, error) {
 	email = strings.TrimSpace(email)
 	name = strings.TrimSpace(name)
@@ -253,7 +237,6 @@ func BuildTicketEmail(
 		"Location":     metadata["location"],
 		"Quantity":     quantity,
 		"TicketToken":  ticketToken,
-		"QRCode":       qrCode,
 	}
 
 	return &EmailMessage{
@@ -264,6 +247,15 @@ func BuildTicketEmail(
 		),
 		TemplateID:   "event-ticket",
 		TemplateData: templateData,
+		Attachments: []EmailAttachment{
+			{
+				Filename:    "ticket-qr.png",
+				ContentType: "image/png",
+				ContentID:   "ticket-qr.png",
+				Inline:      true,
+				Data:        qrCode,
+			},
+		},
 	}, nil
 }
 

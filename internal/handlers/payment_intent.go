@@ -57,6 +57,7 @@ type CreateCheckoutSessionRequest struct {
 
 	SelectedShippingRate string                    `json:"selected_shipping_rate"`
 	CustomerAddress      *CheckoutCustomerAddress `json:"customer_address,omitempty"`
+	FulfillmentOption    string                    `json:"fulfillment_option"`
 }
 
 type LineItem struct {
@@ -166,7 +167,6 @@ func CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateCheckoutSession creates a Stripe Checkout session for cart checkout
 func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	var req CreateCheckoutSessionRequest
 
@@ -266,6 +266,13 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
+	// Track fulfillment selection in session metadata
+	if req.FulfillmentOption != "" {
+		metadata["fulfillment_option"] = req.FulfillmentOption
+	} else {
+		metadata["fulfillment_option"] = "shipping"
+	}
+
 	eventID := req.EventID
 
 	baseURL := strings.TrimRight(os.Getenv("BASE_URL"), "/")
@@ -302,19 +309,16 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	// Check if we need to collect shipping address (for physical products)
 	needsShipping := hasPhysicalProducts(req.LineItems) || len(req.AddOns) > 0 || req.PriceID != ""
 
-	if needsShipping {
+	if needsShipping && req.FulfillmentOption == "shipping" {
 		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
 
-		// FETCH ACTUAL SHIPPING RATES FROM STRIPE
-		shippingRateParams := &stripe.ShippingRateListParams{
+		iter := shippingrate.List(&stripe.ShippingRateListParams{
 			Active: stripe.Bool(true),
-		}
+		})
 
-		iter := shippingrate.List(shippingRateParams)
 		shippingOptions := []*stripe.CheckoutSessionShippingOptionParams{}
-
 		for iter.Next() {
 			rate := iter.ShippingRate()
 
@@ -326,16 +330,12 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 		if err := iter.Err(); err != nil {
 			log.Printf("Error fetching shipping rates: %v", err)
-			// Optionally fall back to your custom rates or return error
 			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
 			return
 		}
 
 		if len(shippingOptions) > 0 {
 			params.ShippingOptions = shippingOptions
-		} else {
-			log.Println("Warning: No active shipping rates found")
-			// Decide whether to proceed without shipping or create fallback rates
 		}
 	}
 
