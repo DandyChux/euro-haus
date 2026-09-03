@@ -181,18 +181,38 @@
 		isSaving = true;
 
 		try {
-			const response = await apiClient.put<{
-				included_products?: IncludedProduct[];
-			}>(`/admin/events/${eventId}/tiers/${tierId}/products`, {
+			const payload = {
 				included_products: products.map((product) => ({
 					product_id: product.id,
 					quantity: product.quantity,
 				})),
+			};
+
+			console.log("Saving tier products", {
+				eventId,
+				tierId,
+				payload,
 			});
+
+			const response = await apiClient.put<{
+				success: boolean;
+				price_id: string;
+				included_products?: Array<{
+					price_id: string;
+					product_id: string;
+					quantity: number;
+					sort_order: number;
+				}>;
+			}>(
+				`/admin/events/${encodeURIComponent(eventId)}/tiers/${encodeURIComponent(tierId)}/products`,
+				payload,
+			);
+
+			console.log("Saved tier products", response);
 
 			tierProducts = {
 				...tierProducts,
-				[tierId]: response.included_products ?? products,
+				[tierId]: products,
 			};
 		} catch (error) {
 			console.error("Updating tier products failed:", error);

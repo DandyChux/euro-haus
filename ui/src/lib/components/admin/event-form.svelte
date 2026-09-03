@@ -1770,7 +1770,6 @@
 
 	<EventProductsManager
 		eventId={$formData.id}
-		stripeProductId={$formData.stripe_product_id}
 		eventName={$formData.name}
 		prices={$formData.prices}
 	/>

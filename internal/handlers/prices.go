@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/dandychux/euro-haus/internal/models"
 	"github.com/dandychux/euro-haus/internal/services"
@@ -23,31 +24,47 @@ func replacePriceIncludedProducts(
 	priceID string,
 	products []IncludedProductRequest,
 ) error {
-	db := services.GetDB().WithContext(ctx)
+	db := services.GetDB()
+	if db == nil {
+		return errors.New("database is not initialized")
+	}
 
-	return db.Transaction(func(tx *gorm.DB) error {
+	priceID = strings.TrimSpace(priceID)
+	if priceID == "" {
+		return errors.New("price ID is required")
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.
 			Where("price_id = ?", priceID).
 			Delete(&models.PriceIncludedProduct{}).
 			Error; err != nil {
-			return err
-		}
-
-		if len(products) == 0 {
-			return nil
+			return fmt.Errorf("delete existing included products: %w", err)
 		}
 
 		links := make([]models.PriceIncludedProduct, 0, len(products))
 
-		for index, product := range products {
-			if product.ProductID == "" || product.Quantity < 1 {
-				continue
+		for index, includedProduct := range products {
+			productID := strings.TrimSpace(includedProduct.ProductID)
+
+			if productID == "" {
+				return fmt.Errorf(
+					"included product at index %d has no product ID",
+					index,
+				)
+			}
+
+			if includedProduct.Quantity < 1 {
+				return fmt.Errorf(
+					"included product %s must have a quantity greater than zero",
+					productID,
+				)
 			}
 
 			links = append(links, models.PriceIncludedProduct{
 				PriceID:   priceID,
-				ProductID: product.ProductID,
-				Quantity:  product.Quantity,
+				ProductID: productID,
+				Quantity:  includedProduct.Quantity,
 				SortOrder: index,
 			})
 		}
@@ -56,7 +73,20 @@ func replacePriceIncludedProducts(
 			return nil
 		}
 
-		return tx.Create(&links).Error
+		result := tx.Create(&links)
+		if result.Error != nil {
+			return fmt.Errorf("insert included products: %w", result.Error)
+		}
+
+		if result.RowsAffected != int64(len(links)) {
+			return fmt.Errorf(
+				"expected to insert %d included products, inserted %d",
+				len(links),
+				result.RowsAffected,
+			)
+		}
+
+		return nil
 	})
 }
 
@@ -158,17 +188,34 @@ func UpdateTierIncludedProducts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
-	eventID := vars["eventId"]
-	priceID := vars["priceId"]
+	eventID := strings.TrimSpace(vars["eventId"])
+	priceID := strings.TrimSpace(vars["priceId"])
+
+	if eventID == "" {
+		http.Error(w, "Event ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if priceID == "" {
+		http.Error(w, "Price ID is required", http.StatusBadRequest)
+		return
+	}
 
 	var req struct {
 		IncludedProducts []IncludedProductRequest `json:"included_products"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf(
+		"Updating included products: event_id=%s price_id=%s products=%+v",
+		eventID,
+		priceID,
+		req.IncludedProducts,
+	)
 
 	event, err := findActiveEventByID(r.Context(), eventID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -177,7 +224,16 @@ func UpdateTierIncludedProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, "Unable to retrieve event", http.StatusInternalServerError)
+		log.Printf(
+			"Failed to find event %s: %v",
+			eventID,
+			err,
+		)
+		http.Error(
+			w,
+			"Unable to retrieve event",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -194,12 +250,28 @@ func UpdateTierIncludedProducts(w http.ResponseWriter, r *http.Request) {
 		Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Printf(
+			"Price %s was not found for event %s with Stripe product %s",
+			priceID,
+			eventID,
+			event.StripeProductID,
+		)
 		http.Error(w, "Tier not found for event", http.StatusNotFound)
 		return
 	}
 
 	if err != nil {
-		http.Error(w, "Unable to retrieve tier", http.StatusInternalServerError)
+		log.Printf(
+			"Failed to find price %s for event %s: %v",
+			priceID,
+			eventID,
+			err,
+		)
+		http.Error(
+			w,
+			"Unable to retrieve tier",
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -208,7 +280,11 @@ func UpdateTierIncludedProducts(w http.ResponseWriter, r *http.Request) {
 		tier.ID,
 		req.IncludedProducts,
 	); err != nil {
-		log.Printf("Unable to update tier products: %v", err)
+		log.Printf(
+			"Failed to persist included products for price %s: %v",
+			tier.ID,
+			err,
+		)
 		http.Error(
 			w,
 			"Failed to update tier products",
@@ -217,8 +293,42 @@ func UpdateTierIncludedProducts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"price_id": tier.ID,
-	})
+	var savedProducts []models.PriceIncludedProduct
+
+	if err := services.GetDB().
+		WithContext(r.Context()).
+		Where("price_id = ?", tier.ID).
+		Order("sort_order ASC, product_id ASC").
+		Find(&savedProducts).
+		Error; err != nil {
+		log.Printf(
+			"Included products were saved but could not be reloaded for price %s: %v",
+			tier.ID,
+			err,
+		)
+		http.Error(
+			w,
+			"Included products were saved but could not be reloaded",
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	log.Printf(
+		"Persisted %d included products for price %s",
+		len(savedProducts),
+		tier.ID,
+	)
+
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":           true,
+		"price_id":          tier.ID,
+		"included_products": savedProducts,
+	}); err != nil {
+		log.Printf(
+			"Failed to encode included products response for price %s: %v",
+			tier.ID,
+			err,
+		)
+	}
 }

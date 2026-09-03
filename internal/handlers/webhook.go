@@ -766,6 +766,7 @@ func handleNonSubmissionCheckoutCompleted(
 ) {
 	params := &stripe.CheckoutSessionParams{}
 	params.AddExpand("line_items.data.price.product")
+	params.AddExpand("shipping_cost.shipping_rate")
 
 	fullSession, err := session.Get(
 		checkoutSession.ID,
@@ -778,6 +779,15 @@ func handleNonSubmissionCheckoutCompleted(
 			err,
 		)
 		return
+	}
+
+	isPickup := false
+	if fullSession.Metadata != nil && fullSession.Metadata["fulfillment_option"] == "pickup" {
+		isPickup = true
+	} else if fullSession.ShippingCost != nil && fullSession.ShippingCost.ShippingRate != nil {
+		if strings.Contains(strings.ToLower(fullSession.ShippingCost.ShippingRate.DisplayName), "pickup") {
+			isPickup = true
+		}
 	}
 
 	processStockUpdates(fullSession)
@@ -794,7 +804,6 @@ func handleNonSubmissionCheckoutCompleted(
 		}
 
 		stripeProductID := lineItem.Price.Product.ID
-
 		_, eventErr := findEventByStripeProductID(
 			context.Background(),
 			stripeProductID,
@@ -833,15 +842,20 @@ func handleNonSubmissionCheckoutCompleted(
 		) / 100.0
 	}
 
-	customerEmail := fullSession.CustomerEmail
+	// Persist physical fulfillment orders to GORM database
+	if hasPhysicalProducts {
+		if err := createFulfillmentRecords(ctx, fullSession, isPickup); err != nil {
+			log.Printf("Error processing fulfillment records for session %s: %v", fullSession.ID, err)
+		}
+	}
 
+	customerEmail := fullSession.CustomerEmail
 	if customerEmail == "" &&
 		fullSession.Customer != nil {
 		customerEmail = fullSession.Customer.Email
 	}
 
 	customerName := ""
-
 	if fullSession.CustomerDetails != nil {
 		customerName = fullSession.CustomerDetails.Name
 	}
@@ -875,6 +889,7 @@ func handleNonSubmissionCheckoutCompleted(
 		"Currency":         string(fullSession.Currency),
 		"HasEventTickets":  hasEventTickets,
 		"HasPhysicalItems": hasPhysicalProducts,
+		"IsPickup": isPickup,
 		"ShippingAddress":  formatShippingAddress(fullSession),
 	}
 
@@ -2423,6 +2438,18 @@ func generateLowStockAlertHTML(data map[string]interface{}) string {
 
 // processStockUpdates handles stock updates for all items in a checkout session
 func processStockUpdates(checkoutSession *stripe.CheckoutSession) {
+	// Read fulfillment option from metadata or shipping rate
+	fulfillmentOption := "shipping"
+	if checkoutSession.Metadata != nil && checkoutSession.Metadata["fulfillment_option"] != "" {
+		fulfillmentOption = checkoutSession.Metadata["fulfillment_option"]
+	} else if checkoutSession.ShippingCost != nil && checkoutSession.ShippingCost.ShippingRate != nil {
+		if strings.Contains(strings.ToLower(checkoutSession.ShippingCost.ShippingRate.DisplayName), "pickup") {
+			fulfillmentOption = "pickup"
+		}
+	}
+
+	log.Printf("Processing stock updates for session %s with fulfillment option: %s", checkoutSession.ID, fulfillmentOption)
+
 	// Process each line item
 	for _, lineItem := range checkoutSession.LineItems.Data {
 		// Skip if no price ID
@@ -3412,4 +3439,118 @@ func createSubmissionRecoverySession(
 	}
 
 	return recoverySession, nil
+}
+
+func formatShippingAddressString(session *stripe.CheckoutSession) string {
+	var addr *stripe.Address
+
+	if session.Customer != nil && session.Customer.Address != nil {
+		addr = session.Customer.Address
+	} else if session.Customer != nil && session.Customer.Address != nil {
+		addr = session.Customer.Address
+	}
+
+	if addr == nil {
+		return ""
+	}
+
+	var parts []string
+	if addr.Line1 != "" {
+		parts = append(parts, addr.Line1)
+	}
+	if addr.Line2 != "" {
+		parts = append(parts, addr.Line2)
+	}
+
+	cityStateZip := ""
+	if addr.City != "" {
+		cityStateZip += addr.City
+	}
+	if addr.State != "" {
+		if cityStateZip != "" {
+			cityStateZip += ", "
+		}
+		cityStateZip += addr.State
+	}
+	if addr.PostalCode != "" {
+		if cityStateZip != "" {
+			cityStateZip += " "
+		}
+		cityStateZip += addr.PostalCode
+	}
+
+	if cityStateZip != "" {
+		parts = append(parts, cityStateZip)
+	}
+	if addr.Country != "" {
+		parts = append(parts, addr.Country)
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+func createFulfillmentRecords(
+	ctx context.Context,
+	fullSession *stripe.CheckoutSession,
+	isPickup bool,
+) error {
+	db := services.GetDB()
+	if db == nil {
+		return errors.New("database connection unavailable")
+	}
+
+	customerEmail := fullSession.CustomerEmail
+	if customerEmail == "" && fullSession.CustomerDetails != nil {
+		customerEmail = fullSession.CustomerDetails.Email
+	}
+
+	customerName := ""
+	if fullSession.CustomerDetails != nil {
+		customerName = fullSession.CustomerDetails.Name
+	}
+
+	formattedAddress := formatShippingAddressString(fullSession)
+
+	// Set Notes / Fulfillment Method
+	fulfillmentNotes := "Standard Shipping"
+	if isPickup {
+		fulfillmentNotes = "Local Pickup"
+	}
+
+	for _, lineItem := range fullSession.LineItems.Data {
+		var productID, productName string
+
+		if lineItem.Price != nil && lineItem.Price.Product != nil {
+			productID = lineItem.Price.Product.ID
+			productName = lineItem.Price.Product.Name
+
+			// Skip Event products from physical fulfillment table
+			_, err := findEventByStripeProductID(ctx, productID)
+			if err == nil {
+				continue
+			}
+		} else {
+			productName = lineItem.Description
+		}
+
+		fulfillment := models.Fulfillment{
+			ID:              fmt.Sprintf("ful_%s_%d", fullSession.ID, time.Now().UnixNano()),
+			SessionID:       fullSession.ID,
+			ProductID:       productID,
+			ProductName:     productName,
+			CustomerEmail:   customerEmail,
+			CustomerName:    customerName,
+			ShippingAddress: formattedAddress,
+			Quantity:        int(lineItem.Quantity),
+			Status:          "pending",
+			Type:            "purchased",
+			Notes:           fulfillmentNotes,
+		}
+
+		if err := db.WithContext(ctx).Create(&fulfillment).Error; err != nil {
+			log.Printf("Failed to create fulfillment record for session %s, product %s: %v", fullSession.ID, productID, err)
+		}
+	}
+
+	return nil
 }
