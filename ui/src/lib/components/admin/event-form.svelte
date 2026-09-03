@@ -756,8 +756,6 @@
 						Remove
 					</Button>
 				</div>
-
-				<Form.FieldErrors />
 			{/each}
 		</Form.Fieldset>
 	</Card>
@@ -824,8 +822,6 @@
 					</Button>
 				</div>
 			{/each}
-
-			<Form.FieldErrors />
 		</Form.Fieldset>
 	</Card>
 
@@ -864,8 +860,6 @@
 					</Button>
 				</div>
 			{/each}
-
-			<Form.FieldErrors />
 		</Form.Fieldset>
 	</Card>
 
@@ -981,8 +975,6 @@
 					</div>
 				</div>
 			{/each}
-
-			<Form.FieldErrors />
 		</Form.Fieldset>
 	</Card>
 
@@ -1031,13 +1023,14 @@
 		</div>
 
 		<fieldset class="space-y-3">
-			<legend class="text-sm font-medium"> Event images </legend>
+			<legend class="text-sm font-medium">Event images</legend>
 
 			<div class="space-y-2">
-				<Form.Label>Image URL</Form.Label>
+				<Label for="event-image-url">Image URL</Label>
 
 				<div class="flex gap-2">
 					<Input
+						id="event-image-url"
 						bind:value={imageUrl}
 						type="url"
 						placeholder="https://cdn.example.com/product-image.jpg"
@@ -1147,13 +1140,14 @@
 
 			<div class="flex items-center gap-3">
 				<Checkbox
+					id="event-has-tiers"
 					checked={hasTiers}
 					onCheckedChange={(value) => setHasTiers(value === true)}
 				/>
 
-				<Form.Label class="font-normal">
+				<Label for="event-has-tiers">
 					This event has multiple ticket tiers
-				</Form.Label>
+				</Label>
 			</div>
 
 			{#if $formData.prices.length === 0}
@@ -1804,8 +1798,6 @@
 					</Button>
 				{/if}
 			{/if}
-
-			<Form.FieldErrors />
 		</Form.Fieldset>
 	</Card>
 
