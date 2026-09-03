@@ -51,12 +51,12 @@
 			<img
 				src={logoUrl}
 				alt="Euro Haus logo"
-				width="132"
+				width="125"
 				height="50"
 				class="nav-logo"
 				loading="eager"
-				sizes="150px"
-				srcset={generateSrcSet(logoUrl, [150], "webp", 85)}
+				sizes="125px"
+				srcset={generateSrcSet(logoUrl, [125], "webp", 85)}
 			/>
 		</a>
 
@@ -251,10 +251,10 @@
 			height: 70px;
 			padding-inline: 16px;
 		}
-		.nav-logo {
+		/*.nav-logo {
 			height: 50px;
 			width: auto;
-		}
+		}*/
 		nav {
 			position: absolute;
 			top: 104px;
