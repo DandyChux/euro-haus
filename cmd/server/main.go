@@ -289,7 +289,7 @@ func main() {
 	api.Handle(
 		"/admin/events/{eventId}/tiers/{priceId}/products",
 		middleware.RequireAdminAuth(
-			http.HandlerFunc(handlers.AddProductsToTier),
+			http.HandlerFunc(handlers.UpdateTierIncludedProducts),
 		),
 	).Methods("PUT")
 
