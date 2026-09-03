@@ -35,11 +35,11 @@ func replacePriceIncludedProducts(
 	}
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.
+		if deleteResult := tx.
 			Where("price_id = ?", priceID).
 			Delete(&models.PriceIncludedProduct{}).
-			Error; err != nil {
-			return fmt.Errorf("delete existing included products: %w", err)
+			Error; deleteResult.Error != nil {
+			return fmt.Errorf("delete existing included products: %w", deleteResult.Error)
 		}
 
 		links := make([]models.PriceIncludedProduct, 0, len(products))
@@ -70,21 +70,59 @@ func replacePriceIncludedProducts(
 		}
 
 		if len(links) == 0 {
+			log.Printf(
+				"No included products supplied for price %s; existing rows removed",
+				priceID,
+			)
 			return nil
 		}
 
-		result := tx.Create(&links)
-		if result.Error != nil {
-			return fmt.Errorf("insert included products: %w", result.Error)
+		log.Printf(
+			"Inserting included product rows for price %s: %+v",
+			priceID,
+			links,
+		)
+
+		insertResult := tx.Create(&links)
+		if insertResult.Error != nil {
+			return fmt.Errorf("insert included products: %w", insertResult.Error)
 		}
 
-		if result.RowsAffected != int64(len(links)) {
+		if insertResult.RowsAffected != int64(len(links)) {
 			return fmt.Errorf(
 				"expected to insert %d included products, inserted %d",
 				len(links),
-				result.RowsAffected,
+				insertResult.RowsAffected,
 			)
 		}
+
+		var persisted []models.PriceIncludedProduct
+
+		if err := tx.
+			Where("price_id = ?", priceID).
+			Order("sort_order ASC, product_id ASC").
+			Find(&persisted).
+			Error; err != nil {
+			return fmt.Errorf(
+				"verify inserted included products: %w",
+				err,
+			)
+		}
+
+		if len(persisted) != len(links) {
+			return fmt.Errorf(
+				"expected to verify %d included products, found %d",
+				len(links),
+				len(persisted),
+			)
+		}
+
+		log.Printf(
+			"Persisted %d included products for price %s: %+v",
+			len(persisted),
+			priceID,
+			persisted,
+		)
 
 		return nil
 	})
