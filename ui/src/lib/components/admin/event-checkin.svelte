@@ -28,15 +28,13 @@
 	interface Props {
 		eventId: string;
 		eventName: string;
-		data: {
-			form: SuperValidated<EventCheckIn>;
-		};
+		data: SuperValidated<EventCheckIn>;
 	}
 
 	let { eventId, eventName, data }: Props = $props();
 
 	const form = superForm(
-		untrack(() => data.form),
+		untrack(() => data),
 		{
 			SPA: true,
 			validators: zod4Client(eventCheckInSchema),
