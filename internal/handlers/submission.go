@@ -1126,6 +1126,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
 			Enabled: stripe.Bool(true),
 		},
+		AllowPromotionCodes: stripe.Bool(true),
 	}
 
 	if req.PromotionCode != "" {
@@ -1360,6 +1361,7 @@ func CreateSubmissionPayment(
 			"type":          "participant_registration",
 		},
 		CustomerEmail: stripe.String(submission.ParticipantEmail),
+		AllowPromotionCodes: stripe.Bool(true),
 	}
 
 	checkoutSession, err := session.New(params)
@@ -3218,6 +3220,7 @@ func createSubmissionPaymentLink(submission models.VehicleSubmissionDTO) (string
 				"auto_approved": "true",
 				"participant":   "true",
 			},
+			AllowPromotionCodes: stripe.Bool(true),
 		}
 
 		if submission.ParticipantEmail != "" {

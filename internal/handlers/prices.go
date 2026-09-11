@@ -215,6 +215,7 @@ func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(fmt.Sprintf("%s/success?session_id={CHECKOUT_SESSION_ID}", baseUrl)),
 		CancelURL:  stripe.String(fmt.Sprintf("%s/cancel", baseUrl)),
+		AllowPromotionCodes: stripe.Bool(true),
 	}
 
 	session, err := session.New(params)

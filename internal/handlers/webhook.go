@@ -3387,6 +3387,7 @@ func createSubmissionRecoverySession(
 			"requires_approval": strconv.FormatBool(requiresApproval),
 			"recovery":          "true",
 		},
+		AllowPromotionCodes: stripe.Bool(true),
 	}
 
 	if submission.ParticipantEmail != "" {

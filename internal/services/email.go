@@ -28,7 +28,7 @@ var (
 )
 
 const (
-	emailJobPollInterval = 30 * time.Second
+	emailJobPollInterval = 10 * time.Second
 	emailJobLockTimeout  = 10 * time.Minute
 	emailJobMaxAttempts  = 8
 )
