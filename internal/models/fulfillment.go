@@ -61,10 +61,10 @@ type PriceInfo struct {
 	Size string `gorm:"column:size" json:"size,omitempty"`
 	Color string `gorm:"column:color" json:"color,omitempty"`
 
-	CreatedAt time.Time `gorm:"autoCreateTime"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
-	IncludedProductLinks []PriceIncludedProduct `gorm:"foreignKey:PriceID;references:ID" json:"-"`
+	IncludedProductLinks []PriceIncludedProduct `gorm:"foreignKey:PriceID;references:ID" json:"included_products,omitempty"`
 	Requirements []PriceRequirement `gorm:"foreignKey:PriceID;references:ID" json:"requirements,omitempty"`
 }
 
@@ -78,6 +78,8 @@ type PriceIncludedProduct struct {
 
 	Quantity  int `gorm:"not null;default:1"`
 	SortOrder int `gorm:"not null;default:0"`
+
+	Product Product `gorm:"foreignKey:ProductID;references:ID" json:"-"`
 }
 
 func (PriceIncludedProduct) TableName() string {

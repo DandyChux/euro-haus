@@ -15,6 +15,7 @@ import (
 	"github.com/dandychux/euro-haus/internal/models"
 	"github.com/dandychux/euro-haus/internal/services"
 	"github.com/jackc/pgx/v5"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/gorilla/mux"
@@ -121,6 +122,25 @@ type IncludedProductResponse struct {
 	DefaultPrice *models.PriceInfo `json:"default_price,omitempty"`
 }
 
+type PriceResponse struct {
+	ID                 string                    `json:"id"`
+	StripeProductID    string                    `json:"stripe_product_id"`
+	UnitAmount         int64                     `json:"unit_amount"`
+	Currency           string                    `json:"currency"`
+	Nickname           string                    `json:"nickname,omitempty"`
+	Description        string                    `json:"description,omitempty"`
+	Active             bool                      `json:"active"`
+	Features           datatypes.JSON            `json:"features"`
+	IsDefault          bool                      `json:"default"`
+	IsMostPopular      bool                      `json:"most_popular"`
+	RequiresApproval   bool                      `json:"requires_approval"`
+	RequiresSubmission bool                      `json:"requires_submission"`
+	Quantity           int                       `json:"quantity"`
+	StockQuantity      *int                      `json:"stock_quantity,omitempty"`
+	IncludedProducts   []IncludedProductResponse  `json:"included_products"`
+	Requirements       []models.PriceRequirement `json:"requirements,omitempty"`
+}
+
 type EventResponse struct {
 	ID                   string `json:"id"`
 	StripeProductID      string `json:"stripe_product_id,omitempty"`
@@ -148,7 +168,7 @@ type EventResponse struct {
 	Includes models.EventStringList `json:"includes"`
 	Sponsors models.EventSponsors    `json:"sponsors"`
 
-	Prices  []models.PriceInfo `json:"prices,omitempty"`
+	Prices  []PriceResponse `json:"prices,omitempty"`
 }
 
 func withEventPrices(db *gorm.DB) *gorm.DB {
@@ -175,23 +195,16 @@ func normalizedEventPrices(
 	return result
 }
 
-func eventToResponse(event models.Event) EventResponse {
-	images := []string{}
-
-	if event.Images != nil {
-		images = event.Images
-	}
-
-	return EventResponse{
+func eventToResponse(event *models.Event) EventResponse {
+	response := EventResponse{
 		ID:              event.ID,
 		StripeProductID: event.StripeProductID,
-		Prices:          normalizedEventPrices(event.Prices),
 
 		Slug:            event.Slug,
 		Name:            event.Name,
 		Description:     event.Description,
 		LongDescription: event.LongDescription,
-		Images:          images,
+		Images:          []string(event.Images),
 
 		EventDate: event.EventDate,
 		Location:  event.Location,
@@ -209,7 +222,65 @@ func eventToResponse(event models.Event) EventResponse {
 		Agenda:   event.Agenda,
 		Includes: event.Includes,
 		Sponsors: event.Sponsors,
+
+		Prices: make([]PriceResponse, 0, len(event.Prices)),
 	}
+
+	for _, price := range event.Prices {
+		includedProducts := make(
+			[]IncludedProductResponse,
+			0,
+			len(price.IncludedProductLinks),
+		)
+
+		for _, link := range price.IncludedProductLinks {
+			product := link.Product
+
+			// This protects the API from returning incomplete product
+			// entries if a linked product was deleted or inactive.
+			if product.ID == "" {
+				continue
+			}
+
+			var defaultPrice *models.PriceInfo
+
+			if len(product.Prices) > 0 {
+				selectedPrice := product.Prices[0]
+				defaultPrice = &selectedPrice
+			}
+
+			includedProducts = append(includedProducts, IncludedProductResponse{
+				ID:           product.ID,
+				Name:         product.Title,
+				Description:  product.Description,
+				Images:       []string(product.Images),
+				Quantity:     link.Quantity,
+				SortOrder:    link.SortOrder,
+				DefaultPrice: defaultPrice,
+			})
+		}
+
+		response.Prices = append(response.Prices, PriceResponse{
+			ID:                 price.ID,
+			StripeProductID:    price.StripeProductID,
+			UnitAmount:         price.UnitAmount,
+			Currency:           price.Currency,
+			Nickname:           price.Nickname,
+			Description:        price.Description,
+			Active:             price.Active,
+			Features:           price.Features,
+			IsDefault:          price.IsDefault,
+			IsMostPopular:      price.IsMostPopular,
+			RequiresApproval:   price.RequiresApproval,
+			RequiresSubmission: price.RequiresSubmission,
+			Quantity:            price.Quantity,
+			StockQuantity:      price.StockQuantity,
+			IncludedProducts:   includedProducts,
+			Requirements:       price.Requirements,
+		})
+	}
+
+	return response
 }
 
 func loadEventPrices(
@@ -218,21 +289,23 @@ func loadEventPrices(
 ) error {
 	var prices []models.PriceInfo
 
-	err := services.GetDB().
-		WithContext(ctx).
-		Preload("IncludedProductLinks").
-		Preload("Requirements", func(tx *gorm.DB) *gorm.DB {
+	db := services.GetDB()
+
+	err := db.WithContext(ctx).
+		Where("stripe_product_id = ?", event.StripeProductID).
+		Where("active = ?", true).
+		Preload("IncludedProductLinks", func(tx *gorm.DB) *gorm.DB {
+			return tx.Order("sort_order ASC")
+		}).
+		Preload("IncludedProductLinks.Product", func(tx *gorm.DB) *gorm.DB {
+			return tx.Where("active = ?", true)
+		}).
+		Preload("IncludedProductLinks.Product.Prices", func(tx *gorm.DB) *gorm.DB {
 			return tx.
 				Where("active = ?", true).
-				Order("sort_order ASC, id ASC")
+				Order("unit_amount ASC, id ASC")
 		}).
-		Where(
-			"stripe_product_id = ? AND active = TRUE",
-			event.StripeProductID,
-		).
-		Order("unit_amount ASC, id ASC").
-		Find(&prices).
-		Error
+		Find(&prices).Error
 
 	if err != nil {
 		return err
@@ -247,6 +320,7 @@ func loadEventPrices(
 	}
 
 	event.Prices = prices
+
 	return nil
 }
 
@@ -610,17 +684,17 @@ func upsertEventPrice(
 		return "", fmt.Errorf("save local price %s: %w", priceID, err)
 	}
 
-	if err := replacePriceIncludedProductLinks(
-		tx,
-		priceID,
-		request.IncludedProducts,
-	); err != nil {
-		return "", fmt.Errorf(
-			"save included products for price %s: %w",
-			priceID,
-			err,
-		)
-	}
+	// if err := replacePriceIncludedProductLinks(
+	// 	tx,
+	// 	priceID,
+	// 	request.IncludedProducts,
+	// ); err != nil {
+	// 	return "", fmt.Errorf(
+	// 		"save included products for price %s: %w",
+	// 		priceID,
+	// 		err,
+	// 	)
+	// }
 
 	return priceID, nil
 }
@@ -1102,7 +1176,7 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error retrieving event prices", http.StatusInternalServerError)
 			return
 		}
-		response = append(response, eventToResponse(event))
+		response = append(response, eventToResponse(&event))
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -1132,7 +1206,7 @@ func GetEventByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := eventToResponse(event)
+	response := eventToResponse(&event)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Error encoding event %s: %v", eventID, err)
@@ -1160,7 +1234,7 @@ func GetAdminEventByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(eventToResponse(event)); err != nil {
+	if err := json.NewEncoder(w).Encode(eventToResponse(&event)); err != nil {
 		log.Printf("Error encoding event %s: %v", eventID, err)
 	}
 }
@@ -1909,7 +1983,7 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":    created.ID,
-		"event": eventToResponse(created),
+		"event": eventToResponse(&created),
 	})
 }
 
@@ -2155,6 +2229,6 @@ func UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"id":    updated.ID,
-		"event": eventToResponse(updated),
+		"event": eventToResponse(&updated),
 	})
 }

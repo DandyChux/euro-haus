@@ -980,6 +980,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		EventName     string `json:"event_name"`
 		Quantity      int64  `json:"quantity"`
 		PromotionCode string `json:"promotion_code"`
+		AddOnProducts []CheckoutAddOn `json:"addon_products"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1127,6 +1128,20 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 			Enabled: stripe.Bool(true),
 		},
 		AllowPromotionCodes: stripe.Bool(true),
+	}
+
+	for _, addon := range req.AddOnProducts {
+		if strings.TrimSpace(addon.PriceID) == "" || addon.Quantity <= 0 {
+			continue
+		}
+
+		params.LineItems = append(
+			params.LineItems,
+			&stripe.CheckoutSessionLineItemParams{
+				Price: stripe.String(addon.PriceID),
+				Quantity: stripe.Int64(addon.Quantity),
+			},
+		)
 	}
 
 	if req.PromotionCode != "" {

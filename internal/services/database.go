@@ -24,7 +24,9 @@ func InitDB() {
 		os.Getenv("DB_PORT"),
 	)
 
-	config := &gorm.Config{}
+	config := &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+	}
 	if os.Getenv("ENV") == "development" {
 		config.Logger = logger.Default.LogMode(logger.Info)
 	}

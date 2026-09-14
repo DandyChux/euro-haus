@@ -50,6 +50,44 @@
 		return data.event.prices.find((price) => price.id === selectedPriceID);
 	}
 
+	let currentPrice = $derived(getSelectedPrice());
+	$inspect(currentPrice);
+
+	let includedProducts = $derived(currentPrice?.included_products ?? []);
+
+	let maximumQuantity = $derived(
+		currentPrice ? getPriceMaximumQuantity(currentPrice) : 1,
+	);
+
+	let currentQuantity = $derived(
+		currentPrice ? getPriceQuantity(currentPrice) : 1,
+	);
+
+	let selectedAddOnTotal = $derived(
+		selectedAddOns.reduce((total, selectedAddOn) => {
+			const product = includedProducts.find(
+				(product) =>
+					product.default_price?.id === selectedAddOn.price_id,
+			);
+
+			if (!product?.default_price) {
+				return total;
+			}
+
+			return (
+				total +
+				product.default_price.unit_amount * selectedAddOn.quantity
+			);
+		}, 0),
+	);
+
+	let totalAmount = $derived(
+		(currentPrice ? getPriceAmount(currentPrice) * currentQuantity : 0) +
+			selectedAddOnTotal / 100,
+	);
+
+	$inspect("Current price: ", currentPrice);
+
 	function priceRequiresSubmission(price: Price): boolean {
 		return String(price.requires_submission) === "true";
 	}
@@ -93,16 +131,6 @@
 			[price.id]: nextQuantity,
 		};
 	}
-
-	let currentPrice = $derived(getSelectedPrice());
-
-	let currentQuantity = $derived(
-		currentPrice ? getPriceQuantity(currentPrice) : 1,
-	);
-
-	let maximumQuantity = $derived(
-		currentPrice ? getPriceMaximumQuantity(currentPrice) : 1,
-	);
 
 	function openCheckout(): void {
 		const price = getSelectedPrice();
@@ -171,6 +199,7 @@
 			price_id: selectedPrice.id,
 			event_name: data.event.name,
 			quantity: 1,
+			addon_products: selectedAddOns,
 		});
 
 		if (!result.session_url) {
@@ -218,7 +247,7 @@
 			</div>
 			<div>
 				<h2>{data.event.description}</h2>
-				<p>{data.event.long_description}</p>
+				<p class="whitespace-pre-wrap">{data.event.long_description}</p>
 			</div>
 		</section>
 
@@ -440,6 +469,112 @@
 							</Label>
 						{/each}
 					</RadioGroup.Root>
+
+					{#if includedProducts.length > 0}
+						<section class="add-ons">
+							<p class="eyebrow">Complete your experience</p>
+
+							<h2>Add something extra.</h2>
+
+							<p class="add-ons-description">
+								These optional products are available with your
+								selected ticket. Add anything you'd like before
+								continuing to checkout.
+							</p>
+
+							<div class="add-on-list">
+								{#each includedProducts as product}
+									{@const price = product.default_price}
+									{@const selected = selectedAddOns.some(
+										(addOn) => addOn.price_id === price?.id,
+									)}
+
+									<button
+										type="button"
+										class:selected
+										class="add-on-card"
+										disabled={!price}
+										onclick={() => {
+											if (!price) return;
+
+											const existingIndex =
+												selectedAddOns.findIndex(
+													(addOn) =>
+														addOn.price_id ===
+														price.id,
+												);
+
+											if (existingIndex >= 0) {
+												selectedAddOns =
+													selectedAddOns.filter(
+														(_, index) =>
+															index !==
+															existingIndex,
+													);
+											} else {
+												selectedAddOns = [
+													...selectedAddOns,
+													{
+														price_id: price.id,
+														quantity:
+															product.quantity ??
+															1,
+													},
+												];
+											}
+										}}
+									>
+										{#if product.images?.length ?? 0 > 0}
+											<img
+												src={product.images?.[0]}
+												alt={product.name}
+												class="add-on-image"
+											/>
+										{:else}
+											<div
+												class="add-on-image add-on-image-placeholder"
+											>
+												+
+											</div>
+										{/if}
+
+										<div class="add-on-content">
+											<strong>{product.name}</strong>
+
+											{#if product.description}
+												<p>{product.description}</p>
+											{/if}
+
+											{#if price}
+												<span>
+													{new Intl.NumberFormat(
+														"en-US",
+														{
+															style: "currency",
+															currency:
+																price.currency.toUpperCase(),
+														},
+													).format(
+														price.unit_amount / 100,
+													)}
+												</span>
+											{:else}
+												<span>Price unavailable</span>
+											{/if}
+										</div>
+
+										<span
+											class="add-on-checkmark"
+											aria-hidden="true"
+										>
+											{selected ? "✓" : ""}
+										</span>
+									</button>
+								{/each}
+							</div>
+						</section>
+					{/if}
+
 					<div>
 						<input
 							type="hidden"
@@ -508,12 +643,7 @@
 							<span>Total</span>
 
 							<strong>
-								${currentPrice
-									? (
-											getPriceAmount(currentPrice) *
-											currentQuantity
-										).toFixed(2)
-									: "0.00"}
+								${totalAmount.toFixed(2)}
 							</strong>
 						</div>
 						<Button
@@ -814,10 +944,6 @@
 		font-family: var(--font-display);
 		font-size: 28px;
 	}
-	.ticket-panel form {
-		padding: 28px;
-		border: 1px solid var(--border);
-	}
 	.quantity-field,
 	.ticket-total {
 		display: flex;
@@ -862,6 +988,119 @@
 				transparent 35%
 			),
 			var(--secondary);
+	}
+
+	.add-ons {
+		padding: 28px 24px;
+		background: #edf3f8;
+		border: 1px solid #d9e0e6;
+	}
+
+	.eyebrow {
+		margin: 0 0 16px;
+		font-size: 12px;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+	}
+
+	.add-ons h2 {
+		margin: 0;
+		padding-bottom: 14px;
+		border-bottom: 1px solid #d9e0e6;
+		font-size: 36px;
+	}
+
+	.add-ons-description {
+		max-width: 600px;
+		margin: 16px 0 22px;
+		color: #69717d;
+		line-height: 1.5;
+	}
+
+	.add-on-list {
+		display: grid;
+		gap: 12px;
+		max-width: 520px;
+	}
+
+	.add-on-card {
+		display: flex;
+		align-items: center;
+		width: 100%;
+		padding: 14px;
+		border: 1px solid #d9e0e6;
+		background: #f8f9fb;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition:
+			border-color 0.15s ease,
+			background 0.15s ease;
+	}
+
+	.add-on-card:hover,
+	.add-on-card.selected {
+		border-color: #1780c5;
+		background: #fff;
+	}
+
+	.add-on-card:disabled {
+		cursor: not-allowed;
+		opacity: 0.65;
+	}
+
+	.add-on-image {
+		width: 84px;
+		height: 64px;
+		flex: 0 0 84px;
+		object-fit: cover;
+		background: #5d3676;
+	}
+
+	.add-on-image-placeholder {
+		display: grid;
+		place-items: center;
+		color: #1b91d0;
+		font-size: 28px;
+		font-weight: 700;
+	}
+
+	.add-on-content {
+		display: grid;
+		gap: 4px;
+		padding: 0 16px;
+	}
+
+	.add-on-content strong {
+		font-size: 15px;
+	}
+
+	.add-on-content p {
+		margin: 0;
+		color: #69717d;
+		font-size: 13px;
+	}
+
+	.add-on-content span {
+		color: #69717d;
+		font-size: 13px;
+	}
+
+	.add-on-checkmark {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		margin-left: auto;
+		border: 1px solid #d9e0e6;
+		color: white;
+		font-weight: 700;
+	}
+
+	.add-on-card.selected .add-on-checkmark {
+		border-color: #1780c5;
+		background: #1780c5;
 	}
 
 	@media (max-width: 800px) {

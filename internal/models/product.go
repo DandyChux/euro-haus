@@ -36,7 +36,7 @@ type Product struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
-	Prices []PriceInfo `gorm:"-" json:"prices,omitempty"`
+	Prices []PriceInfo `gorm:"foreignKey:StripeProductID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"prices,omitempty"`
 	BundleItems []BundleItem `gorm:"foreignKey:BundleProductID;references:ID" json:"bundle_items,omitempty"`
 }
 

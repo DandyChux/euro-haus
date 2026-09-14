@@ -70,6 +70,11 @@ func GetProducts(w http.ResponseWriter, r *http.Request) {
 	var products []models.Product
 
 	if err := query.
+		Preload("Prices", func(tx *gorm.DB) *gorm.DB {
+			return tx.
+				Where("active = ?", true).
+				Order("unit_amount ASC, id ASC")
+		}).
 		Order("created_at DESC").
 		Find(&products).
 		Error; err != nil {
@@ -470,6 +475,8 @@ func loadProductPrices(
 	err := services.GetDB().
 		WithContext(ctx).
 		Preload("IncludedProductLinks").
+		Preload("IncludedProductLinks.Product").
+		Preload("IncludedProductLinks.Product.Prices").
 		Where(
 			"stripe_product_id = ?",
 			product.ID,

@@ -4,34 +4,18 @@
 // see: https://zed.dev/docs/debugger
 [
 	{
-		"label": "Launch Chromee (TypeScript)",
-		"adapter": "JavaScript",
-		"type": "pwa-chrome",
-		"request": "launch",
-		"url": "http://localhost:3001",
-		"program": "$ZED_FILE",
-		"webRoot": "${ZED_WORKTREE_ROOT}",
-		"sourceMaps": true,
-		"build": {
-			"command": "npx",
-			"args": ["tsc"],
-		},
-	},
-	{
-		"label": "Launch Go (Delve)",
+		"label": "Go (Delve)",
 		"adapter": "Delve",
-		"program": "${ZED_WORKTREE_ROOT}/api/main.go",
+		"program": "${ZED_WORKTREE_ROOT}/cmd/server",
 		"request": "launch",
 		"mode": "debug",
-		"cwd": "${ZED_WORKTREE_ROOT}",
 	},
 	{
-		"label": "Launch Go w/ Air (HMR)",
+		"label": "Go (Air HMR)",
 		"adapter": "Delve",
-		"program": "${ZED_WORKTREE_ROOT}/cmd/server/main.go",
+		"program": "${ZED_WORKTREE_ROOT}/cmd/server",
 		"request": "launch",
 		"mode": "debug",
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"build": {
 			"command": "air",
 			"args": ["-c", "air.toml"],
