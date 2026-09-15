@@ -11,7 +11,13 @@ export type Fulfillment = {
 	shipping_address: string;
 	status: string;
 	type: string;
+	tracking_number?: string;
+	tracking_carrier?: string;
+	notes?: string;
 	created_at: string;
+	updated_at?: string;
+	shipped_at?: string;
+	delivered_at?: string;
 };
 
 export const load: PageLoad = async ({ fetch, url }) => {
