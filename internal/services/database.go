@@ -53,6 +53,7 @@ func InitDB() {
 		&models.SubmissionRequirementAnswer{},
 		&models.VehicleSubmission{},
 		&models.EmailJob{},
+		&models.CheckoutSession{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)

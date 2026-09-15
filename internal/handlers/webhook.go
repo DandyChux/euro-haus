@@ -767,6 +767,7 @@ func handleNonSubmissionCheckoutCompleted(
 	params := &stripe.CheckoutSessionParams{}
 	params.AddExpand("line_items.data.price.product")
 	params.AddExpand("shipping_cost.shipping_rate")
+	params.AddExpand("customer_details")
 
 	fullSession, err := session.Get(
 		checkoutSession.ID,
@@ -800,6 +801,7 @@ func handleNonSubmissionCheckoutCompleted(
 	for _, lineItem := range fullSession.LineItems.Data {
 		if lineItem.Price == nil ||
 			lineItem.Price.Product == nil {
+			log.Printf("Skipping checkout line item without expanded product for session %s", fullSession.ID)
 			continue
 		}
 
@@ -818,6 +820,8 @@ func handleNonSubmissionCheckoutCompleted(
 
 			storeTicketPurchase(*fullSession, *lineItem)
 		} else {
+			// Every non-event line item is eligible for fulfillment, including
+			// merchandise included with an event purchase.
 			hasPhysicalProducts = true
 		}
 
@@ -3549,7 +3553,10 @@ func createFulfillmentRecords(
 		}
 
 		if err := db.WithContext(ctx).Create(&fulfillment).Error; err != nil {
-			log.Printf("Failed to create fulfillment record for session %s, product %s: %v", fullSession.ID, productID, err)
+			if !errors.Is(err, gorm.ErrDuplicatedKey) {
+				return fmt.Errorf("create fulfillment for session %s, product %s: %w", fullSession.ID, productID, err)
+			}
+			log.Printf("Fulfillment already exists for session %s, product %s", fullSession.ID, productID)
 		}
 	}
 

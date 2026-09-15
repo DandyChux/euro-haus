@@ -28,6 +28,7 @@
 	let selectedAddOns = $state<Array<{ price_id: string; quantity: number }>>(
 		[],
 	);
+	let fulfillmentOption = $state<"shipping" | "pickup">("shipping");
 
 	let selectedPriceID = $state(
 		untrack(
@@ -168,6 +169,7 @@
 				price_id: price.id,
 				quantity: selectedQuantity,
 				addon_products: selectedAddOns,
+				fulfillment_option: fulfillmentOption,
 			});
 
 			if (!response.url) {
@@ -351,9 +353,29 @@
 			<section class="checkout-panel wrap" aria-live="polite">
 				<h2>Add event merchandise?</h2>
 				<p>
-					Choose any available merchandise before continuing to
-					Stripe.
+					Choose any available merchandise and how you want to receive
+					it before continuing to Stripe.
 				</p>
+
+				<fieldset class="fulfillment-choice">
+					<legend>How would you like to receive your order?</legend>
+					<label>
+						<input
+							type="radio"
+							bind:group={fulfillmentOption}
+							value="shipping"
+						/>
+						Ship to me
+					</label>
+					<label>
+						<input
+							type="radio"
+							bind:group={fulfillmentOption}
+							value="pickup"
+						/>
+						Pick up in person
+					</label>
+				</fieldset>
 
 				{#each data.linked_products as product (product.id)}
 					<label class="merchandise-option">

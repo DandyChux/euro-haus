@@ -11,6 +11,7 @@
 
 	let checkoutState = $state<"idle" | "loading" | "error">("idle");
 	let checkoutError = $state("");
+	let fulfillmentOption = $state<"shipping" | "pickup">("shipping");
 	let subtotal = $derived(cartSubtotal());
 
 	async function checkout() {
@@ -56,6 +57,7 @@
 					success_url: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
 					cancel_url: `${window.location.origin}/checkout/cancel`,
 					allow_promotion_codes: true,
+					fulfillment_option: fulfillmentOption,
 				}),
 			});
 
@@ -213,6 +215,48 @@
 
 			<aside class="rounded-3xl border border-white/10 bg-white/5 p-6">
 				<h2 class="text-xl font-medium">Order summary</h2>
+
+				<fieldset class="mt-6 space-y-3">
+					<legend class="text-sm font-medium"
+						>How would you like to receive your order?</legend
+					>
+					<label
+						class="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 p-4 transition hover:border-white/30"
+					>
+						<input
+							class="mt-1"
+							type="radio"
+							bind:group={fulfillmentOption}
+							value="shipping"
+						/>
+						<span>
+							<span class="block text-sm font-medium"
+								>Ship to me</span
+							>
+							<span class="mt-1 block text-xs"
+								>Address and shipping cost collected in Stripe.</span
+							>
+						</span>
+					</label>
+					<label
+						class="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 p-4 transition hover:border-white/30"
+					>
+						<input
+							class="mt-1"
+							type="radio"
+							bind:group={fulfillmentOption}
+							value="pickup"
+						/>
+						<span>
+							<span class="block text-sm font-medium"
+								>Pick up in person</span
+							>
+							<span class="mt-1 block text-xs"
+								>No shipping charge or address required.</span
+							>
+						</span>
+					</label>
+				</fieldset>
 				<dl class="mt-6 space-y-4 text-sm">
 					<div class="flex items-center justify-between">
 						<dt>Items</dt>

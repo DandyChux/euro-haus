@@ -248,6 +248,14 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.FulfillmentOption == "" {
+		req.FulfillmentOption = "shipping"
+	}
+	if req.FulfillmentOption != "shipping" && req.FulfillmentOption != "pickup" {
+		http.Error(w, "fulfillment_option must be shipping or pickup", http.StatusBadRequest)
+		return
+	}
+
 	metadata := make(map[string]string)
 
 	if req.EventID != "" {
@@ -266,11 +274,7 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Track fulfillment selection in session metadata
-	if req.FulfillmentOption != "" {
-		metadata["fulfillment_option"] = req.FulfillmentOption
-	} else {
-		metadata["fulfillment_option"] = "shipping"
-	}
+	metadata["fulfillment_option"] = req.FulfillmentOption
 
 	eventID := req.EventID
 
@@ -305,7 +309,8 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		Enabled: stripe.Bool(true),
 	}
 
-	// Check if we need to collect shipping address (for physical products)
+	// Shipping requires a configured Stripe shipping rate so Stripe can collect
+	// the address and charge the customer consistently.
 	needsShipping := hasPhysicalProducts(req.LineItems) || len(req.AddOns) > 0 || req.PriceID != ""
 
 	if needsShipping && req.FulfillmentOption == "shipping" {
@@ -316,7 +321,7 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		rateID, err := activeShippingRateID()
 		if err != nil {
 			log.Printf("Error resolving shipping rate: %v", err)
-			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
+			http.Error(w, "Shipping is temporarily unavailable: no active Stripe shipping rate is configured", http.StatusServiceUnavailable)
 			return
 		}
 		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{{
@@ -357,6 +362,7 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 				expires_at = EXCLUDED.expires_at
 		`, sess.ID, sessionJSON).Error
 		if err != nil {
+			// The Stripe session is still valid; metadata persistence is auxiliary.
 			log.Printf("Failed to store checkout session metadata: %v", err)
 		}
 
@@ -409,11 +415,12 @@ func GetCheckoutSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateEventCheckoutSessionRequest struct {
-	PriceID       string          `json:"price_id"`
-	Quantity      int64           `json:"quantity"`
-	EventID       string          `json:"event_id"`
-	AddOnProducts []CheckoutAddOn `json:"addon_products"`
-	CustomerEmail string          `json:"customer_email"`
+	PriceID           string          `json:"price_id"`
+	Quantity          int64           `json:"quantity"`
+	EventID           string          `json:"event_id"`
+	AddOnProducts     []CheckoutAddOn `json:"addon_products"`
+	CustomerEmail     string          `json:"customer_email"`
+	FulfillmentOption string          `json:"fulfillment_option"`
 }
 
 func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +428,13 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	var req CreateEventCheckoutSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if req.FulfillmentOption == "" {
+		req.FulfillmentOption = "shipping"
+	}
+	if req.FulfillmentOption != "shipping" && req.FulfillmentOption != "pickup" {
+		http.Error(w, "fulfillment_option must be shipping or pickup", http.StatusBadRequest)
 		return
 	}
 
@@ -535,9 +549,10 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	metadata := map[string]string{
-		"event_id": event.ID,
-		"price_id": req.PriceID,
-		"quantity": strconv.FormatInt(requestedQuantity, 10),
+		"event_id":           event.ID,
+		"price_id":           req.PriceID,
+		"quantity":           strconv.FormatInt(requestedQuantity, 10),
+		"fulfillment_option": req.FulfillmentOption,
 	}
 
 	params := &stripe.CheckoutSessionParams{
@@ -557,15 +572,15 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		params.CustomerEmail = stripe.String(req.CustomerEmail)
 	}
 
-	// If there are physical products, collect shipping address
-	if hasIncludedProducts || len(req.AddOnProducts) > 0 {
+	// Only shipping orders need an address and Stripe shipping rate.
+	if (hasIncludedProducts || len(req.AddOnProducts) > 0) && req.FulfillmentOption == "shipping" {
 		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
 		rateID, err := activeShippingRateID()
 		if err != nil {
 			log.Printf("Error resolving shipping rate: %v", err)
-			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
+			http.Error(w, "Shipping is temporarily unavailable: no active Stripe shipping rate is configured", http.StatusServiceUnavailable)
 			return
 		}
 		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{{
