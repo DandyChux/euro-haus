@@ -294,6 +294,7 @@ func main() {
 	).Methods("PUT")
 
 	// Fulfillment management (admin only)
+	api.Handle("/admin/fulfillments", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetFulfillments))).Methods("GET")
 	api.Handle("/admin/fulfillments/pending", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetPendingFulfillments))).Methods("GET")
 	api.Handle("/admin/fulfillments/{id}/status", middleware.RequireAdminAuth(http.HandlerFunc(handlers.UpdateFulfillmentStatus))).Methods("PUT")
 
@@ -302,10 +303,10 @@ func main() {
 	api.Handle("/admin/submissions/issues", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetAllSubmissionsWithIssues))).Methods("GET") // MOVED UP
 	api.Handle("/admin/submissions/{id}", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetEventSubmissions))).Methods("GET")
 	api.Handle(
-	    "/admin/submissions/{submissionId}/repair-payment",
-	    middleware.RequireAdminAuth(
-	        http.HandlerFunc(handlers.RepairSubmissionPayment),
-	    ),
+		"/admin/submissions/{submissionId}/repair-payment",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.RepairSubmissionPayment),
+		),
 	).Methods("POST")
 	api.Handle(
 		"/admin/submissions/{submissionId}/retry-approval",

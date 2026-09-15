@@ -41,23 +41,23 @@ type CheckoutCustomerAddress struct {
 }
 
 type CreateCheckoutSessionRequest struct {
-	LineItems           []LineItem `json:"line_items"`
-	Mode                string     `json:"mode"`
-	SuccessURL          string     `json:"success_url"`
-	CancelURL           string     `json:"cancel_url"`
-	AllowPromotionCodes bool       `json:"allow_promotion_codes"`
-	PromotionCode       string     `json:"promotion_code"`
-	CouponID            string     `json:"coupon_id"`
-	PriceID             string     `json:"price_id"`
-	Quantity            int64      `json:"quantity"`
+	LineItems           []LineItem      `json:"line_items"`
+	Mode                string          `json:"mode"`
+	SuccessURL          string          `json:"success_url"`
+	CancelURL           string          `json:"cancel_url"`
+	AllowPromotionCodes bool            `json:"allow_promotion_codes"`
+	PromotionCode       string          `json:"promotion_code"`
+	CouponID            string          `json:"coupon_id"`
+	PriceID             string          `json:"price_id"`
+	Quantity            int64           `json:"quantity"`
 	AddOns              []CheckoutAddOn `json:"add_ons"`
 
 	EventID       string `json:"event_id"`
 	CustomerEmail string `json:"customer_email"`
 
-	SelectedShippingRate string                    `json:"selected_shipping_rate"`
+	SelectedShippingRate string                   `json:"selected_shipping_rate"`
 	CustomerAddress      *CheckoutCustomerAddress `json:"customer_address,omitempty"`
-	FulfillmentOption    string                    `json:"fulfillment_option"`
+	FulfillmentOption    string                   `json:"fulfillment_option"`
 }
 
 type LineItem struct {
@@ -124,7 +124,6 @@ type ShippingRateResponse struct {
 	DeliveryEstimate string `json:"delivery_estimate,omitempty"`
 	Promotion        string `json:"promotion,omitempty"`
 }
-
 
 type TaxBreakdownItem struct {
 	Amount       int64  `json:"amount"`
@@ -290,8 +289,8 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		Mode:               stripe.String(stripe.CheckoutSessionModePayment),
 		LineItems:          lineItems,
 
-		SuccessURL: stripe.String(successURL),
-		CancelURL:  stripe.String(cancelURL),
+		SuccessURL:          stripe.String(successURL),
+		CancelURL:           stripe.String(cancelURL),
 		Metadata:            metadata,
 		AllowPromotionCodes: stripe.Bool(true),
 	}
@@ -314,29 +313,15 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
 
-		iter := shippingrate.List(&stripe.ShippingRateListParams{
-			Active: stripe.Bool(true),
-		})
-
-		shippingOptions := []*stripe.CheckoutSessionShippingOptionParams{}
-		for iter.Next() {
-			rate := iter.ShippingRate()
-
-			// Use the actual shipping rate ID from your dashboard
-			shippingOptions = append(shippingOptions, &stripe.CheckoutSessionShippingOptionParams{
-				ShippingRate: stripe.String(rate.ID), // Use existing rate ID, not ShippingRateData
-			})
-		}
-
-		if err := iter.Err(); err != nil {
-			log.Printf("Error fetching shipping rates: %v", err)
+		rateID, err := activeShippingRateID()
+		if err != nil {
+			log.Printf("Error resolving shipping rate: %v", err)
 			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
 			return
 		}
-
-		if len(shippingOptions) > 0 {
-			params.ShippingOptions = shippingOptions
-		}
+		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{{
+			ShippingRate: stripe.String(rateID),
+		}}
 	}
 
 	// Create the session
@@ -424,13 +409,12 @@ func GetCheckoutSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreateEventCheckoutSessionRequest struct {
-	PriceID       string         `json:"price_id"`
-	Quantity      int64          `json:"quantity"`
-	EventID       string         `json:"event_id"`
+	PriceID       string          `json:"price_id"`
+	Quantity      int64           `json:"quantity"`
+	EventID       string          `json:"event_id"`
 	AddOnProducts []CheckoutAddOn `json:"addon_products"`
-	CustomerEmail string         `json:"customer_email"`
+	CustomerEmail string          `json:"customer_email"`
 }
-
 
 func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	// Keep existing implementation but add AutomaticTax
@@ -578,20 +562,15 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 		params.ShippingAddressCollection = &stripe.CheckoutSessionShippingAddressCollectionParams{
 			AllowedCountries: stripe.StringSlice([]string{"US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE"}),
 		}
-		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{
-			{
-				ShippingRateData: &stripe.CheckoutSessionShippingOptionShippingRateDataParams{
-					Type: stripe.String("fixed_amount"),
-					FixedAmount: &stripe.CheckoutSessionShippingOptionShippingRateDataFixedAmountParams{
-						Amount:   stripe.Int64(999),
-						Currency: stripe.String("usd"),
-					},
-					DisplayName: stripe.String("Standard Shipping"),
-					TaxBehavior: stripe.String("exclusive"),
-					TaxCode:     stripe.String("txcd_92010001"),
-				},
-			},
+		rateID, err := activeShippingRateID()
+		if err != nil {
+			log.Printf("Error resolving shipping rate: %v", err)
+			http.Error(w, "Error configuring shipping", http.StatusInternalServerError)
+			return
 		}
+		params.ShippingOptions = []*stripe.CheckoutSessionShippingOptionParams{{
+			ShippingRate: stripe.String(rateID),
+		}}
 	}
 
 	sess, err := session.New(params)
@@ -602,10 +581,10 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"session_id":           sess.ID,
-		"url":                 sess.URL,
+		"session_id":            sess.ID,
+		"url":                   sess.URL,
 		"has_included_products": hasIncludedProducts,
-		"included_products":    includedProducts,
+		"included_products":     includedProducts,
 	})
 }
 
@@ -629,8 +608,14 @@ func CalculateTaxAndShipping(w http.ResponseWriter, r *http.Request) {
 		subtotal += item.Amount
 	}
 
-	// Determine shipping cost based on subtotal
-	shippingAmount := getShippingCost(subtotal)
+	// Keep the tax preview aligned with the single active Stripe shipping rate.
+	shippingAmount := int64(0)
+	if req.Shipping != nil {
+		shippingAmount = req.Shipping.Amount
+	}
+	if shippingAmount == 0 {
+		shippingAmount = getShippingCost(subtotal)
+	}
 
 	// Calculate tax
 	var taxAmount int64
@@ -712,52 +697,16 @@ func CalculateTaxAndShipping(w http.ResponseWriter, r *http.Request) {
 	// Build shipping rates response
 	shippingRates := []ShippingRateResponse{}
 
-	// Add appropriate shipping rates based on subtotal
-	if subtotal >= 7500 { // Free shipping for orders over $75
+	if rate, err := activeShippingRate(); err == nil {
 		shippingRates = append(shippingRates, ShippingRateResponse{
-			ID:          "free_shipping",
-			DisplayName: "FREE Standard Shipping (5-7 business days)",
-			Amount:      0,
-			Currency:    req.Currency,
-			// Metadata: map[string]string{
-			// 	"delivery_estimate": "5-7 business days",
-			// 	"promotion":         "free_shipping_over_75",
-			// },
-			DeliveryEstimate: "5-7 business days",
-			Promotion: "free_shipping_over_75",
+			ID:          rate.ID,
+			DisplayName: rate.DisplayName,
+			Amount:      rate.FixedAmount.Amount,
+			Currency:    string(rate.FixedAmount.Currency),
 		})
+	} else {
+		log.Printf("Error resolving shipping rate for preview: %v", err)
 	}
-
-	// Standard shipping (always available)
-	standardShippingAmount := int64(999) // $9.99
-	if subtotal >= 7500 {
-		standardShippingAmount = 0 // Free for orders over $75
-	}
-	shippingRates = append(shippingRates, ShippingRateResponse{
-		ID:          "standard_shipping",
-		DisplayName: "Standard Shipping (5-7 business days)",
-		Amount:      standardShippingAmount,
-		Currency:    req.Currency,
-		DeliveryEstimate: "5-7 business days",
-	})
-
-	// Express shipping
-	shippingRates = append(shippingRates, ShippingRateResponse{
-		ID:          "express_shipping",
-		DisplayName: "Express Shipping (2-3 business days)",
-		Amount:      1999, // $19.99
-		Currency:    req.Currency,
-		DeliveryEstimate: "2-3 business days",
-	})
-
-	// Overnight shipping
-	shippingRates = append(shippingRates, ShippingRateResponse{
-		ID:          "overnight_shipping",
-		DisplayName: "Overnight Shipping (1 business day)",
-		Amount:      3999, // $39.99
-		Currency:    req.Currency,
-		DeliveryEstimate: "1 business day",
-	})
 
 	// Build and send response
 	response := TaxCalculationResponse{
@@ -789,7 +738,30 @@ func calculateSimpleTax(amount int64) int64 {
 	return amount * 8 / 100
 }
 
-// GetShippingRates retrieves available shipping rates for the cart
+func activeShippingRate() (*stripe.ShippingRate, error) {
+	iter := shippingrate.List(&stripe.ShippingRateListParams{Active: stripe.Bool(true)})
+	var active []*stripe.ShippingRate
+	for iter.Next() {
+		active = append(active, iter.ShippingRate())
+	}
+	if err := iter.Err(); err != nil {
+		return nil, err
+	}
+	if len(active) != 1 {
+		return nil, fmt.Errorf("expected exactly one active Stripe shipping rate, found %d", len(active))
+	}
+	return active[0], nil
+}
+
+func activeShippingRateID() (string, error) {
+	rate, err := activeShippingRate()
+	if err != nil {
+		return "", err
+	}
+	return rate.ID, nil
+}
+
+// GetShippingRates retrieves the single active shipping rate configured in Stripe.
 func GetShippingRates(w http.ResponseWriter, r *http.Request) {
 	country := r.URL.Query().Get("country")
 	if country == "" {
@@ -804,35 +776,20 @@ func GetShippingRates(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// FETCH ACTUAL SHIPPING RATES FROM STRIPE
-	params := &stripe.ShippingRateListParams{
-		Active: stripe.Bool(true), // Only get active rates
-	}
-
-	iter := shippingrate.List(params)
-	rates := []ShippingRateResponse{}
-
-	for iter.Next() {
-		rate := iter.ShippingRate()
-
-		// Optionally filter based on metadata or other criteria
-		// For example, you could filter by delivery estimate or metadata tags
-		// Also consider subtotal for conditional free shipping
-		_ = subtotal // Use subtotal for future filtering logic
-
-		rates = append(rates, ShippingRateResponse{
-			ID:          rate.ID, // Use the actual Stripe rate ID (shr_xxxx)
-			DisplayName: rate.DisplayName,
-			Amount:      rate.FixedAmount.Amount,
-			Currency:    string(rate.FixedAmount.Currency),
-		})
-	}
-
-	if err := iter.Err(); err != nil {
-		log.Printf("Error fetching shipping rates: %v", err)
+	_ = country
+	_ = subtotal
+	rate, err := activeShippingRate()
+	if err != nil {
+		log.Printf("Error fetching shipping rate: %v", err)
 		http.Error(w, "Error fetching shipping rates", http.StatusInternalServerError)
 		return
 	}
+	rates := []ShippingRateResponse{{
+		ID:          rate.ID,
+		DisplayName: rate.DisplayName,
+		Amount:      rate.FixedAmount.Amount,
+		Currency:    string(rate.FixedAmount.Currency),
+	}}
 
 	// If no rates found, you can optionally fall back to hardcoded rates
 	// or return an error

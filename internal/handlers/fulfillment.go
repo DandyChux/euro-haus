@@ -45,6 +45,43 @@ type Fulfillment struct {
 	DeliveredAt     *time.Time        `json:"delivered_at,omitempty"`
 }
 
+func GetFulfillments(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	statusFilter := r.URL.Query().Get("status")
+	query := `
+		SELECT id, session_id, COALESCE(product_id, ''), COALESCE(product_name, ''),
+		       quantity, customer_email, COALESCE(customer_name, ''),
+		       COALESCE(shipping_address, ''), status, type,
+		       COALESCE(tracking_number, ''), COALESCE(tracking_carrier, ''),
+		       COALESCE(notes, ''), created_at, updated_at, shipped_at, delivered_at
+		FROM fulfillments`
+	args := []interface{}{}
+	if statusFilter != "" {
+		query += " WHERE status = ?"
+		args = append(args, statusFilter)
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := services.GetDB().WithContext(r.Context()).Raw(query, args...).Rows()
+	if err != nil {
+		http.Error(w, "Failed to retrieve fulfillments", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	fulfillments := []Fulfillment{}
+	for rows.Next() {
+		var f Fulfillment
+		var status string
+		if err := rows.Scan(&f.ID, &f.OrderID, &f.ProductID, &f.ProductName, &f.Quantity, &f.CustomerEmail, &f.CustomerName, &f.ShippingAddress, &status, &f.Type, &f.TrackingNumber, &f.TrackingCarrier, &f.Notes, &f.CreatedAt, &f.UpdatedAt, &f.ShippedAt, &f.DeliveredAt); err == nil {
+			f.Status = FulfillmentStatus(status)
+			fulfillments = append(fulfillments, f)
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"fulfillments": fulfillments, "total": len(fulfillments)})
+}
+
 func GetPendingFulfillments(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 

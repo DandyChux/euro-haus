@@ -591,11 +591,11 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 				).
 				Delete(&models.EmailJob{}).
 				Error; err != nil {
-					return fmt.Errorf(
-						"remove pending approval email: %w",
-						err,
-					)
-				}
+				return fmt.Errorf(
+					"remove pending approval email: %w",
+					err,
+				)
+			}
 
 			approvalMessage := buildApprovalWithTicketEmail(
 				submission,
@@ -889,7 +889,7 @@ func handleNonSubmissionCheckoutCompleted(
 		"Currency":         string(fullSession.Currency),
 		"HasEventTickets":  hasEventTickets,
 		"HasPhysicalItems": hasPhysicalProducts,
-		"IsPickup": isPickup,
+		"IsPickup":         isPickup,
 		"ShippingAddress":  formatShippingAddress(fullSession),
 	}
 
@@ -2914,11 +2914,11 @@ func buildParticipantTicketEmail(
 		BodyHTML:     ticketHTML,
 		Attachments: []services.EmailAttachment{
 			{
-				Filename: "ticket-qr.png",
+				Filename:    "ticket-qr.png",
 				ContentType: "image/png",
-				ContentID: "ticket-qr.png",
-				Inline: true,
-				Data: qrCode,
+				ContentID:   "ticket-qr.png",
+				Inline:      true,
+				Data:        qrCode,
 			},
 		},
 	}, nil
@@ -3535,7 +3535,7 @@ func createFulfillmentRecords(
 		}
 
 		fulfillment := models.Fulfillment{
-			ID:              fmt.Sprintf("ful_%s_%d", fullSession.ID, time.Now().UnixNano()),
+			ID:              fmt.Sprintf("ful_%s_%s", fullSession.ID, productID),
 			SessionID:       fullSession.ID,
 			ProductID:       productID,
 			ProductName:     productName,
