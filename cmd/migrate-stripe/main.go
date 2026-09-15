@@ -17,8 +17,7 @@ import (
 
 func main() {
 	days := flag.Int("days", 35, "number of days to scan backwards")
-	dryRun := flag.Bool("dry-run", true, "report imports without writing them")
-	includeUnmarked := flag.Bool("include-unmarked", false, "include paid sessions without event metadata")
+	dryRun := flag.Bool("dry-run", false, "report imports without writing them")
 	flag.Parse()
 
 	if *days < 1 {
@@ -60,16 +59,36 @@ func main() {
 			skipped++
 			continue
 		}
-		if !*includeUnmarked && strings.TrimSpace(sess.Metadata["event_id"]) == "" {
-			log.Printf("skip unmarked session=%s; rerun with --include-unmarked=true if appropriate", sess.ID)
-			skipped++
-			continue
-		}
 
 		items := sess.LineItems
 		if items == nil || len(items.Data) == 0 {
 			log.Printf("skip session=%s: no line items returned", sess.ID)
 			failed++
+			continue
+		}
+
+		allEventProducts := true
+		for _, item := range items.Data {
+			if item == nil || item.Price == nil || item.Price.Product == nil {
+				allEventProducts = false
+				break
+			}
+			var eventCount int64
+			if err := services.GetDB().WithContext(ctx).Model(&models.Event{}).
+				Where("stripe_product_id = ?", item.Price.Product.ID).
+				Count(&eventCount).Error; err != nil {
+				log.Printf("check event product session=%s product=%s: %v", sess.ID, item.Price.Product.ID, err)
+				failed++
+				allEventProducts = false
+				break
+			}
+			if eventCount == 0 {
+				allEventProducts = false
+			}
+		}
+		if allEventProducts {
+			log.Printf("skip event session=%s: all line items belong to events", sess.ID)
+			skipped++
 			continue
 		}
 
