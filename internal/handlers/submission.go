@@ -1596,7 +1596,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(vehicle_modifications, ''), images, status, submitted_at,
 			       COALESCE(checkout_session_id, ''), COALESCE(payment_intent_id, ''),
 			       checkout_completed, COALESCE(price_id, ''),
-			       COALESCE(price_nickname, ''), requires_approval, awaiting_approval,
+			       requires_approval, awaiting_approval,
 			       approval_email_sent, COALESCE(ticket_id, ''), ticket_email_sent,
 			       payment_captured
 			FROM vehicle_submissions
@@ -1622,7 +1622,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			&imagesJSON, &submission.Status, &submittedAt,
 			&submission.CheckoutSessionID, &submission.PaymentIntentID,
 			&submission.CheckoutCompleted, &submission.PriceID,
-			&submission.PriceNickname, &submission.RequiresApproval,
+			&submission.RequiresApproval,
 			&submission.AwaitingApproval, &submission.ApprovalEmailSent,
 			&submission.TicketID, &submission.TicketEmailSent,
 			&submission.PaymentCaptured,
