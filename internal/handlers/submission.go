@@ -1613,23 +1613,33 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 		var submission models.VehicleSubmissionDTO
 		var imagesJSON []byte
 		var submittedAt time.Time
+		var eventID, participantPhone, vehicleYear, vehicleMake, vehicleModel string
+		var vehicleDescription, vehicleModifications, checkoutSessionID, paymentIntentID string
+		var priceID, ticketID string
 		if err := rows.Scan(
-			&submission.ID, &submission.EventID, &submission.EventSlug,
+			&submission.ID, &eventID, &submission.EventSlug,
 			&submission.ParticipantName, &submission.ParticipantEmail,
-			&submission.ParticipantPhone, &submission.VehicleYear,
-			&submission.VehicleMake, &submission.VehicleModel,
-			&submission.VehicleDescription, &submission.VehicleModifications,
-			&imagesJSON, &submission.Status, &submittedAt,
-			&submission.CheckoutSessionID, &submission.PaymentIntentID,
-			&submission.CheckoutCompleted, &submission.PriceID,
-			&submission.RequiresApproval,
+			&participantPhone, &vehicleYear, &vehicleMake, &vehicleModel,
+			&vehicleDescription, &vehicleModifications, &imagesJSON,
+			&submission.Status, &submittedAt, &checkoutSessionID, &paymentIntentID,
+			&submission.CheckoutCompleted, &priceID, &submission.RequiresApproval,
 			&submission.AwaitingApproval, &submission.ApprovalEmailSent,
-			&submission.TicketID, &submission.TicketEmailSent,
-			&submission.PaymentCaptured,
+			&ticketID, &submission.TicketEmailSent, &submission.PaymentCaptured,
 		); err != nil {
 			log.Printf("Error loading submission row: %v", err)
 			continue
 		}
+		submission.EventID = eventID
+		submission.ParticipantPhone = participantPhone
+		submission.VehicleYear = vehicleYear
+		submission.VehicleMake = vehicleMake
+		submission.VehicleModel = vehicleModel
+		submission.VehicleDescription = vehicleDescription
+		submission.VehicleModifications = vehicleModifications
+		submission.CheckoutSessionID = checkoutSessionID
+		submission.PaymentIntentID = paymentIntentID
+		submission.PriceID = priceID
+		submission.TicketID = ticketID
 		submission.SubmittedAt = submittedAt.Format(time.RFC3339)
 		if len(imagesJSON) > 0 {
 			_ = json.Unmarshal(imagesJSON, &submission.Images)
