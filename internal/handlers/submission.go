@@ -1595,10 +1595,10 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(vehicle_model, ''), COALESCE(vehicle_description, ''),
 			       COALESCE(vehicle_modifications, ''), images, status, submitted_at,
 			       COALESCE(checkout_session_id, ''), COALESCE(payment_intent_id, ''),
-			       checkout_completed, COALESCE(price_id, ''),
-			       requires_approval, awaiting_approval,
-			       approval_email_sent, COALESCE(ticket_id, ''), ticket_email_sent,
-			       payment_captured
+			       COALESCE(checkout_completed, FALSE), COALESCE(price_id, ''),
+			       COALESCE(requires_approval, FALSE), COALESCE(awaiting_approval, FALSE),
+			       COALESCE(approval_email_sent, FALSE), COALESCE(ticket_id, ''),
+			       COALESCE(ticket_email_sent, FALSE), COALESCE(payment_captured, FALSE)
 			FROM vehicle_submissions
 		ORDER BY submitted_at DESC
 		`).Rows()
@@ -1609,6 +1609,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	issueSubmissions := make([]models.VehicleSubmissionDTO, 0)
+	scanErrors := 0
 	for rows.Next() {
 		var submission models.VehicleSubmissionDTO
 		var imagesJSON []byte
@@ -1626,6 +1627,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			&submission.AwaitingApproval, &submission.ApprovalEmailSent,
 			&ticketID, &submission.TicketEmailSent, &submission.PaymentCaptured,
 		); err != nil {
+			scanErrors++
 			log.Printf("Error loading submission row: %v", err)
 			continue
 		}
@@ -1663,9 +1665,13 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 
 			// Payment provider state is checked on demand by the page action.
 			// Stored flags are sufficient to identify records needing review.
-			if !submission.CheckoutCompleted {
+			if !submission.CheckoutCompleted || !hasPaymentData {
 				hasIssue = true
-				issues = appendUniqueIssue(issues, "payment_incomplete")
+				if !hasPaymentData {
+					issues = appendUniqueIssue(issues, "no_payment")
+				} else {
+					issues = appendUniqueIssue(issues, "payment_incomplete")
+				}
 			}
 			if submission.PaymentIntentID != "" && !submission.PaymentCaptured {
 				hasIssue = true
@@ -1746,6 +1752,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"submissions": issueSubmissions,
 		"total":       len(issueSubmissions),
+		"scan_errors": scanErrors,
 	})
 }
 
