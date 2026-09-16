@@ -5,6 +5,7 @@ export type Fulfillment = {
 	id: string;
 	order_id: string;
 	product_name: string;
+	price_nickname?: string;
 	quantity: number;
 	customer_email: string;
 	customer_name: string;

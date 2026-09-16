@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
 	import apiClient from "$lib/api";
-	import type { Fulfillment } from "./+page";
+	import type { Fulfillment as OrderFulfillment } from "./+page";
 
 	let { data } = $props();
 	let savingId = $state<string | null>(null);
@@ -33,7 +33,7 @@
 		});
 	}
 
-	function fulfillmentMethod(order: Fulfillment): "Shipping" | "Pickup" {
+	function fulfillmentMethod(order: OrderFulfillment): "Shipping" | "Pickup" {
 		return order.notes?.toLowerCase().includes("pickup")
 			? "Pickup"
 			: "Shipping";
@@ -51,7 +51,7 @@
 		return "border-white/10 bg-white/5";
 	}
 
-	async function updateOrder(order: Fulfillment, event: SubmitEvent) {
+	async function updateOrder(order: OrderFulfillment, event: SubmitEvent) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget as HTMLFormElement);
 		savingId = order.id;
@@ -184,7 +184,14 @@
 								><div class="font-medium">
 									{order.product_name || "Product"}
 								</div>
-								<div class="text-xs text-muted-foreground">
+								{#if order.price_nickname}
+									<div
+										class="mt-1 inline-flex rounded-full border border-white/10 px-2 py-1 text-xs text-muted-foreground"
+									>
+										Size: {order.price_nickname}
+									</div>
+								{/if}
+								<div class="mt-1 text-xs text-muted-foreground">
 									Qty {order.quantity} · {order.type}
 								</div></td
 							>

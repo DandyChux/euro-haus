@@ -30,6 +30,7 @@ type Fulfillment struct {
 	OrderID         string            `json:"order_id"`
 	ProductID       string            `json:"product_id"`
 	ProductName     string            `json:"product_name"`
+	PriceNickname   string            `json:"price_nickname,omitempty"`
 	Quantity        int               `json:"quantity"`
 	CustomerEmail   string            `json:"customer_email"`
 	CustomerName    string            `json:"customer_name"`
@@ -51,7 +52,7 @@ func GetFulfillments(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	query := `
 		SELECT id, session_id, COALESCE(product_id, ''), COALESCE(product_name, ''),
-		       quantity, customer_email, COALESCE(customer_name, ''),
+		       COALESCE(price_nickname, ''), quantity, customer_email, COALESCE(customer_name, ''),
 		       COALESCE(shipping_address, ''), status, type,
 		       COALESCE(tracking_number, ''), COALESCE(tracking_carrier, ''),
 		       COALESCE(notes, ''), created_at, updated_at, shipped_at, delivered_at
@@ -74,7 +75,7 @@ func GetFulfillments(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var f Fulfillment
 		var status string
-		if err := rows.Scan(&f.ID, &f.OrderID, &f.ProductID, &f.ProductName, &f.Quantity, &f.CustomerEmail, &f.CustomerName, &f.ShippingAddress, &status, &f.Type, &f.TrackingNumber, &f.TrackingCarrier, &f.Notes, &f.CreatedAt, &f.UpdatedAt, &f.ShippedAt, &f.DeliveredAt); err == nil {
+		if err := rows.Scan(&f.ID, &f.OrderID, &f.ProductID, &f.ProductName, &f.PriceNickname, &f.Quantity, &f.CustomerEmail, &f.CustomerName, &f.ShippingAddress, &status, &f.Type, &f.TrackingNumber, &f.TrackingCarrier, &f.Notes, &f.CreatedAt, &f.UpdatedAt, &f.ShippedAt, &f.DeliveredAt); err == nil {
 			f.Status = FulfillmentStatus(status)
 			fulfillments = append(fulfillments, f)
 		}
@@ -88,7 +89,7 @@ func GetPendingFulfillments(w http.ResponseWriter, r *http.Request) {
 	db := services.GetDB()
 	rows, err := db.WithContext(r.Context()).Raw(`
 		SELECT id, session_id, COALESCE(product_id, ''), COALESCE(product_name, ''),
-		       quantity, customer_email, COALESCE(customer_name, ''),
+		       COALESCE(price_nickname, ''), quantity, customer_email, COALESCE(customer_name, ''),
 		       COALESCE(shipping_address, ''), status, type,
 		       COALESCE(tracking_number, ''), COALESCE(tracking_carrier, ''),
 		       COALESCE(notes, ''), created_at, updated_at, shipped_at, delivered_at
@@ -108,7 +109,7 @@ func GetPendingFulfillments(w http.ResponseWriter, r *http.Request) {
 		var status string
 		if err := rows.Scan(
 			&f.ID, &f.OrderID, &f.ProductID, &f.ProductName,
-			&f.Quantity, &f.CustomerEmail, &f.CustomerName,
+			&f.PriceNickname, &f.Quantity, &f.CustomerEmail, &f.CustomerName,
 			&f.ShippingAddress, &status, &f.Type,
 			&f.TrackingNumber, &f.TrackingCarrier,
 			&f.Notes, &f.CreatedAt, &f.UpdatedAt, &f.ShippedAt, &f.DeliveredAt,
@@ -155,11 +156,11 @@ func UpdateFulfillmentStatus(w http.ResponseWriter, r *http.Request) {
 	var status string
 	err := tx.Raw(`
 		SELECT id, session_id, COALESCE(product_id, ''), COALESCE(product_name, ''),
-		       quantity, customer_email, COALESCE(customer_name, ''), status, type
+		       COALESCE(price_nickname, ''), quantity, customer_email, COALESCE(customer_name, ''), status, type
 		FROM fulfillments WHERE id = ? FOR UPDATE
 	`, id).Row().Scan(
 		&existing.ID, &existing.OrderID, &existing.ProductID, &existing.ProductName,
-		&existing.Quantity, &existing.CustomerEmail, &existing.CustomerName, &status, &existing.Type,
+		&existing.PriceNickname, &existing.Quantity, &existing.CustomerEmail, &existing.CustomerName, &status, &existing.Type,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Fulfillment not found", http.StatusNotFound)

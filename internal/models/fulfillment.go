@@ -17,6 +17,7 @@ type Fulfillment struct {
 	SessionID       string `gorm:"not null;index:idx_fulfillments_session"`
 	ProductID       string
 	ProductName     string
+	PriceNickname   string
 	CustomerEmail   string `gorm:"not null;index:idx_fulfillments_email"`
 	CustomerName    string
 	ShippingAddress string
@@ -39,33 +40,33 @@ func (Fulfillment) TableName() string { return "fulfillments" }
 // ------------------------------------------------------------
 type PriceInfo struct {
 	// Stripe Price ID.
-	ID string `gorm:"primaryKey;column:id" json:"id"`
+	ID              string `gorm:"primaryKey;column:id" json:"id"`
 	StripeProductID string `gorm:"not null;index" json:"stripe_product_id"`
 
-	UnitAmount int64  `gorm:"not null" json:"unit_amount"`
-	Currency   string `gorm:"not null" json:"currency"`
-	Nickname   string `gorm:"column:nickname" json:"nickname,omitempty"`
+	UnitAmount  int64  `gorm:"not null" json:"unit_amount"`
+	Currency    string `gorm:"not null" json:"currency"`
+	Nickname    string `gorm:"column:nickname" json:"nickname,omitempty"`
 	Description string `gorm:"column:description" json:"description,omitempty"`
 
 	Active bool `gorm:"not null;default:true;index" json:"active"`
 
 	Features datatypes.JSON `gorm:"type:jsonb;not null;default:'[]'::jsonb" json:"features"`
 
-	IsDefault bool `gorm:"column:is_default;not null;default:false" json:"default"`
-	IsMostPopular bool `gorm:"column:is_most_popular;not null;default:false" json:"most_popular"`
-	RequiresApproval bool `gorm:"column:requires_approval;not null;default:false" json:"requires_approval"`
+	IsDefault          bool `gorm:"column:is_default;not null;default:false" json:"default"`
+	IsMostPopular      bool `gorm:"column:is_most_popular;not null;default:false" json:"most_popular"`
+	RequiresApproval   bool `gorm:"column:requires_approval;not null;default:false" json:"requires_approval"`
 	RequiresSubmission bool `gorm:"column:requires_submission;not null;default:false" json:"requires_submission"`
 
-	Quantity int `gorm:"column:quantity" json:"quantity"`
-	StockQuantity *int `gorm:"column:stock_quantity" json:"stock_quantity"`
-	Size string `gorm:"column:size" json:"size,omitempty"`
-	Color string `gorm:"column:color" json:"color,omitempty"`
+	Quantity      int    `gorm:"column:quantity" json:"quantity"`
+	StockQuantity *int   `gorm:"column:stock_quantity" json:"stock_quantity"`
+	Size          string `gorm:"column:size" json:"size,omitempty"`
+	Color         string `gorm:"column:color" json:"color,omitempty"`
 
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 
 	IncludedProductLinks []PriceIncludedProduct `gorm:"foreignKey:PriceID;references:ID" json:"included_products,omitempty"`
-	Requirements []PriceRequirement `gorm:"foreignKey:PriceID;references:ID" json:"requirements,omitempty"`
+	Requirements         []PriceRequirement     `gorm:"foreignKey:PriceID;references:ID" json:"requirements,omitempty"`
 }
 
 func (PriceInfo) TableName() string {
@@ -73,7 +74,7 @@ func (PriceInfo) TableName() string {
 }
 
 type PriceIncludedProduct struct {
-	PriceID string `gorm:"type:varchar(255);primaryKey;index"`
+	PriceID   string `gorm:"type:varchar(255);primaryKey;index"`
 	ProductID string `gorm:"type:varchar(255);primaryKey;index"`
 
 	Quantity  int `gorm:"not null;default:1"`

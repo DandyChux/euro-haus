@@ -3543,6 +3543,7 @@ func createFulfillmentRecords(
 			SessionID:       fullSession.ID,
 			ProductID:       productID,
 			ProductName:     productName,
+			PriceNickname:   lineItem.Price.Nickname,
 			CustomerEmail:   customerEmail,
 			CustomerName:    customerName,
 			ShippingAddress: formattedAddress,

@@ -127,6 +127,7 @@ func main() {
 				SessionID:       sess.ID,
 				ProductID:       productID,
 				ProductName:     productName,
+				PriceNickname:   item.Price.Nickname,
 				CustomerEmail:   customerEmail(sess),
 				CustomerName:    customerName(sess),
 				ShippingAddress: shippingAddress(sess),
