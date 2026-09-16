@@ -617,7 +617,7 @@
 						<div>
 							<p class="text-muted-foreground">Ticket Type</p>
 							<p class="font-medium">
-								{submission.price_nickname}
+								{submission.ticket_type || "N/A"}
 							</p>
 						</div>
 					</div>

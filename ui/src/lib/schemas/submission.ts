@@ -83,6 +83,7 @@ export const vehicleSubmissionSchema = z.object({
 	approval_email_resent: z.boolean(),
 
 	ticket_id: z.string().optional(),
+	ticket_type: z.string().optional(),
 	ticket_created_at: z.string().optional(),
 	ticket_email_sent: z.boolean(),
 	ticket_email_sent_at: z.string().optional(),
