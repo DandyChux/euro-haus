@@ -1589,20 +1589,20 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	db := services.GetDB()
 
 	rows, err := db.WithContext(r.Context()).Raw(`
-			SELECT id, event_id, COALESCE(event_slug, ''), participant_name,
-			       participant_email, COALESCE(participant_phone, ''),
-			       COALESCE(vehicle_year, ''), COALESCE(vehicle_make, ''),
-			       COALESCE(vehicle_model, ''), COALESCE(vehicle_description, ''),
-			       COALESCE(vehicle_modifications, ''), images, status, submitted_at,
-			       COALESCE(checkout_session_id, ''), COALESCE(payment_intent_id, ''),
-			       COALESCE(checkout_completed, FALSE), COALESCE(price_id, ''),
-			       COALESCE(requires_approval, FALSE), COALESCE(awaiting_approval, FALSE),
-			       COALESCE(approval_email_sent, FALSE), COALESCE(ticket_id, ''),
-			       COALESCE(ticket_email_sent, FALSE), COALESCE(payment_captured, FALSE),
+			SELECT vs.id, vs.event_id, COALESCE(vs.event_slug, ''), vs.participant_name,
+			       vs.participant_email, COALESCE(vs.participant_phone, ''),
+			       COALESCE(vs.vehicle_year, ''), COALESCE(vs.vehicle_make, ''),
+			       COALESCE(vs.vehicle_model, ''), COALESCE(vs.vehicle_description, ''),
+			       COALESCE(vs.vehicle_modifications, ''), vs.images, vs.status, vs.submitted_at,
+			       COALESCE(vs.checkout_session_id, ''), COALESCE(vs.payment_intent_id, ''),
+			       COALESCE(vs.checkout_completed, FALSE), COALESCE(vs.price_id, ''),
+			       COALESCE(vs.requires_approval, FALSE), COALESCE(vs.awaiting_approval, FALSE),
+			       COALESCE(vs.approval_email_sent, FALSE), COALESCE(vs.ticket_id, ''),
+			       COALESCE(vs.ticket_email_sent, FALSE), COALESCE(vs.payment_captured, FALSE),
 			       COALESCE(t.ticket_type, '')
 			FROM vehicle_submissions vs
 			LEFT JOIN tickets t ON t.token = vs.ticket_id
-		ORDER BY submitted_at DESC
+			ORDER BY vs.submitted_at DESC
 		`).Rows()
 	if err != nil {
 		http.Error(w, "Failed to retrieve submissions", http.StatusInternalServerError)
