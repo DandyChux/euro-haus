@@ -181,7 +181,7 @@ func validateSubmittedAnswers(
 
 		result = append(result, models.SubmissionRequirementAnswer{
 			RequirementID: requirement.ID,
-			Value:        value,
+			Value:         value,
 		})
 	}
 
@@ -190,7 +190,7 @@ func validateSubmittedAnswers(
 
 type SubmittedRequirementAnswer struct {
 	RequirementID string `json:"requirement_id"`
-	Value any `json:"value"`
+	Value         any    `json:"value"`
 }
 
 func CreateSubmission(w http.ResponseWriter, r *http.Request) {
@@ -819,7 +819,7 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"submission":        updatedSubmission,
+		"submission":         updatedSubmission,
 		"payment_captured":   paymentCaptured,
 		"payment_processing": paymentProcessing,
 		"message":            "Submission approved successfully.",
@@ -975,11 +975,11 @@ func GetPendingSubmissionsCount(w http.ResponseWriter, r *http.Request) {
 // CreateParticipantCheckout creates a checkout session with manual capture for submissions
 func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SubmissionID  string `json:"submission_id"`
-		PriceID       string `json:"price_id"`
-		EventName     string `json:"event_name"`
-		Quantity      int64  `json:"quantity"`
-		PromotionCode string `json:"promotion_code"`
+		SubmissionID  string          `json:"submission_id"`
+		PriceID       string          `json:"price_id"`
+		EventName     string          `json:"event_name"`
+		Quantity      int64           `json:"quantity"`
+		PromotionCode string          `json:"promotion_code"`
 		AddOnProducts []CheckoutAddOn `json:"addon_products"`
 	}
 
@@ -1138,7 +1138,7 @@ func CreateParticipantCheckout(w http.ResponseWriter, r *http.Request) {
 		params.LineItems = append(
 			params.LineItems,
 			&stripe.CheckoutSessionLineItemParams{
-				Price: stripe.String(addon.PriceID),
+				Price:    stripe.String(addon.PriceID),
 				Quantity: stripe.Int64(addon.Quantity),
 			},
 		)
@@ -1375,7 +1375,7 @@ func CreateSubmissionPayment(
 			"event_name":    req.EventName,
 			"type":          "participant_registration",
 		},
-		CustomerEmail: stripe.String(submission.ParticipantEmail),
+		CustomerEmail:       stripe.String(submission.ParticipantEmail),
 		AllowPromotionCodes: stripe.Bool(true),
 	}
 
@@ -1460,7 +1460,7 @@ func CreateSubmissionPayment(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
+		"success": true,
 		"message": "Payment link email queued successfully",
 	}); err != nil {
 		log.Printf(
@@ -1582,14 +1582,25 @@ func ResendApprovalEmail(
 	}
 }
 
-// GetAllSubmissionsWithIssues retrieves submissions that have issues
+// GetAllSubmissionsWithIssues retrieves submissions that have issues.
+// It intentionally uses stored checkout/payment state only. Stripe verification
+// is performed by the explicit per-submission payment action, not during page load.
 func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	db := services.GetDB()
 
 	rows, err := db.WithContext(r.Context()).Raw(`
-			SELECT id
+			SELECT id, event_id, COALESCE(event_slug, ''), participant_name,
+			       participant_email, COALESCE(participant_phone, ''),
+			       COALESCE(vehicle_year, ''), COALESCE(vehicle_make, ''),
+			       COALESCE(vehicle_model, ''), COALESCE(vehicle_description, ''),
+			       COALESCE(vehicle_modifications, ''), images, status, submitted_at,
+			       COALESCE(checkout_session_id, ''), COALESCE(payment_intent_id, ''),
+			       checkout_completed, COALESCE(price_id, ''),
+			       COALESCE(price_nickname, ''), requires_approval, awaiting_approval,
+			       approval_email_sent, COALESCE(ticket_id, ''), ticket_email_sent,
+			       payment_captured
 			FROM vehicle_submissions
-			ORDER BY submitted_at DESC
+		ORDER BY submitted_at DESC
 		`).Rows()
 	if err != nil {
 		http.Error(w, "Failed to retrieve submissions", http.StatusInternalServerError)
@@ -1597,27 +1608,35 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var submissionIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			submissionIDs = append(submissionIDs, id)
-		}
-	}
-
-	fmt.Printf("Found %d submissions in Postgres", len(submissionIDs))
-
 	issueSubmissions := make([]models.VehicleSubmissionDTO, 0)
-
-	for _, submissionID := range submissionIDs {
-		submission, err := getSubmissionByID(submissionID)
-		if err != nil {
-			log.Printf("Error loading submission %s: %v", submissionID, err)
+	for rows.Next() {
+		var submission models.VehicleSubmissionDTO
+		var imagesJSON []byte
+		var submittedAt time.Time
+		if err := rows.Scan(
+			&submission.ID, &submission.EventID, &submission.EventSlug,
+			&submission.ParticipantName, &submission.ParticipantEmail,
+			&submission.ParticipantPhone, &submission.VehicleYear,
+			&submission.VehicleMake, &submission.VehicleModel,
+			&submission.VehicleDescription, &submission.VehicleModifications,
+			&imagesJSON, &submission.Status, &submittedAt,
+			&submission.CheckoutSessionID, &submission.PaymentIntentID,
+			&submission.CheckoutCompleted, &submission.PriceID,
+			&submission.PriceNickname, &submission.RequiresApproval,
+			&submission.AwaitingApproval, &submission.ApprovalEmailSent,
+			&submission.TicketID, &submission.TicketEmailSent,
+			&submission.PaymentCaptured,
+		); err != nil {
+			log.Printf("Error loading submission row: %v", err)
 			continue
 		}
+		submission.SubmittedAt = submittedAt.Format(time.RFC3339)
+		if len(imagesJSON) > 0 {
+			_ = json.Unmarshal(imagesJSON, &submission.Images)
+		}
 
+		submissionID := submission.ID
 		status := submission.Status
-		fmt.Printf("Processing submission %s with status %s", submissionID, status)
 
 		hasIssue := false
 		issues := []string{}
@@ -1632,99 +1651,15 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				issues = appendUniqueIssue(issues, "no_payment")
 			}
 
-			sessionPaid := false
-			sessionExpired := false
-
-			if submission.CheckoutSessionID != "" {
-				params := &stripe.CheckoutSessionParams{}
-				params.AddExpand("payment_intent")
-
-				sess, sessionErr := session.Get(
-					submission.CheckoutSessionID,
-					params,
-				)
-
-				if sessionErr != nil {
-					hasIssue = true
-					issues = appendUniqueIssue(issues, "orphaned_checkout_session")
-
-					log.Printf(
-						"Checkout session %s for submission %s cannot be retrieved: %v",
-						submission.CheckoutSessionID,
-						submissionID,
-						sessionErr,
-					)
-				} else {
-					sessionPaid = sess.PaymentStatus == "paid"
-
-					if submission.PaymentIntentID == "" &&
-						sess.PaymentIntent != nil &&
-						sess.PaymentIntent.ID != "" {
-						hasIssue = true
-						issues = appendUniqueIssue(issues, "missing_payment_intent")
-					}
-
-					if !sessionPaid {
-						sessionExpired = sess.ExpiresAt > 0 && sess.ExpiresAt < time.Now().Unix()
-					}
-				}
-			}
-
-			if submission.PaymentIntentID != "" {
-				pi, paymentErr := paymentintent.Get(
-					submission.PaymentIntentID,
-					nil,
-				)
-
-				if paymentErr != nil {
-					hasIssue = true
-					issues = appendUniqueIssue(issues, "payment_intent_check_failed")
-
-					log.Printf(
-						"PaymentIntent %s for submission %s cannot be retrieved: %v",
-						submission.PaymentIntentID,
-						submissionID,
-						paymentErr,
-					)
-				} else {
-					switch pi.Status {
-					case stripe.PaymentIntentStatusSucceeded:
-						sessionPaid = true
-
-					case stripe.PaymentIntentStatusRequiresCapture:
-						if pi.CaptureMethod != stripe.PaymentIntentCaptureMethodManual {
-							hasIssue = true
-							issues = appendUniqueIssue(
-								issues,
-								"capture_method_mismatch",
-							)
-						} else if !submission.PaymentCaptured {
-							hasIssue = true
-							issues = appendUniqueIssue(
-								issues,
-								"payment_requires_capture",
-							)
-						}
-
-					case stripe.PaymentIntentStatusProcessing:
-						hasIssue = true
-						issues = appendUniqueIssue(issues, "payment_processing")
-
-					default:
-						hasIssue = true
-						issues = appendUniqueIssue(issues, "payment_not_succeeded")
-					}
-				}
-			}
-
-			if !sessionPaid {
+			// Payment provider state is checked on demand by the page action.
+			// Stored flags are sufficient to identify records needing review.
+			if !submission.CheckoutCompleted {
 				hasIssue = true
-
-				if sessionExpired {
-					issues = appendUniqueIssue(issues, "payment_expired")
-				} else {
-					issues = appendUniqueIssue(issues, "payment_incomplete")
-				}
+				issues = appendUniqueIssue(issues, "payment_incomplete")
+			}
+			if submission.PaymentIntentID != "" && !submission.PaymentCaptured {
+				hasIssue = true
+				issues = appendUniqueIssue(issues, "payment_requires_capture")
 			}
 
 			if submission.CheckoutSessionID == "" &&
@@ -1733,7 +1668,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				issues = appendUniqueIssue(issues, "incomplete_payment_process")
 			}
 
-			if sessionPaid &&
+			if submission.CheckoutCompleted &&
 				submission.TicketID == "" &&
 				submission.PaymentIntentID != "" {
 				hasIssue = true
@@ -1783,7 +1718,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			r.URL.Query().Get("include_id") == submissionID
 
 		if hasIssue || forceInclude {
-			issueSubmission := *submission
+			issueSubmission := submission
 
 			issueSubmission.Issues = issues
 			issueSubmission.HasIssue = hasIssue
@@ -2126,9 +2061,9 @@ func RepairSubmissionPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := map[string]interface{}{
-		"checkout_session_id":  sessionID,
-		"payment_intent_id":    paymentIntentID,
-		"checkout_completed":   true,
+		"checkout_session_id":   sessionID,
+		"payment_intent_id":     paymentIntentID,
+		"checkout_completed":    true,
 		"checkout_completed_at": gorm.Expr("COALESCE(checkout_completed_at, NOW())"),
 	}
 
@@ -2173,10 +2108,10 @@ func RepairSubmissionPayment(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"submission":       updated,
-		"payment_intent_id": paymentIntentID,
+		"submission":          updated,
+		"payment_intent_id":   paymentIntentID,
 		"checkout_session_id": sessionID,
-		"stripe_status":     pi.Status,
+		"stripe_status":       pi.Status,
 	})
 }
 
@@ -2230,11 +2165,11 @@ func RetrySubmissionApproval(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":          true,
-		"message":          "Approval/payment processing retried",
-		"paymentCaptured":  paymentCaptured,
+		"success":           true,
+		"message":           "Approval/payment processing retried",
+		"paymentCaptured":   paymentCaptured,
 		"paymentProcessing": paymentProcessing,
-		"submission":       updatedSubmission,
+		"submission":        updatedSubmission,
 	})
 }
 
@@ -2800,17 +2735,17 @@ func buildSubmissionPaymentLinkEmail(
 			submission.VehicleMake,
 			submission.VehicleModel,
 		),
-		"EventName":   submission.EventSlug,
-		"PaymentLink": paymentLink,
+		"EventName":    submission.EventSlug,
+		"PaymentLink":  paymentLink,
 		"SubmissionID": submission.ID,
 	}
 
 	return &services.EmailMessage{
-		To:         []string{submission.ParticipantEmail},
-		Subject:    "Complete Your Euro Haus Registration",
-		TemplateID: "submission-payment-link",
+		To:           []string{submission.ParticipantEmail},
+		Subject:      "Complete Your Euro Haus Registration",
+		TemplateID:   "submission-payment-link",
 		TemplateData: emailData,
-		BodyHTML: generateSubmissionPaymentLinkHTML(emailData),
+		BodyHTML:     generateSubmissionPaymentLinkHTML(emailData),
 	}
 }
 
@@ -2849,7 +2784,7 @@ func getSubmissionByID(
 		ticketCreatedAt     sql.NullTime
 		ticketEmailSentAt   sql.NullTime
 		emailUpdatedAt      sql.NullTime
-		recoveryLastSentAt sql.NullTime
+		recoveryLastSentAt  sql.NullTime
 		refundIssuedAt      sql.NullTime
 		revokedAt           sql.NullTime
 	)
@@ -3010,8 +2945,8 @@ func getSubmissionByID(
 		Order("created_at ASC, id ASC").
 		Find(&answers).
 		Error; err != nil {
-			return nil, err
-		}
+		return nil, err
+	}
 
 	var requirementAnswers []models.SubmissionRequirementAnswerDTO
 
