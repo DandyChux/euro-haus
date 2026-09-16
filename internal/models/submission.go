@@ -32,20 +32,20 @@ type VehicleSubmission struct {
 	Status      string    `gorm:"not null;default:pending;index:idx_submissions_status"`
 	SubmittedAt time.Time `gorm:"not null"`
 
-	ReviewedAt   *time.Time
-	ReviewedBy   string
-	ReviewNotes  string
+	ReviewedAt  *time.Time
+	ReviewedBy  string
+	ReviewNotes string
 
-	CheckoutSessionID  string     `gorm:"index:idx_submissions_checkout"`
-	CheckoutCreatedAt  *time.Time
-	CheckoutCompleted  bool
+	CheckoutSessionID   string `gorm:"index:idx_submissions_checkout"`
+	CheckoutCreatedAt   *time.Time
+	CheckoutCompleted   bool
 	CheckoutCompletedAt *time.Time
 
-	PaymentIntentID             string
+	PaymentIntentID                string
 	PaymentSucceededBeforeApproval bool
-	PaymentSucceededAt          *time.Time
-	PaymentCaptured             bool
-	PaymentCapturedAt           *time.Time
+	PaymentSucceededAt             *time.Time
+	PaymentCaptured                bool
+	PaymentCapturedAt              *time.Time
 
 	PriceID       string `gorm:"index:idx_submissions_price"`
 	PromotionCode string
@@ -57,7 +57,7 @@ type VehicleSubmission struct {
 	ApprovalEmailSentAt *time.Time
 	ApprovalEmailResent bool
 
-	TicketID          string     `gorm:"index:idx_submissions_ticket"`
+	TicketID          string `gorm:"index:idx_submissions_ticket"`
 	TicketCreatedAt   *time.Time
 	TicketEmailSent   bool
 	TicketEmailSentAt *time.Time
@@ -66,12 +66,12 @@ type VehicleSubmission struct {
 	PreviousEmail    string
 	EmailResentCount int
 
-	RecoveryAttempts  int        `gorm:"not null;default:0"`
+	RecoveryAttempts   int `gorm:"not null;default:0"`
 	RecoveryLastSentAt *time.Time
 
-	RefundID        string
-	RefundAmount    float64
-	RefundIssuedAt  *time.Time
+	RefundID       string
+	RefundAmount   float64
+	RefundIssuedAt *time.Time
 
 	RevokedAt        *time.Time
 	RevokedBy        string
@@ -172,17 +172,17 @@ func (a *SubmissionRequirementAnswer) BeforeCreate(tx *gorm.DB) error {
 // Data Transfer Objects
 
 type VehicleSubmissionDTO struct {
-	ID                   string   `json:"id"`
-	EventID              string   `json:"event_id"`
-	EventSlug            string   `json:"event_slug"`
-	ParticipantName      string   `json:"participant_name"`
-	ParticipantEmail     string   `json:"participant_email"`
-	ParticipantPhone     string   `json:"participant_phone,omitempty"`
-	VehicleYear          string   `json:"vehicle_year"`
-	VehicleMake          string   `json:"vehicle_make"`
-	VehicleModel         string   `json:"vehicle_model"`
-	VehicleDescription   string   `json:"vehicle_description,omitempty"`
-	VehicleModifications string   `json:"vehicle_modifications,omitempty"`
+	ID                   string `json:"id"`
+	EventID              string `json:"event_id"`
+	EventSlug            string `json:"event_slug"`
+	ParticipantName      string `json:"participant_name"`
+	ParticipantEmail     string `json:"participant_email"`
+	ParticipantPhone     string `json:"participant_phone,omitempty"`
+	VehicleYear          string `json:"vehicle_year"`
+	VehicleMake          string `json:"vehicle_make"`
+	VehicleModel         string `json:"vehicle_model"`
+	VehicleDescription   string `json:"vehicle_description,omitempty"`
+	VehicleModifications string `json:"vehicle_modifications,omitempty"`
 
 	Images []string `json:"images"`
 
@@ -216,6 +216,7 @@ type VehicleSubmissionDTO struct {
 	ApprovalEmailResent bool   `json:"approval_email_resent"`
 
 	TicketID          string `json:"ticket_id,omitempty"`
+	TicketType        string `json:"ticket_type,omitempty"`
 	TicketCreatedAt   string `json:"ticket_created_at,omitempty"`
 	TicketEmailSent   bool   `json:"ticket_email_sent"`
 	TicketEmailSentAt string `json:"ticket_email_sent_at,omitempty"`
@@ -226,7 +227,7 @@ type VehicleSubmissionDTO struct {
 	PreviousEmail    string `json:"previous_email,omitempty"`
 	EmailResentCount int    `json:"email_resent_count"`
 
-	RecoveryAttempts  int    `json:"recovery_attempts"`
+	RecoveryAttempts   int    `json:"recovery_attempts"`
 	RecoveryLastSentAt string `json:"recovery_last_sent_at,omitempty"`
 
 	RefundID       string  `json:"refund_id,omitempty"`
@@ -237,7 +238,7 @@ type VehicleSubmissionDTO struct {
 	RevokedBy        string `json:"revoked_by,omitempty"`
 	RevocationReason string `json:"revocation_reason,omitempty"`
 
-	Issues  []string `json:"issues,omitempty"`
+	Issues   []string `json:"issues,omitempty"`
 	HasIssue bool     `json:"has_issue,omitempty"`
 
 	RequirementAnswers []SubmissionRequirementAnswerDTO `json:"requirement_answers,omitempty"`

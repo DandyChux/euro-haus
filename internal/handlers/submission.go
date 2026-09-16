@@ -1598,8 +1598,10 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(checkout_completed, FALSE), COALESCE(price_id, ''),
 			       COALESCE(requires_approval, FALSE), COALESCE(awaiting_approval, FALSE),
 			       COALESCE(approval_email_sent, FALSE), COALESCE(ticket_id, ''),
-			       COALESCE(ticket_email_sent, FALSE), COALESCE(payment_captured, FALSE)
-			FROM vehicle_submissions
+			       COALESCE(ticket_email_sent, FALSE), COALESCE(payment_captured, FALSE),
+			       COALESCE(t.ticket_type, '')
+			FROM vehicle_submissions vs
+			LEFT JOIN tickets t ON t.token = vs.ticket_id
 		ORDER BY submitted_at DESC
 		`).Rows()
 	if err != nil {
@@ -1626,6 +1628,7 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 			&submission.CheckoutCompleted, &priceID, &submission.RequiresApproval,
 			&submission.AwaitingApproval, &submission.ApprovalEmailSent,
 			&ticketID, &submission.TicketEmailSent, &submission.PaymentCaptured,
+			&submission.TicketType,
 		); err != nil {
 			scanErrors++
 			log.Printf("Error loading submission row: %v", err)
@@ -1673,7 +1676,9 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 					issues = appendUniqueIssue(issues, "payment_incomplete")
 				}
 			}
-			if submission.PaymentIntentID != "" && !submission.PaymentCaptured {
+			if submission.PaymentIntentID != "" &&
+				!submission.PaymentCaptured &&
+				submission.AwaitingApproval {
 				hasIssue = true
 				issues = appendUniqueIssue(issues, "payment_requires_capture")
 			}
