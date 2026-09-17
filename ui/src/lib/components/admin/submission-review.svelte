@@ -40,7 +40,13 @@
 	);
 
 	const reviewedSubmissions = $derived(
-		submissions.filter((submission) => submission.status !== "pending"),
+		submissions
+			.filter((submission) => submission.status !== "pending")
+			.sort(
+				(a, b) =>
+					new Date(a.reviewed_at ?? "").getTime() -
+					new Date(b.reviewed_at ?? "").getTime(),
+			),
 	);
 
 	const visibleSubmissions = $derived(
@@ -222,11 +228,19 @@
 							{/if}
 
 							<p class="text-sm text-muted-foreground">
-								Submitted
+								Submitted:
 								{formatDate(submission.submitted_at, {
 									dateStyle: "medium",
 								})}
 							</p>
+							{#if submission.reviewed_at}
+								<p class="text-sm text-muted-foreground">
+									Reviewed:
+									{formatDate(submission.reviewed_at, {
+										dateStyle: "medium",
+									})}
+								</p>
+							{/if}
 						</Card>
 					</button>
 				{/each}
