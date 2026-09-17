@@ -44,8 +44,8 @@
 			.filter((submission) => submission.status !== "pending")
 			.sort(
 				(a, b) =>
-					new Date(a.reviewed_at ?? "").getTime() -
-					new Date(b.reviewed_at ?? "").getTime(),
+					new Date(b.reviewed_at ?? "").getTime() -
+					new Date(a.reviewed_at ?? "").getTime(),
 			),
 	);
 
