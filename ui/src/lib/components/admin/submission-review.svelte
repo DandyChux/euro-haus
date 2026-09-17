@@ -5,7 +5,7 @@
 	import type { VehicleSubmission } from "$lib/schemas/submission";
 
 	import { Button } from "$lib/components/ui/button";
-	import { Card } from "$lib/components/ui/card";
+	import * as Card from "$lib/components/ui/card";
 	import { Textarea } from "$lib/components/ui/textarea";
 	import { formatDate } from "$lib/utils";
 
@@ -169,9 +169,9 @@
 		</div>
 
 		{#if visibleSubmissions.length === 0}
-			<Card class="p-8 text-center text-muted-foreground">
+			<Card.Root class="p-8 text-center text-muted-foreground">
 				No {activeTab} submissions.
-			</Card>
+			</Card.Root>
 		{:else}
 			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSubmissions as submission (submission.id)}
@@ -180,10 +180,12 @@
 						class="text-left"
 						onclick={() => openSubmission(submission)}
 					>
-						<Card
+						<Card.Root
 							class="h-full space-y-4 p-4 transition-shadow hover:shadow-lg"
 						>
-							<div class="flex items-start justify-between gap-3">
+							<Card.Header
+								class="flex items-start justify-between gap-3"
+							>
 								<div>
 									<h3 class="font-semibold">
 										{submission.vehicle_year}
@@ -201,7 +203,7 @@
 								>
 									{submission.status}
 								</span>
-							</div>
+							</Card.Header>
 
 							{#if submission.price_nickname || submission.price_id}
 								<p class="text-sm text-muted-foreground">
@@ -227,21 +229,23 @@
 								</div>
 							{/if}
 
-							<p class="text-sm text-muted-foreground">
-								Submitted:
-								{formatDate(submission.submitted_at, {
-									dateStyle: "medium",
-								})}
-							</p>
-							{#if submission.reviewed_at}
+							<Card.Footer>
 								<p class="text-sm text-muted-foreground">
-									Reviewed:
-									{formatDate(submission.reviewed_at, {
+									Submitted:
+									{formatDate(submission.submitted_at, {
 										dateStyle: "medium",
 									})}
 								</p>
-							{/if}
-						</Card>
+								{#if submission.reviewed_at}
+									<p class="text-sm text-muted-foreground">
+										Reviewed:
+										{formatDate(submission.reviewed_at, {
+											dateStyle: "medium",
+										})}
+									</p>
+								{/if}
+							</Card.Footer>
+						</Card.Root>
 					</button>
 				{/each}
 			</div>
@@ -254,7 +258,7 @@
 		class="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-4 backdrop-blur-sm"
 	>
 		<div class="mx-auto max-w-4xl">
-			<Card class="space-y-6 p-5">
+			<Card.Root class="space-y-6 p-5">
 				<div class="flex items-start justify-between gap-4">
 					<div>
 						<h2 class="text-xl font-semibold">
@@ -491,7 +495,7 @@
 						</div>
 					{/if}
 				{/if}
-			</Card>
+			</Card.Root>
 		</div>
 	</div>
 {/if}
