@@ -175,78 +175,73 @@
 		{:else}
 			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSubmissions as submission (submission.id)}
-					<button
-						type="button"
-						class="text-left"
+					<Card.Root
+						class="h-full space-y-4 p-4 transition-shadow hover:shadow-lg text-left"
 						onclick={() => openSubmission(submission)}
 					>
-						<Card.Root
-							class="h-full space-y-4 p-4 transition-shadow hover:shadow-lg"
+						<Card.Header
+							class="flex items-start justify-between gap-3"
 						>
-							<Card.Header
-								class="flex items-start justify-between gap-3"
-							>
-								<div>
-									<h3 class="font-semibold">
-										{submission.vehicle_year}
-										{submission.vehicle_make}
-										{submission.vehicle_model}
-									</h3>
+							<div>
+								<h3 class="font-semibold">
+									{submission.vehicle_year}
+									{submission.vehicle_make}
+									{submission.vehicle_model}
+								</h3>
 
-									<p class="text-sm text-muted-foreground">
-										{submission.participant_name}
-									</p>
-								</div>
-
-								<span
-									class="rounded-full border px-2 py-1 text-xs capitalize"
-								>
-									{submission.status}
-								</span>
-							</Card.Header>
-
-							{#if submission.price_nickname || submission.price_id}
 								<p class="text-sm text-muted-foreground">
-									Tier:
-									<span class="font-medium text-foreground">
-										{submission.price_nickname ||
-											submission.price_id}
-									</span>
+									{submission.participant_name}
 								</p>
-							{/if}
+							</div>
 
-							{#if submission.images[0]}
-								<img
-									src={submission.images[0]}
-									alt={`${submission.vehicle_make} ${submission.vehicle_model}`}
-									class="aspect-video w-full rounded-lg object-cover"
-								/>
-							{:else}
-								<div
-									class="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
-								>
-									No vehicle images
-								</div>
-							{/if}
+							<span
+								class="rounded-full border px-2 py-1 text-xs capitalize"
+							>
+								{submission.status}
+							</span>
+						</Card.Header>
 
-							<Card.Footer>
+						{#if submission.price_nickname || submission.price_id}
+							<p class="text-sm text-muted-foreground">
+								Tier:
+								<span class="font-medium text-foreground">
+									{submission.price_nickname ||
+										submission.price_id}
+								</span>
+							</p>
+						{/if}
+
+						{#if submission.images[0]}
+							<img
+								src={submission.images[0]}
+								alt={`${submission.vehicle_make} ${submission.vehicle_model}`}
+								class="aspect-video w-full rounded-lg object-cover"
+							/>
+						{:else}
+							<div
+								class="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+							>
+								No vehicle images
+							</div>
+						{/if}
+
+						<Card.Footer class="flex-col items-start">
+							<p class="text-sm text-muted-foreground">
+								Submitted:
+								{formatDate(submission.submitted_at, {
+									dateStyle: "medium",
+								})}
+							</p>
+							{#if submission.reviewed_at}
 								<p class="text-sm text-muted-foreground">
-									Submitted:
-									{formatDate(submission.submitted_at, {
+									Reviewed:
+									{formatDate(submission.reviewed_at, {
 										dateStyle: "medium",
 									})}
 								</p>
-								{#if submission.reviewed_at}
-									<p class="text-sm text-muted-foreground">
-										Reviewed:
-										{formatDate(submission.reviewed_at, {
-											dateStyle: "medium",
-										})}
-									</p>
-								{/if}
-							</Card.Footer>
-						</Card.Root>
-					</button>
+							{/if}
+						</Card.Footer>
+					</Card.Root>
 				{/each}
 			</div>
 		{/if}
