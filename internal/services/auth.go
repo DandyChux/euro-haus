@@ -37,9 +37,9 @@ func validatePassword(password string) error {
 
 // AuthService handles authentication operations
 type AuthService struct {
-	tokenTTL      time.Duration
-	memoryStore   map[string]models.TokenData
-	mutex         sync.RWMutex
+	tokenTTL    time.Duration
+	memoryStore map[string]models.TokenData
+	mutex       sync.RWMutex
 }
 
 func NewAuthService() *AuthService {
@@ -265,6 +265,63 @@ func (s *AuthService) CleanupExpiredTokens() {
 	}
 }
 
+type UpdateUserRequest struct {
+	Email    string
+	Name     string
+	Password string
+}
+
+func (s *AuthService) UpdateUser(ctx context.Context, userID uuid.UUID, req *UpdateUserRequest) (*models.User, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+
+	name := strings.TrimSpace(req.Name)
+	email := normalizeEmail(req.Email)
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+
+	db := GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database is not initialized")
+	}
+
+	var user models.User
+	if err := db.WithContext(ctx).Where("id = ? AND active = TRUE", userID).First(&user).Error; err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{"name": name, "email": email}
+	if strings.TrimSpace(req.Password) != "" {
+		if err := validatePassword(req.Password); err != nil {
+			return nil, err
+		}
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		updates["password_hash"] = string(passwordHash)
+	}
+
+	if err := db.WithContext(ctx).Model(&user).Updates(updates).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+			return nil, ErrEmailAlreadyExists
+		}
+		return nil, fmt.Errorf("update user: %w", err)
+	}
+
+	user.Name = name
+	user.Email = email
+	if passwordHash, ok := updates["password_hash"].(string); ok {
+		user.PasswordHash = passwordHash
+	}
+	return &user, nil
+}
+
 func (s *AuthService) createUser(
 	ctx context.Context,
 	req *RegisterRequest,
@@ -391,8 +448,8 @@ func (s *AuthService) generateToken(
 	}
 
 	db := GetDB()
-		if db != nil {
-			err := db.WithContext(ctx).Exec(`
+	if db != nil {
+		err := db.WithContext(ctx).Exec(`
 				INSERT INTO auth_tokens
 					(token, user_id, created_at, expires_at)
 				VALUES (
@@ -403,15 +460,15 @@ func (s *AuthService) generateToken(
 				)
 				ON CONFLICT (token) DO NOTHING
 			`,
-				token,
-				storedUserID.String(),
-				now,
-				expiresAt,
-			).Error
-			if err != nil {
-				return "", fmt.Errorf("store auth token: %w", err)
-			}
+			token,
+			storedUserID.String(),
+			now,
+			expiresAt,
+		).Error
+		if err != nil {
+			return "", fmt.Errorf("store auth token: %w", err)
 		}
+	}
 
 	s.mutex.Lock()
 	s.memoryStore[token] = tokenData

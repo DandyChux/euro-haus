@@ -203,6 +203,17 @@ func main() {
 	// -----------------------------------------
 
 	api.Handle(
+		"/admin/profile",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.UpdateAdminProfile),
+		),
+	).Methods("PUT")
+	api.Handle(
+		"/admin/profile",
+		middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetAdminProfile)),
+	).Methods("GET")
+
+	api.Handle(
 		"/admin/users",
 		middleware.RequireAdminAuth(
 			http.HandlerFunc(handlers.CreateAdminUser),

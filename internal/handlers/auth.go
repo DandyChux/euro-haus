@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dandychux/euro-haus/internal/middleware"
 	"github.com/dandychux/euro-haus/internal/services"
 )
 
@@ -167,6 +168,48 @@ func ValidateToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(response)
 	}
+}
+
+func GetAdminProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": user.ID, "email": user.Email, "name": user.Name})
+}
+
+func UpdateAdminProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req services.UpdateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := services.GetAuthService().UpdateUser(r.Context(), user.ID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrEmailAlreadyExists):
+			writeJSON(w, http.StatusConflict, map[string]string{"message": "An account with that email already exists"})
+		case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "password must"):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		default:
+			log.Printf("Failed to update admin profile: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "Unable to update profile"})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"id": updated.ID, "email": updated.Email, "name": updated.Name})
 }
 
 func CreateAdminUser(w http.ResponseWriter, r *http.Request) {
