@@ -21,11 +21,13 @@
 			validators: zod4Client(updateProfileSchema),
 			async onUpdate({ form }) {
 				if (!form.valid) return;
+
 				try {
 					const response = await apiClient.put<{
 						name: string;
 						email: string;
 					}>("/admin/profile", form.data);
+
 					profile = { name: response.name, email: response.email };
 					$formProfileData.password = "";
 					toast.success("Profile updated.");
@@ -51,6 +53,7 @@
 				name: string;
 				email: string;
 			}>("/admin/profile");
+
 			profile = { name: response.name, email: response.email };
 			$formProfileData.name = response.name;
 			$formProfileData.email = response.email;
