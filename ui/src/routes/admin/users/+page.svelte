@@ -118,73 +118,125 @@
 	<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 		<Card.Root class="rounded-3xl border p-6">
 			<div class="mb-6">
-				<p class="text-sm uppercase tracking-[0.2em] text-muted-foreground">Your account</p>
+				<p
+					class="text-sm uppercase tracking-[0.2em] text-muted-foreground"
+				>
+					Your account
+				</p>
 				<h2 class="mt-2 text-xl font-semibold">Update your details</h2>
-				<p class="mt-1 text-sm text-muted-foreground">Leave the password blank to keep it unchanged.</p>
+				<p class="mt-1 text-sm text-muted-foreground">
+					Leave the password blank to keep it unchanged.
+				</p>
 			</div>
 			<form method="POST" use:enhanceProfile class="space-y-6">
-				<Form.Field form={profileForm} name="name"><Form.Control>{#snippet children({ props })}<Form.Label>Name</Form.Label><Input {...props} bind:value={$formProfileData.name} autocomplete="name" />{/snippet}</Form.Control><Form.FieldErrors /></Form.Field>
-				<Form.Field form={profileForm} name="email"><Form.Control>{#snippet children({ props })}<Form.Label>Email</Form.Label><Input {...props} type="email" bind:value={$formProfileData.email} autocomplete="email" />{/snippet}</Form.Control><Form.FieldErrors /></Form.Field>
-				<Form.Field form={profileForm} name="password"><Form.Control>{#snippet children({ props })}<Form.Label>New password</Form.Label><Input {...props} type="password" bind:value={$formProfileData.password} autocomplete="new-password" placeholder="Leave blank to keep current password" />{/snippet}</Form.Control><Form.FieldErrors /></Form.Field>
-				<Button type="submit" disabled={$profileSubmitting || profileLoading}>{$profileSubmitting ? "Saving…" : "Save profile"}</Button>
+				<Form.Field form={profileForm} name="name"
+					><Form.Control
+						>{#snippet children({ props })}<Form.Label
+								>Name</Form.Label
+							><Input
+								{...props}
+								bind:value={$formProfileData.name}
+								autocomplete="name"
+							/>{/snippet}</Form.Control
+					><Form.FieldErrors /></Form.Field
+				>
+				<Form.Field form={profileForm} name="email"
+					><Form.Control
+						>{#snippet children({ props })}<Form.Label
+								>Email</Form.Label
+							><Input
+								{...props}
+								type="email"
+								bind:value={$formProfileData.email}
+								autocomplete="email"
+							/>{/snippet}</Form.Control
+					><Form.FieldErrors /></Form.Field
+				>
+				<Form.Field form={profileForm} name="password"
+					><Form.Control
+						>{#snippet children({ props })}<Form.Label
+								>New password</Form.Label
+							><Input
+								{...props}
+								type="password"
+								bind:value={$formProfileData.password}
+								autocomplete="new-password"
+								placeholder="Leave blank to keep current password"
+							/>{/snippet}</Form.Control
+					><Form.FieldErrors /></Form.Field
+				>
+				<Button
+					type="submit"
+					disabled={$profileSubmitting || profileLoading}
+					>{$profileSubmitting ? "Saving…" : "Save profile"}</Button
+				>
 			</form>
 		</Card.Root>
 
 		<Card.Root class="rounded-3xl border p-6">
+			<div class="mb-6">
+				<p
+					class="text-sm uppercase tracking-[0.2em] text-muted-foreground"
+				>
+					Administrator access
+				</p>
+				<h2 class="mt-2 text-xl font-semibold">Create administrator</h2>
+				<p class="mt-1 text-sm text-muted-foreground">
+					Add another administrator account.
+				</p>
+			</div>
+			<form method="POST" use:enhance class="space-y-6">
+				<Form.Field {form} name="name">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Name</Form.Label>
+							<Input
+								{...props}
+								bind:value={$formData.name}
+								autocomplete="name"
+							/>
+						{/snippet}
+					</Form.Control>
 
-		<Card.Root class="rounded-3xl border p-6">
-		<form method="POST" use:enhance class="space-y-6">
-			<Form.Field {form} name="name">
-				<Form.Control>
-					{#snippet children({ props })}
-						<Form.Label>Name</Form.Label>
-						<Input
-							{...props}
-							bind:value={$formData.name}
-							autocomplete="name"
-						/>
-					{/snippet}
-				</Form.Control>
+					<Form.FieldErrors />
+				</Form.Field>
 
-				<Form.FieldErrors />
-			</Form.Field>
+				<Form.Field {form} name="email">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Email</Form.Label>
+							<Input
+								{...props}
+								type="email"
+								bind:value={$formData.email}
+								autocomplete="email"
+							/>
+						{/snippet}
+					</Form.Control>
 
-			<Form.Field {form} name="email">
-				<Form.Control>
-					{#snippet children({ props })}
-						<Form.Label>Email</Form.Label>
-						<Input
-							{...props}
-							type="email"
-							bind:value={$formData.email}
-							autocomplete="email"
-						/>
-					{/snippet}
-				</Form.Control>
+					<Form.FieldErrors />
+				</Form.Field>
 
-				<Form.FieldErrors />
-			</Form.Field>
+				<Form.Field {form} name="password">
+					<Form.Control>
+						{#snippet children({ props })}
+							<Form.Label>Temporary password</Form.Label>
+							<Input
+								{...props}
+								type="password"
+								bind:value={$formData.password}
+								autocomplete="new-password"
+							/>
+						{/snippet}
+					</Form.Control>
 
-			<Form.Field {form} name="password">
-				<Form.Control>
-					{#snippet children({ props })}
-						<Form.Label>Temporary password</Form.Label>
-						<Input
-							{...props}
-							type="password"
-							bind:value={$formData.password}
-							autocomplete="new-password"
-						/>
-					{/snippet}
-				</Form.Control>
+					<Form.FieldErrors />
+				</Form.Field>
 
-				<Form.FieldErrors />
-			</Form.Field>
-
-			<Button type="submit" disabled={$submitting}>
-				{$submitting ? "Creating…" : "Create administrator"}
-			</Button>
-		</form>
+				<Button type="submit" disabled={$submitting}>
+					{$submitting ? "Creating…" : "Create administrator"}
+				</Button>
+			</form>
 		</Card.Root>
 	</div>
 </section>
