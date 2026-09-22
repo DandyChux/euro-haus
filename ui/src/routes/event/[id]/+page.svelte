@@ -134,14 +134,6 @@
 	}
 
 	function openCheckout(): void {
-		const submissionSection = document.getElementById(
-			"submission-form-section",
-		);
-		submissionSection?.scrollIntoView({
-			behavior: "smooth",
-			block: "start",
-		});
-
 		const price = getSelectedPrice();
 
 		if (!price?.id) {
@@ -153,6 +145,15 @@
 
 			pendingPrice = price;
 			checkoutState = "submission";
+
+			const submissionSection = document.getElementById(
+				"submission-form-section",
+			);
+			submissionSection?.scrollIntoView({
+				behavior: "smooth",
+				block: "start",
+			});
+
 			return;
 		}
 
