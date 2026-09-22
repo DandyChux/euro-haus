@@ -134,6 +134,14 @@
 	}
 
 	function openCheckout(): void {
+		const submissionSection = document.getElementById(
+			"submission-form-section",
+		);
+		submissionSection?.scrollIntoView({
+			behavior: "smooth",
+			block: "start",
+		});
+
 		const price = getSelectedPrice();
 
 		if (!price?.id) {
@@ -331,7 +339,11 @@
 		{/if}
 
 		{#if checkoutState === "submission" && pendingPrice}
-			<section class="submission-panel wrap" aria-live="polite">
+			<section
+				class="submission-panel wrap"
+				id="submission-form-section"
+				aria-live="polite"
+			>
 				{#key pendingPrice.id}
 					<VehicleSubmissionForm
 						data={{ form: data.form }}
