@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from "svelte";
+	import { tick, untrack } from "svelte";
 	import { resolve } from "$app/paths";
 	import Newsletter from "$lib/components/newsletter.svelte";
 	import { Button } from "$lib/components/ui/button";
@@ -133,7 +133,7 @@
 		};
 	}
 
-	function openCheckout(): void {
+	async function openCheckout(): Promise<void> {
 		const price = getSelectedPrice();
 
 		if (!price?.id) {
@@ -146,10 +146,9 @@
 			pendingPrice = price;
 			checkoutState = "submission";
 
-			const submissionSection = document.getElementById(
-				"submission-form-section",
-			);
-			submissionSection?.scrollIntoView({
+			await tick();
+
+			document.getElementById("submission-form-section")?.scrollIntoView({
 				behavior: "smooth",
 				block: "start",
 			});
