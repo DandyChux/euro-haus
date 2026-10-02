@@ -3519,6 +3519,23 @@ func createFulfillmentRecordsForSession(
 		return fmt.Errorf("expand checkout session %s: %w", sessionID, err)
 	}
 
+	if fullSession.LineItems == nil || len(fullSession.LineItems.Data) == 0 {
+		lineItems, lineErr := session.ListLineItems(sessionID, &stripe.CheckoutSessionLineItemListParams{
+			CheckoutSession: stripe.String(sessionID),
+		})
+		if lineErr != nil {
+			return fmt.Errorf("list line items for session %s: %w", sessionID, lineErr)
+		}
+		fullSession.LineItems = lineItems
+	}
+
+	log.Printf(
+		"Fulfillment processing session=%s event=%s line_items=%d",
+		sessionID,
+		eventID,
+		len(fullSession.LineItems.Data),
+	)
+
 	isPickup := false
 	if fullSession.Metadata != nil && fullSession.Metadata["fulfillment_option"] == "pickup" {
 		isPickup = true
