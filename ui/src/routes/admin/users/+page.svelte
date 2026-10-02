@@ -113,7 +113,7 @@
 	<div>
 		<p class="text-sm uppercase tracking-[0.3em]">Administration</p>
 		<h1 class="mt-2 text-3xl font-semibold">Users & profile</h1>
-		<p class="mt-2 text-sm text-muted-foreground">
+		<p class="mt-2 text-sm text-muted">
 			Manage administrator access and your account details.
 		</p>
 	</div>
@@ -121,13 +121,11 @@
 	<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 		<Card.Root class="rounded-3xl border p-6">
 			<div class="mb-6">
-				<p
-					class="text-sm uppercase tracking-[0.2em] text-muted-foreground"
-				>
+				<p class="text-sm uppercase tracking-[0.2em] text-muted">
 					Your account
 				</p>
 				<h2 class="mt-2 text-xl font-semibold">Update your details</h2>
-				<p class="mt-1 text-sm text-muted-foreground">
+				<p class="mt-1 text-sm text-muted">
 					Leave the password blank to keep it unchanged.
 				</p>
 			</div>
@@ -178,13 +176,11 @@
 
 		<Card.Root class="rounded-3xl border p-6">
 			<div class="mb-6">
-				<p
-					class="text-sm uppercase tracking-[0.2em] text-muted-foreground"
-				>
+				<p class="text-sm uppercase tracking-[0.2em] text-muted">
 					Administrator access
 				</p>
 				<h2 class="mt-2 text-xl font-semibold">Create administrator</h2>
-				<p class="mt-1 text-sm text-muted-foreground">
+				<p class="mt-1 text-sm text-muted">
 					Add another administrator account.
 				</p>
 			</div>

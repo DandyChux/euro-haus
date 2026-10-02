@@ -77,23 +77,30 @@
 		background:
 			radial-gradient(
 				circle at 20% 15%,
-				rgb(218 185 126 / 0.14),
+				color-mix(in oklch, var(--accent) 14%, transparent),
 				transparent 30rem
 			),
-			linear-gradient(135deg, #121212 0%, #20201d 52%, #0d0d0c 100%);
-		color: #f5f1e8;
-		font-family: Georgia, "Times New Roman", serif;
+			linear-gradient(
+				135deg,
+				var(--foreground) 0%,
+				var(--secondary) 52%,
+				var(--foreground) 100%
+			);
+		color: var(--background);
+		font-family: var(--font-body);
 	}
 
 	.error-card {
 		position: relative;
 		z-index: 1;
 		width: min(100%, 38rem);
-		border: 1px solid rgb(255 255 255 / 0.14);
-		border-radius: 2rem;
+		border: 1px solid
+			color-mix(in oklch, var(--background) 14%, transparent);
+		border-radius: var(--radius-lg);
 		padding: clamp(2rem, 6vw, 4.5rem) clamp(1.5rem, 6vw, 4rem);
-		background: rgb(20 20 18 / 0.78);
-		box-shadow: 0 2rem 6rem rgb(0 0 0 / 0.35);
+		background: color-mix(in oklch, var(--foreground) 78%, transparent);
+		box-shadow: 0 2rem 6rem
+			color-mix(in oklch, var(--foreground) 35%, transparent);
 		text-align: center;
 		backdrop-filter: blur(1.2rem);
 	}
@@ -104,18 +111,18 @@
 		height: 4.5rem;
 		margin: 0 auto 2rem;
 		place-items: center;
-		border: 1px solid rgb(218 185 126 / 0.7);
+		border: 1px solid color-mix(in oklch, var(--accent) 70%, transparent);
 		border-radius: 50%;
-		color: #dab97e;
-		font-family: Arial, sans-serif;
+		color: var(--accent);
+		font-family: var(--font-display);
 		font-size: 1rem;
 		letter-spacing: 0.2em;
 	}
 
 	.error-kicker {
 		margin: 0;
-		color: #dab97e;
-		font-family: Arial, sans-serif;
+		color: var(--accent);
+		font-family: var(--font-body);
 		font-size: 0.7rem;
 		font-weight: 700;
 		letter-spacing: 0.28em;
@@ -124,17 +131,19 @@
 
 	h1 {
 		margin: 1rem 0 0;
+		font-family: var(--font-display);
 		font-size: clamp(2.5rem, 8vw, 4.8rem);
-		font-weight: 400;
+		font-weight: 700;
 		letter-spacing: -0.05em;
 		line-height: 0.95;
+		text-transform: uppercase;
 	}
 
 	.error-message {
 		max-width: 28rem;
 		margin: 1.5rem auto 0;
-		color: rgb(245 241 232 / 0.72);
-		font-family: Arial, sans-serif;
+		color: color-mix(in oklch, var(--background) 72%, transparent);
+		font-family: var(--font-body);
 		font-size: 0.95rem;
 		line-height: 1.7;
 	}
@@ -149,9 +158,9 @@
 
 	.primary-action,
 	.secondary-action {
-		border-radius: 999px;
+		border-radius: var(--radius);
 		padding: 0.8rem 1.2rem;
-		font-family: Arial, sans-serif;
+		font-family: var(--font-body);
 		font-size: 0.85rem;
 		text-decoration: none;
 		transition:
@@ -161,33 +170,35 @@
 	}
 
 	.primary-action {
-		border: 1px solid #dab97e;
-		background: #dab97e;
-		color: #171613;
+		border: 1px solid var(--primary);
+		background: var(--primary);
+		color: var(--primary-foreground);
 		cursor: pointer;
 	}
 
 	.primary-action:hover {
-		border-color: #ead09f;
-		background: #ead09f;
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-foreground);
 	}
 
 	.secondary-action {
-		border: 1px solid rgb(255 255 255 / 0.18);
+		border: 1px solid
+			color-mix(in oklch, var(--background) 18%, transparent);
 		background: transparent;
-		color: #f5f1e8;
+		color: var(--background);
 		cursor: pointer;
 	}
 
 	.secondary-action:hover {
-		border-color: rgb(218 185 126 / 0.75);
-		color: #dab97e;
+		border-color: color-mix(in oklch, var(--accent) 75%, transparent);
+		color: var(--accent);
 	}
 
 	.error-help {
 		margin: 2rem 0 0;
-		color: rgb(245 241 232 / 0.42);
-		font-family: Arial, sans-serif;
+		color: color-mix(in oklch, var(--background) 42%, transparent);
+		font-family: var(--font-body);
 		font-size: 0.75rem;
 		line-height: 1.6;
 	}
@@ -204,13 +215,13 @@
 	.error-glow-one {
 		top: -12rem;
 		right: -8rem;
-		background: #dab97e;
+		background: var(--accent);
 	}
 
 	.error-glow-two {
 		bottom: -14rem;
 		left: -10rem;
-		background: #7e9a9a;
+		background: var(--secondary);
 	}
 
 	@media (max-width: 32rem) {

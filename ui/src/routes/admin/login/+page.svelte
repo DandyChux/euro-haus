@@ -45,7 +45,7 @@
 	>
 		<a
 			href={resolve("/")}
-			class="mb-10 inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+			class="mb-10 inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted transition-colors hover:text-foreground"
 		>
 			<span aria-hidden="true">←</span>
 			Back to Euro Haus

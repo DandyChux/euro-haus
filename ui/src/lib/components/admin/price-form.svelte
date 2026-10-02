@@ -105,7 +105,7 @@
 		<div>
 			<p class="font-medium">This product has variants</p>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Use variants for sizes, colors, or other product options.
 			</p>
 		</div>
@@ -115,7 +115,7 @@
 		<fieldset class="space-y-4">
 			<legend class="text-lg font-semibold"> Product variants </legend>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				These variants will be created when the product is saved.
 			</p>
 
@@ -126,7 +126,7 @@
 			</div>
 
 			{#if $formData.prices.length === 0}
-				<p class="py-8 text-center text-sm text-muted-foreground">
+				<p class="py-8 text-center text-sm text-muted">
 					No variants added yet.
 				</p>
 			{:else}
@@ -248,7 +248,7 @@
 										}}
 									/>
 
-									<span class="text-xs text-muted-foreground">
+									<span class="text-xs text-muted">
 										Leave empty for unlimited stock.
 									</span>
 								</label>

@@ -204,7 +204,7 @@
 			Existing {productType === "event" ? "ticket tiers" : "prices"}
 		</h2>
 
-		<p class="text-sm text-muted-foreground">
+		<p class="text-sm text-muted">
 			Edit price details without changing the Stripe amount.
 		</p>
 	</div>
@@ -228,13 +228,11 @@
 	{/if}
 
 	{#if isLoading}
-		<div class="rounded-2xl border p-5 text-sm text-muted-foreground">
+		<div class="rounded-2xl border p-5 text-sm text-muted">
 			Loading prices…
 		</div>
 	{:else if prices.length === 0}
-		<div
-			class="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground"
-		>
+		<div class="rounded-2xl border border-dashed p-5 text-sm text-muted">
 			No prices found.
 		</div>
 	{:else}
@@ -461,14 +459,14 @@
 									{/if}
 								</div>
 
-								<p class="mt-1 text-sm text-muted-foreground">
+								<p class="mt-1 text-sm text-muted">
 									{(price.unit_amount / 100).toFixed(2)}
 									{price.currency.toUpperCase()}
 								</p>
 
 								{#if price.description}
 									<p
-										class="mt-2 whitespace-pre-wrap text-sm text-muted-foreground"
+										class="mt-2 whitespace-pre-wrap text-sm text-muted"
 									>
 										{price.description}
 									</p>
@@ -476,7 +474,7 @@
 
 								{#if price.features.length > 0}
 									<ul
-										class="mt-2 list-inside list-disc text-sm text-muted-foreground"
+										class="mt-2 list-inside list-disc text-sm text-muted"
 									>
 										{#each price.features as feature (feature)}
 											<li>{feature}</li>

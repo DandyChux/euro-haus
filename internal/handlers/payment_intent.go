@@ -525,6 +525,12 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	err = services.GetDB().
 		WithContext(r.Context()).
 		Where("price_id = ?", req.PriceID).
+		Preload("Product", func(tx *gorm.DB) *gorm.DB {
+			return tx.Where("active = ?", true)
+		}).
+		Preload("Product.Prices", func(tx *gorm.DB) *gorm.DB {
+			return tx.Where("active = ?", true).Order("unit_amount ASC, id ASC")
+		}).
 		Order("sort_order ASC, product_id ASC").
 		Find(&includedProducts).
 		Error
@@ -540,12 +546,52 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 	hasIncludedProducts := len(includedProducts) > 0
 
-	// Add any additional products the customer is purchasing
-	for _, addon := range req.AddOnProducts {
+	// Included products are physical merchandise and must be included in the
+	// Stripe session so the webhook can create fulfillment records for them.
+	for _, included := range includedProducts {
+		if included.Product.ID == "" || len(included.Product.Prices) == 0 {
+			continue
+		}
+
+		selectedPrice := included.Product.Prices[0]
+		for _, requested := range req.AddOnProducts {
+			for _, candidate := range included.Product.Prices {
+				if candidate.ID == requested.PriceID {
+					selectedPrice = candidate
+					break
+				}
+			}
+		}
+
 		lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
-			Price:    stripe.String(addon.PriceID),
-			Quantity: stripe.Int64(addon.Quantity),
+			Price:    stripe.String(selectedPrice.ID),
+			Quantity: stripe.Int64(int64(included.Quantity) * requestedQuantity),
 		})
+	}
+
+	// Validate that every selected add-on belongs to an included product in
+	// this tier. The selected price is already added above with the included
+	// product quantity, so do not append it a second time here.
+	for _, addon := range req.AddOnProducts {
+		if addon.Quantity <= 0 {
+			continue
+		}
+		valid := false
+		for _, included := range includedProducts {
+			for _, candidate := range included.Product.Prices {
+				if candidate.ID == addon.PriceID {
+					valid = true
+					break
+				}
+			}
+			if valid {
+				break
+			}
+		}
+		if !valid {
+			http.Error(w, "Add-on price does not belong to this event tier", http.StatusBadRequest)
+			return
+		}
 	}
 
 	metadata := map[string]string{

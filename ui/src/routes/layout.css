@@ -29,7 +29,7 @@
 	--secondary: oklch(41% 34% 308deg);
 	--secondary-foreground: oklch(98% 1% 265deg);
 	--muted: color-mix(in oklch, var(--foreground) 58%, var(--background));
-	--muted-foreground: oklch(0.556 0 0);
+	--muted-foreground: oklch(98% 1% 265deg);
 	--accent: oklch(80% 40% 78deg);
 	--accent-foreground: oklch(0.205 0 0);
 	--destructive: oklch(50% 46% 30deg);
@@ -201,6 +201,15 @@
 
 	.bg-300\% {
 		background-size: 300% 300%;
+	}
+
+	::selection {
+		background-color: var(--color-primary);
+		color: var(--color-primary-foreground);
+	}
+
+	::marker {
+		color: var(--color-primary);
 	}
 }
 

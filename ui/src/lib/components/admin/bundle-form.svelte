@@ -161,7 +161,7 @@
 		<div class="border-b p-4">
 			<h2 class="text-lg font-semibold">Bundle contents</h2>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Select at least two products for this bundle.
 			</p>
 		</div>
@@ -203,7 +203,7 @@
 
 			{#if $formData.bundle_items.length === 0}
 				<div
-					class="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground"
+					class="rounded-2xl border border-dashed p-8 text-center text-sm text-muted"
 				>
 					No products added yet.
 				</div>
@@ -218,7 +218,7 @@
 									{item.product_name}
 								</p>
 
-								<p class="text-sm text-muted-foreground">
+								<p class="text-sm text-muted">
 									{money(item.price)} each ·
 									{money(item.price * item.quantity)} total
 								</p>
@@ -280,7 +280,7 @@
 		<div class="border-b p-4">
 			<h2 class="text-lg font-semibold">Bundle pricing</h2>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Choose a percentage or fixed discount.
 			</p>
 		</div>
@@ -384,7 +384,7 @@
 						<div>
 							<Form.Label>In stock</Form.Label>
 
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								Make this bundle available for purchase.
 							</p>
 						</div>

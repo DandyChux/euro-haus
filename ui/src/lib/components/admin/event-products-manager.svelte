@@ -39,8 +39,8 @@
 	}
 
 	interface TierProducts {
-		tierId: string;
-		tierName: string;
+		price_id: string;
+		price_name: string;
 		amount: number;
 		currency: string;
 		included_products?: IncludedProduct[];
@@ -104,7 +104,7 @@
 		const nextTierProducts: Record<string, IncludedProduct[]> = {};
 
 		for (const tier of response.tier_products ?? []) {
-			nextTierProducts[tier.tierId] = tier.included_products ?? [];
+			nextTierProducts[tier.price_id] = tier.included_products ?? [];
 		}
 
 		tierProducts = nextTierProducts;
@@ -175,7 +175,7 @@
 	}
 
 	async function saveTierProducts(
-		tierId: string,
+		price_id: string,
 		products: IncludedProduct[],
 	) {
 		isSaving = true;
@@ -190,7 +190,7 @@
 
 			console.log("Saving tier products", {
 				eventId,
-				tierId,
+				price_id,
 				payload,
 			});
 
@@ -204,7 +204,7 @@
 					sort_order: number;
 				}>;
 			}>(
-				`/admin/events/${encodeURIComponent(eventId)}/tiers/${encodeURIComponent(tierId)}/products`,
+				`/admin/events/${encodeURIComponent(eventId)}/tiers/${encodeURIComponent(price_id)}/products`,
 				payload,
 			);
 
@@ -212,7 +212,7 @@
 
 			tierProducts = {
 				...tierProducts,
-				[tierId]: products,
+				[price_id]: products,
 			};
 		} catch (error) {
 			console.error("Updating tier products failed:", error);
@@ -222,8 +222,8 @@
 		}
 	}
 
-	async function addProductToTier(tierId: string, productId: string) {
-		const currentProducts = tierProducts[tierId] ?? [];
+	async function addProductToTier(price_id: string, productId: string) {
+		const currentProducts = tierProducts[price_id] ?? [];
 
 		if (currentProducts.some((product) => product.id === productId)) {
 			toast.error("Product is already included in this tier.");
@@ -238,7 +238,7 @@
 		}
 
 		try {
-			await saveTierProducts(tierId, [
+			await saveTierProducts(price_id, [
 				...currentProducts,
 				{
 					id: product.id,
@@ -246,6 +246,7 @@
 					description: product.description,
 					images: product.images,
 					quantity: 1,
+					prices: [],
 				},
 			]);
 
@@ -255,12 +256,12 @@
 		}
 	}
 
-	async function removeProductFromTier(tierId: string, productId: string) {
-		const currentProducts = tierProducts[tierId] ?? [];
+	async function removeProductFromTier(price_id: string, productId: string) {
+		const currentProducts = tierProducts[price_id] ?? [];
 
 		try {
 			await saveTierProducts(
-				tierId,
+				price_id,
 				currentProducts.filter((product) => product.id !== productId),
 			);
 
@@ -271,20 +272,20 @@
 	}
 
 	async function updateProductQuantity(
-		tierId: string,
+		price_id: string,
 		productId: string,
 		quantity: number,
 	) {
 		if (quantity < 1) return;
 
-		const currentProducts = tierProducts[tierId] ?? [];
+		const currentProducts = tierProducts[price_id] ?? [];
 
 		const updatedProducts = currentProducts.map((product) =>
 			product.id === productId ? { ...product, quantity } : product,
 		);
 
 		try {
-			await saveTierProducts(tierId, updatedProducts);
+			await saveTierProducts(price_id, updatedProducts);
 			toast.success("Quantity updated.");
 		} catch {
 			toast.error("Unable to update quantity.");
@@ -306,7 +307,7 @@
 	<div>
 		<h2 class="text-lg font-semibold">Event products and add-ons</h2>
 
-		<p class="text-sm text-muted-foreground">
+		<p class="text-sm text-muted">
 			Manage products linked to {eventName}.
 		</p>
 	</div>
@@ -319,7 +320,7 @@
 					"rounded-lg px-3 py-2 text-sm transition-colors",
 					activeTab === tab.value
 						? "bg-foreground text-background"
-						: "text-muted-foreground hover:text-foreground",
+						: "text-muted hover:text-foreground",
 				]}
 				onclick={() => (activeTab = tab.value)}
 			>
@@ -338,16 +339,16 @@
 	{/if}
 
 	{#if isLoading}
-		<p class="text-sm text-muted-foreground">Loading event products…</p>
+		<p class="text-sm text-muted">Loading event products…</p>
 	{:else if activeTab === "linked"}
 		<section class="space-y-4">
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				These products are available as add-ons during event checkout.
 			</p>
 
 			{#if linkedProducts.length === 0}
 				<div class="rounded-xl border border-dashed p-8 text-center">
-					<p class="text-sm text-muted-foreground">
+					<p class="text-sm text-muted">
 						No products are linked to this event.
 					</p>
 				</div>
@@ -378,7 +379,7 @@
 										{product.name}
 									</p>
 
-									<p class="text-sm text-muted-foreground">
+									<p class="text-sm text-muted">
 										{formatProductPrice(product)}
 									</p>
 								</div>
@@ -399,14 +400,14 @@
 		</section>
 	{:else if activeTab === "prices"}
 		<section class="space-y-4">
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Include products with specific ticket prices. Customers buying
 				those prices will receive the included products.
 			</p>
 
 			{#if prices.length === 0}
 				<div class="rounded-xl border border-dashed p-8 text-center">
-					<p class="text-sm text-muted-foreground">
+					<p class="text-sm text-muted">
 						This event does not have any ticket prices.
 					</p>
 				</div>
@@ -418,14 +419,14 @@
 								{price.nickname || "Standard"}
 							</h3>
 
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								{formatTierPrice(price)}
 							</p>
 						</div>
 
 						{#if (tierProducts[price.id] ?? []).length === 0}
 							<p
-								class="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground"
+								class="rounded-xl border border-dashed p-4 text-center text-sm text-muted"
 							>
 								No products included in this tier.
 							</p>
@@ -527,13 +528,13 @@
 		</section>
 	{:else}
 		<section class="space-y-4">
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Select products to link as add-ons for this event.
 			</p>
 
 			{#if availableProducts.length === 0}
 				<div class="rounded-xl border border-dashed p-8 text-center">
-					<p class="text-sm text-muted-foreground">
+					<p class="text-sm text-muted">
 						No available products to link.
 					</p>
 				</div>
@@ -555,7 +556,7 @@
 									{product.name}
 								</p>
 
-								<p class="text-sm text-muted-foreground">
+								<p class="text-sm text-muted">
 									{formatProductPrice(product)}
 								</p>
 							</div>

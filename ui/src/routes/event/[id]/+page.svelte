@@ -25,9 +25,9 @@
 	let pendingPrice = $state<Price | null>(null);
 	let quantitiesByPrice = $state<Record<string, number>>({});
 
-	let selectedAddOns = $state<Array<{ price_id: string; quantity: number }>>(
-		[],
-	);
+	let selectedAddOns = $state<
+		Array<{ product_id: string; price_id: string; quantity: number }>
+	>([]);
 	let fulfillmentOption = $state<"shipping" | "pickup">("shipping");
 
 	let selectedPriceID = $state(
@@ -52,9 +52,18 @@
 	}
 
 	let currentPrice = $derived(getSelectedPrice());
-	$inspect(currentPrice);
 
 	let includedProducts = $derived(currentPrice?.included_products ?? []);
+
+	function getIncludedProductPrices(
+		product: (typeof includedProducts)[number],
+	) {
+		return product.prices?.length > 0
+			? product.prices
+			: product.default_price
+				? [product.default_price]
+				: [];
+	}
 
 	let maximumQuantity = $derived(
 		currentPrice ? getPriceMaximumQuantity(currentPrice) : 1,
@@ -67,18 +76,20 @@
 	let selectedAddOnTotal = $derived(
 		selectedAddOns.reduce((total, selectedAddOn) => {
 			const product = includedProducts.find(
-				(product) =>
-					product.default_price?.id === selectedAddOn.price_id,
+				(product: (typeof includedProducts)[number]) =>
+					product.id === selectedAddOn.product_id,
 			);
+			const price = product
+				? getIncludedProductPrices(product).find(
+						(price) => price.id === selectedAddOn.price_id,
+					)
+				: undefined;
 
-			if (!product?.default_price) {
+			if (!price) {
 				return total;
 			}
 
-			return (
-				total +
-				product.default_price.unit_amount * selectedAddOn.quantity
-			);
+			return total + price.unit_amount * selectedAddOn.quantity;
 		}, 0),
 	);
 
@@ -86,8 +97,6 @@
 		(currentPrice ? getPriceAmount(currentPrice) * currentQuantity : 0) +
 			selectedAddOnTotal / 100,
 	);
-
-	$inspect("Current price: ", currentPrice);
 
 	function priceRequiresSubmission(price: Price): boolean {
 		return String(price.requires_submission) === "true";
@@ -402,6 +411,7 @@
 									selectedAddOns = [
 										...selectedAddOns,
 										{
+											product_id: product.id,
 											price_id: product.default_price.id,
 											quantity: 1,
 										},
@@ -409,8 +419,7 @@
 								} else {
 									selectedAddOns = selectedAddOns.filter(
 										(item) =>
-											item.price_id !==
-											product.default_price?.id,
+											item.product_id !== product.id,
 									);
 								}
 							}}
@@ -518,92 +527,184 @@
 
 							<div class="add-on-list">
 								{#each includedProducts as product}
-									{@const price = product.default_price}
-									{@const selected = selectedAddOns.some(
-										(addOn) => addOn.price_id === price?.id,
+									{@const prices =
+										getIncludedProductPrices(product)}
+									{@const selectedAddOn = selectedAddOns.find(
+										(addOn) =>
+											addOn.product_id === product.id,
 									)}
+									{@const price =
+										prices.find(
+											(price: (typeof prices)[number]) =>
+												price.id ===
+												selectedAddOn?.price_id,
+										) ?? prices[0]}
+									{@const selected = Boolean(selectedAddOn)}
 
-									<button
-										type="button"
-										class:selected
-										class="add-on-card"
-										disabled={!price}
-										onclick={() => {
-											if (!price) return;
-
-											const existingIndex =
-												selectedAddOns.findIndex(
-													(addOn) =>
-														addOn.price_id ===
-														price.id,
-												);
-
-											if (existingIndex >= 0) {
-												selectedAddOns =
-													selectedAddOns.filter(
-														(_, index) =>
-															index !==
-															existingIndex,
-													);
-											} else {
-												selectedAddOns = [
-													...selectedAddOns,
-													{
-														price_id: price.id,
-														quantity:
-															product.quantity ??
-															1,
-													},
-												];
-											}
-										}}
-									>
-										{#if product.images?.length ?? 0 > 0}
-											<img
-												src={product.images?.[0]}
-												alt={product.name}
-												class="add-on-image"
-											/>
-										{:else}
-											<div
-												class="add-on-image add-on-image-placeholder"
-											>
-												+
-											</div>
-										{/if}
-
-										<div class="add-on-content">
-											<strong>{product.name}</strong>
-
-											{#if product.description}
-												<p>{product.description}</p>
-											{/if}
-
-											{#if price}
-												<span>
-													{new Intl.NumberFormat(
-														"en-US",
-														{
-															style: "currency",
-															currency:
-																price.currency.toUpperCase(),
-														},
-													).format(
-														price.unit_amount / 100,
+									<div class="add-on-card" class:selected>
+										{#if prices.length > 1}
+											<label>
+												Size
+												<Select.Root
+													type="single"
+													items={prices.map(
+														(
+															option: (typeof prices)[number],
+														) => ({
+															value: option.id,
+															label:
+																option.nickname ||
+																option.size ||
+																"Standard",
+														}),
 													)}
-												</span>
-											{:else}
-												<span>Price unavailable</span>
-											{/if}
-										</div>
+													value={selectedAddOn?.price_id ??
+														prices[0]?.id ??
+														""}
+													onValueChange={(value) => {
+														const nextPrice =
+															prices.find(
+																(
+																	item: (typeof prices)[number],
+																) =>
+																	item.id ===
+																	value,
+															);
 
-										<span
-											class="add-on-checkmark"
-											aria-hidden="true"
+														if (!nextPrice) return;
+
+														selectedAddOns =
+															selectedAddOns.some(
+																(addOn) =>
+																	addOn.product_id ===
+																	product.id,
+															)
+																? selectedAddOns.map(
+																		(
+																			addOn,
+																		) =>
+																			addOn.product_id ===
+																			product.id
+																				? {
+																						...addOn,
+																						price_id:
+																							nextPrice.id,
+																					}
+																				: addOn,
+																	)
+																: [
+																		...selectedAddOns,
+																		{
+																			product_id:
+																				product.id,
+																			price_id:
+																				nextPrice.id,
+																			quantity:
+																				product.quantity ??
+																				1,
+																		},
+																	];
+													}}
+												>
+													<Select.Trigger>
+														<Select.Value
+															placeholder="Select a size"
+														/>
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Group>
+															{#each prices as option (option.id)}
+																<Select.Item
+																	value={option.id}
+																	label={option.nickname ||
+																		option.size ||
+																		"Standard"}
+																>
+																	{option.nickname ||
+																		option.size ||
+																		"Standard"}
+																</Select.Item>
+															{/each}
+														</Select.Group>
+													</Select.Content>
+												</Select.Root>
+											</label>
+										{/if}
+										<button
+											type="button"
+											disabled={!price}
+											onclick={() => {
+												if (!price) return;
+												selectedAddOns = selected
+													? selectedAddOns.filter(
+															(addOn) =>
+																addOn.product_id !==
+																product.id,
+														)
+													: [
+															...selectedAddOns,
+															{
+																product_id:
+																	product.id,
+																price_id:
+																	price.id,
+																quantity:
+																	product.quantity ??
+																	1,
+															},
+														];
+											}}
 										>
-											{selected ? "✓" : ""}
-										</span>
-									</button>
+											{#if product.images?.length ?? 0 > 0}
+												<img
+													src={product.images?.[0]}
+													alt={product.name}
+													class="add-on-image"
+												/>
+											{:else}
+												<div
+													class="add-on-image add-on-image-placeholder"
+												>
+													+
+												</div>
+											{/if}
+
+											<div class="add-on-content">
+												<strong>{product.name}</strong>
+
+												{#if product.description}
+													<p>{product.description}</p>
+												{/if}
+
+												{#if price}
+													<span>
+														{new Intl.NumberFormat(
+															"en-US",
+															{
+																style: "currency",
+																currency:
+																	price.currency.toUpperCase(),
+															},
+														).format(
+															price.unit_amount /
+																100,
+														)}
+													</span>
+												{:else}
+													<span
+														>Price unavailable</span
+													>
+												{/if}
+											</div>
+
+											<span
+												class="add-on-checkmark"
+												aria-hidden="true"
+											>
+												{selected ? "✓" : ""}
+											</span>
+										</button>
+									</div>
 								{/each}
 							</div>
 						</section>

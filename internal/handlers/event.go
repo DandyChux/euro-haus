@@ -46,10 +46,10 @@ type EventWriteRequest struct {
 	ID              string `json:"id"`
 	StripeProductID string `json:"stripe_product_id"`
 
-	Slug            string `json:"slug"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	LongDescription string `json:"long_description"`
+	Slug            string   `json:"slug"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	LongDescription string   `json:"long_description"`
 	Images          []string `json:"images"`
 
 	EventDate string `json:"date"`
@@ -67,7 +67,7 @@ type EventWriteRequest struct {
 	Tags     models.EventStringList `json:"tags"`
 	Agenda   models.EventAgenda     `json:"agenda"`
 	Includes models.EventStringList `json:"includes"`
-	Sponsors models.EventSponsors    `json:"sponsors"`
+	Sponsors models.EventSponsors   `json:"sponsors"`
 
 	Prices []EventPriceWriteRequest `json:"prices"`
 }
@@ -83,19 +83,19 @@ type EventPriceWriteRequest struct {
 
 	Active bool `json:"active"`
 
-	Features          []string `json:"features"`
-	Default           bool     `json:"default"`
-	MostPopular       bool     `json:"most_popular"`
-	RequiresApproval  bool     `json:"requires_approval"`
-	RequiresSubmission bool    `json:"requires_submission"`
+	Features           []string `json:"features"`
+	Default            bool     `json:"default"`
+	MostPopular        bool     `json:"most_popular"`
+	RequiresApproval   bool     `json:"requires_approval"`
+	RequiresSubmission bool     `json:"requires_submission"`
 
 	Requirements []RequirementInput `json:"requirements"`
 
-	Quantity  int    `json:"quantity"`
-	Size      string `json:"size"`
-	Color     string `json:"color"`
-	SoldOut   bool   `json:"sold_out"`
-	StockQuantity *int `json:"stock_quantity"`
+	Quantity      int    `json:"quantity"`
+	Size          string `json:"size"`
+	Color         string `json:"color"`
+	SoldOut       bool   `json:"sold_out"`
+	StockQuantity *int   `json:"stock_quantity"`
 
 	IncludedProducts []IncludedProductWriteRequest `json:"included_products"`
 }
@@ -113,13 +113,14 @@ type IncludedProductRequest struct {
 }
 
 type IncludedProductResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Images      []string `json:"images,omitempty"`
-	Quantity    int      `json:"quantity"`
-	SortOrder   int      `json:"sortOrder,omitempty"`
-	DefaultPrice *models.PriceInfo `json:"default_price,omitempty"`
+	ID           string             `json:"id"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	Images       []string           `json:"images,omitempty"`
+	Quantity     int                `json:"quantity"`
+	SortOrder    int                `json:"sortOrder,omitempty"`
+	DefaultPrice *models.PriceInfo  `json:"default_price,omitempty"`
+	Prices       []models.PriceInfo `json:"prices,omitempty"`
 }
 
 type PriceResponse struct {
@@ -137,18 +138,18 @@ type PriceResponse struct {
 	RequiresSubmission bool                      `json:"requires_submission"`
 	Quantity           int                       `json:"quantity"`
 	StockQuantity      *int                      `json:"stock_quantity,omitempty"`
-	IncludedProducts   []IncludedProductResponse  `json:"included_products"`
+	IncludedProducts   []IncludedProductResponse `json:"included_products"`
 	Requirements       []models.PriceRequirement `json:"requirements,omitempty"`
 }
 
 type EventResponse struct {
-	ID                   string `json:"id"`
-	StripeProductID      string `json:"stripe_product_id,omitempty"`
+	ID              string `json:"id"`
+	StripeProductID string `json:"stripe_product_id,omitempty"`
 
-	Slug            string `json:"slug"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	LongDescription string `json:"long_description"`
+	Slug            string   `json:"slug"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	LongDescription string   `json:"long_description"`
 	Images          []string `json:"images"`
 
 	EventDate string `json:"date"`
@@ -166,9 +167,9 @@ type EventResponse struct {
 	Tags     models.EventStringList `json:"tags"`
 	Agenda   models.EventAgenda     `json:"agenda"`
 	Includes models.EventStringList `json:"includes"`
-	Sponsors models.EventSponsors    `json:"sponsors"`
+	Sponsors models.EventSponsors   `json:"sponsors"`
 
-	Prices  []PriceResponse `json:"prices,omitempty"`
+	Prices []PriceResponse `json:"prices,omitempty"`
 }
 
 func withEventPrices(db *gorm.DB) *gorm.DB {
@@ -257,6 +258,7 @@ func eventToResponse(event *models.Event) EventResponse {
 				Quantity:     link.Quantity,
 				SortOrder:    link.SortOrder,
 				DefaultPrice: defaultPrice,
+				Prices:       normalizedEventPrices(product.Prices),
 			})
 		}
 
@@ -273,7 +275,7 @@ func eventToResponse(event *models.Event) EventResponse {
 			IsMostPopular:      price.IsMostPopular,
 			RequiresApproval:   price.RequiresApproval,
 			RequiresSubmission: price.RequiresSubmission,
-			Quantity:            price.Quantity,
+			Quantity:           price.Quantity,
 			StockQuantity:      price.StockQuantity,
 			IncludedProducts:   includedProducts,
 			Requirements:       price.Requirements,
@@ -309,6 +311,24 @@ func loadEventPrices(
 
 	if err != nil {
 		return err
+	}
+
+	// Product prices are loaded explicitly below as a fallback for deployments
+	// where nested GORM preloading does not hydrate the association reliably.
+	for priceIndex := range prices {
+		for linkIndex := range prices[priceIndex].IncludedProductLinks {
+			product := &prices[priceIndex].IncludedProductLinks[linkIndex].Product
+			if product.ID == "" {
+				continue
+			}
+
+			if err := db.WithContext(ctx).
+				Where("stripe_product_id = ? AND active = ?", product.ID, true).
+				Order("unit_amount ASC, id ASC").
+				Find(&product.Prices).Error; err != nil {
+				return err
+			}
+		}
 	}
 
 	if prices == nil {
@@ -928,20 +948,20 @@ func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var (
 			token, ticketType, name, email string
-			quantity           int
-			checkedIn          bool
-			checkedInAt        sql.NullTime
+			quantity                       int
+			checkedIn                      bool
+			checkedInAt                    sql.NullTime
 		)
 		if err := rows.Scan(&token, &ticketType, &name, &email, &quantity, &checkedIn, &checkedInAt); err != nil {
 			continue
 		}
 		a := map[string]interface{}{
-			"name":      name,
-			"email":     email,
-			"quantity":  quantity,
+			"name":        name,
+			"email":       email,
+			"quantity":    quantity,
 			"ticket_type": ticketType,
-			"token":     token,
-			"checked_in": checkedIn,
+			"token":       token,
+			"checked_in":  checkedIn,
 		}
 		if checkedIn {
 			checkedInCount++
@@ -956,7 +976,7 @@ func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"attendees": attendees,
 		"stats": map[string]interface{}{
-			"total":     len(attendees),
+			"total":      len(attendees),
 			"checked_in": checkedInCount,
 		},
 	})
@@ -1283,7 +1303,7 @@ func GetEventTickets(w http.ResponseWriter, r *http.Request) {
 			"customerEmail": email,
 			"ticketType":    ticketType,
 			"quantity":      quantity,
-			"checked_in":     checkedIn,
+			"checked_in":    checkedIn,
 			"createdAt":     createdAt.Format(time.RFC3339),
 		}
 		if checkedInAt.Valid {
@@ -1316,7 +1336,6 @@ func GetEventPrices(w http.ResponseWriter, r *http.Request) {
 		"prices": normalizedEventPrices(event.Prices),
 	})
 }
-
 
 // CleanupEventTickets cleans up tickets
 func CleanupEventTickets(w http.ResponseWriter, r *http.Request) {
@@ -1468,26 +1487,26 @@ func GetEventLinkedProducts(w http.ResponseWriter, r *http.Request) {
 	}
 	response["linked_products"] = linkedProducts
 
-	// Get products included in tiers
-	tierProducts := []map[string]interface{}{}
+	// Get included products per price tier
+	priceTierProducts := []map[string]interface{}{}
 
-	for _, tier := range event.Prices {
-		if tier.Nickname == "" {
+	for _, price := range event.Prices {
+		if price.Nickname == "" {
 			continue
 		}
 
-		tierInfo := map[string]interface{}{
-			"tierId":   tier.ID,
-			"tierName": tier.Nickname,
-			"amount":   float64(tier.UnitAmount) / 100,
-			"currency": tier.Currency,
+		priceInfo := map[string]interface{}{
+			"price_id":   price.ID,
+			"price_name": price.Nickname,
+			"amount":     float64(price.UnitAmount) / 100,
+			"currency":   price.Currency,
 		}
 
 		var includedLinks []models.PriceIncludedProduct
 
 		err := services.GetDB().
 			WithContext(r.Context()).
-			Where("price_id = ?", tier.ID).
+			Where("price_id = ?", price.ID).
 			Order("sort_order ASC, product_id ASC").
 			Find(&includedLinks).
 			Error
@@ -1538,10 +1557,10 @@ func GetEventLinkedProducts(w http.ResponseWriter, r *http.Request) {
 			includedProducts = append(includedProducts, productInfo)
 		}
 
-		tierInfo["included_products"] = includedProducts
-		tierProducts = append(tierProducts, tierInfo)
+		priceInfo["included_products"] = includedProducts
+		priceTierProducts = append(priceTierProducts, priceInfo)
 	}
-	response["tier_products"] = tierProducts
+	response["tier_products"] = priceTierProducts
 
 	json.NewEncoder(w).Encode(response)
 }
@@ -1732,12 +1751,12 @@ func GetEventMerchandiseRecommendations(w http.ResponseWriter, r *http.Request) 
 			Where("id = ?", productID).
 			First(&localProduct).
 			Error; err != nil {
-				log.Printf(
-					"Failed to load local product %s: %v",
-					linkedProduct.ID,
-					err,
-				)
-				continue
+			log.Printf(
+				"Failed to load local product %s: %v",
+				linkedProduct.ID,
+				err,
+			)
+			continue
 		}
 
 		if err := loadProductPrices(
@@ -1865,8 +1884,8 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stripeParams := &stripe.ProductParams{
-		Name:        stripe.String(request.Name),
-		Active:      stripe.Bool(request.Active),
+		Name:   stripe.String(request.Name),
+		Active: stripe.Bool(request.Active),
 	}
 
 	if len(request.Images) > 0 {
@@ -2075,8 +2094,8 @@ func UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stripeParams := &stripe.ProductParams{
-		Name:        stripe.String(request.Name),
-		Active:      stripe.Bool(request.Active),
+		Name:   stripe.String(request.Name),
+		Active: stripe.Bool(request.Active),
 	}
 
 	if request.Description != "" {

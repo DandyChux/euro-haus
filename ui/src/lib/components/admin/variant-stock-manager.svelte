@@ -154,7 +154,7 @@
 		<div>
 			<h2 class="text-lg font-semibold">Variant stock levels</h2>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Inventory is stored in the database for each product variant.
 			</p>
 		</div>
@@ -180,7 +180,7 @@
 						</p>
 
 						{#if variant.size || variant.color}
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								{variant.size ? `Size: ${variant.size}` : ""}
 
 								{variant.size && variant.color ? " • " : ""}
@@ -189,7 +189,7 @@
 							</p>
 						{/if}
 
-						<p class="text-xs text-muted-foreground">
+						<p class="text-xs text-muted">
 							Price: {(variant.unit_amount / 100).toFixed(2)}
 						</p>
 					</div>

@@ -43,7 +43,7 @@
 	<header>
 		<p class="text-sm uppercase tracking-[0.3em]">Admin</p>
 		<h1 class="mt-2 text-3xl font-semibold">Create product</h1>
-		<p class="mt-3 text-sm text-muted-foreground">
+		<p class="mt-3 text-sm text-muted">
 			Create a product and its initial pricing configuration.
 		</p>
 	</header>

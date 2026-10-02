@@ -112,6 +112,14 @@ export const ticketInfoSchema = z.object({
 
 export type TicketInfo = z.infer<typeof ticketInfoSchema>;
 
+const includedProductPriceSchema = z.object({
+	id: z.string(),
+	unit_amount: z.number(),
+	currency: z.string(),
+	nickname: z.string().optional(),
+	size: z.string().optional(),
+});
+
 export const includedProductSchema = z.object({
 	id: z.string(),
 	name: z.string(),
@@ -119,13 +127,8 @@ export const includedProductSchema = z.object({
 	images: z.array(z.string()).optional(),
 	quantity: z.number(),
 	sortOrder: z.number().optional(),
-	default_price: z
-		.object({
-			id: z.string(),
-			unit_amount: z.number(),
-			currency: z.string(),
-		})
-		.optional(),
+	default_price: includedProductPriceSchema.optional(),
+	prices: z.array(includedProductPriceSchema).default([]),
 });
 
 export type IncludedProduct = z.infer<typeof includedProductSchema>;

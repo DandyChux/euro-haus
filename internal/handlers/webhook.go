@@ -799,8 +799,7 @@ func handleNonSubmissionCheckoutCompleted(
 	totalAmount := 0.0
 
 	for _, lineItem := range fullSession.LineItems.Data {
-		if lineItem.Price == nil ||
-			lineItem.Price.Product == nil {
+		if lineItem.Price == nil || lineItem.Price.Product == nil {
 			log.Printf("Skipping checkout line item without expanded product for session %s", fullSession.ID)
 			continue
 		}
@@ -997,6 +996,17 @@ func handleParticipantPaymentSucceededWithSession(
 			err,
 		)
 		return
+	}
+
+	// Participant checkouts also contain merchandise add-ons. They do not
+	// pass through the normal non-submission checkout handler, so persist
+	// their physical line items here as well.
+	if err := createFulfillmentRecordsForSession(ctx, checkoutSessionID, submission.EventID); err != nil {
+		log.Printf(
+			"Failed to create participant fulfillment records for session %s: %v",
+			checkoutSessionID,
+			err,
+		)
 	}
 
 	if submission.Status != "approved" {
@@ -3494,6 +3504,33 @@ func formatShippingAddressString(session *stripe.CheckoutSession) string {
 	return strings.Join(parts, "\n")
 }
 
+func createFulfillmentRecordsForSession(
+	ctx context.Context,
+	sessionID string,
+	eventID string,
+) error {
+	params := &stripe.CheckoutSessionParams{}
+	params.AddExpand("line_items.data.price.product")
+	params.AddExpand("customer_details")
+	params.AddExpand("shipping_cost.shipping_rate")
+
+	fullSession, err := session.Get(sessionID, params)
+	if err != nil {
+		return fmt.Errorf("expand checkout session %s: %w", sessionID, err)
+	}
+
+	isPickup := false
+	if fullSession.Metadata != nil && fullSession.Metadata["fulfillment_option"] == "pickup" {
+		isPickup = true
+	}
+
+	if eventID != "" && fullSession.Metadata != nil && fullSession.Metadata["event_id"] == "" {
+		fullSession.Metadata["event_id"] = eventID
+	}
+
+	return createFulfillmentRecords(ctx, fullSession, isPickup)
+}
+
 func createFulfillmentRecords(
 	ctx context.Context,
 	fullSession *stripe.CheckoutSession,
@@ -3522,24 +3559,41 @@ func createFulfillmentRecords(
 		fulfillmentNotes = "Local Pickup"
 	}
 
-	for _, lineItem := range fullSession.LineItems.Data {
-		var productID, productName string
+	eventStripeProductID := ""
+	if fullSession.Metadata != nil {
+		if eventID := fullSession.Metadata["event_id"]; eventID != "" {
+			if event, err := findEventByID(ctx, eventID); err == nil {
+				eventStripeProductID = event.StripeProductID
+			}
+		}
+		if eventStripeProductID == "" {
+			eventStripeProductID = fullSession.Metadata["event_stripe_product_id"]
+		}
+	}
 
-		if lineItem.Price != nil && lineItem.Price.Product != nil {
+	for _, lineItem := range fullSession.LineItems.Data {
+		if lineItem.Price == nil {
+			log.Printf("Skipping fulfillment line item without price for session %s", fullSession.ID)
+			continue
+		}
+
+		var productID, productName string
+		if lineItem.Price.Product != nil {
 			productID = lineItem.Price.Product.ID
 			productName = lineItem.Price.Product.Name
 
-			// Skip Event products from physical fulfillment table
-			_, err := findEventByStripeProductID(ctx, productID)
-			if err == nil {
+			// Only the event's configured Stripe product is a ticket. A
+			// merchandise product may be purchased alongside that ticket.
+			if productID == eventStripeProductID {
 				continue
 			}
 		} else {
 			productName = lineItem.Description
 		}
 
+		priceID := lineItem.Price.ID
 		fulfillment := models.Fulfillment{
-			ID:              fmt.Sprintf("ful_%s_%s", fullSession.ID, productID),
+			ID:              fmt.Sprintf("ful_%s_%s", fullSession.ID, priceID),
 			SessionID:       fullSession.ID,
 			ProductID:       productID,
 			ProductName:     productName,

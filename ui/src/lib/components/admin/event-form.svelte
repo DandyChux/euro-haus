@@ -730,9 +730,7 @@
 		<div class="flex items-center justify-between">
 			<div>
 				<h2 class="text-lg font-semibold">Event tags</h2>
-				<p class="text-sm text-muted-foreground">
-					Categorize the event.
-				</p>
+				<p class="text-sm text-muted">Categorize the event.</p>
 			</div>
 
 			<Button type="button" variant="outline" onclick={addTag}>
@@ -766,9 +764,7 @@
 			<div>
 				<h2 class="text-lg font-semibold">Event schedule</h2>
 
-				<p class="text-sm text-muted-foreground">
-					Build the event agenda.
-				</p>
+				<p class="text-sm text-muted">Build the event agenda.</p>
 			</div>
 
 			<Button type="button" variant="outline" onclick={addAgendaItem}>
@@ -831,7 +827,7 @@
 			<div>
 				<h2 class="text-lg font-semibold">What's included</h2>
 
-				<p class="text-sm text-muted-foreground">
+				<p class="text-sm text-muted">
 					List items included with the event ticket.
 				</p>
 			</div>
@@ -869,7 +865,7 @@
 			<div>
 				<h2 class="text-lg font-semibold">Event sponsors</h2>
 
-				<p class="text-sm text-muted-foreground">
+				<p class="text-sm text-muted">
 					Sponsors use the canonical flat Sponsor model.
 				</p>
 			</div>
@@ -983,7 +979,7 @@
 		<div>
 			<h2 class="text-lg font-semibold">Event images</h2>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Upload images or add existing CDN URLs. The first image is used
 				as the default event image for Stripe.
 			</p>
@@ -1027,13 +1023,13 @@
 				class="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-colors hover:border-primary"
 			>
 				{#if uploadingImage}
-					<p class="text-sm text-muted-foreground">
+					<p class="text-sm text-muted">
 						Uploading images… {uploadProgress}%
 					</p>
 				{:else}
 					<p class="font-medium">Choose images</p>
 
-					<p class="mt-1 text-sm text-muted-foreground">
+					<p class="mt-1 text-sm text-muted">
 						Select one or more PNG, JPG, WEBP, or GIF files
 					</p>
 				{/if}
@@ -1075,9 +1071,7 @@
 							<div
 								class="flex items-center justify-between gap-2"
 							>
-								<p
-									class="truncate text-xs text-muted-foreground"
-								>
+								<p class="truncate text-xs text-muted">
 									Image {index + 1}
 								</p>
 
@@ -1094,9 +1088,7 @@
 					{/each}
 				</div>
 			{:else}
-				<p class="text-sm text-muted-foreground">
-					No event images uploaded yet.
-				</p>
+				<p class="text-sm text-muted">No event images uploaded yet.</p>
 			{/if}
 		</fieldset>
 	</Card>
@@ -1119,7 +1111,7 @@
 
 			{#if $formData.prices.length === 0}
 				<div
-					class="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground"
+					class="rounded-2xl border border-dashed p-5 text-sm text-muted"
 				>
 					No ticket price has been added yet.
 				</div>
@@ -1181,8 +1173,7 @@
 											<div
 												class="flex items-center gap-2"
 											>
-												<span
-													class="text-sm text-muted-foreground"
+												<span class="text-sm text-muted"
 													>$</span
 												>
 
@@ -1327,7 +1318,7 @@
 								</div>
 
 								{#if $formData.prices[index].features.length === 0}
-									<p class="text-sm text-muted-foreground">
+									<p class="text-sm text-muted">
 										No features added yet.
 									</p>
 								{:else}
@@ -1382,9 +1373,7 @@
 											>Submission requirements</legend
 										>
 
-										<p
-											class="mt-1 text-sm text-muted-foreground"
-										>
+										<p class="mt-1 text-sm text-muted">
 											Ask entrants for extra details
 											included with this tier.
 										</p>
@@ -1402,7 +1391,7 @@
 								</div>
 
 								{#if !$formData.prices[index].requirements?.length}
-									<p class="text-sm text-muted-foreground">
+									<p class="text-sm text-muted">
 										No additional information is required
 										for this tier.
 									</p>
@@ -1421,7 +1410,7 @@
 													</p>
 
 													<p
-														class="text-sm text-muted-foreground"
+														class="text-sm text-muted"
 													>
 														This field will appear
 														in the vehicle
@@ -1489,7 +1478,7 @@
 													/>
 
 													<p
-														class="text-xs text-muted-foreground"
+														class="text-xs text-muted"
 													>
 														Use a stable
 														machine-readable key.
@@ -1569,7 +1558,7 @@
 																Options
 															</p>
 															<p
-																class="text-xs text-muted-foreground"
+																class="text-xs text-muted"
 															>
 																Add the choices
 																entrants can

@@ -126,9 +126,7 @@
 </script>
 
 {#if loading}
-	<div
-		class="flex min-h-64 items-center justify-center text-muted-foreground"
-	>
+	<div class="flex min-h-64 items-center justify-center text-muted">
 		Loading submissions…
 	</div>
 {:else}
@@ -136,7 +134,7 @@
 		<div>
 			<h2 class="text-2xl font-bold">Vehicle submissions</h2>
 
-			<p class="text-muted-foreground">
+			<p class="text-muted">
 				Review and approve participant vehicles for {eventName}.
 			</p>
 		</div>
@@ -169,7 +167,7 @@
 		</div>
 
 		{#if visibleSubmissions.length === 0}
-			<Card.Root class="p-8 text-center text-muted-foreground">
+			<Card.Root class="p-8 text-center text-muted">
 				No {activeTab} submissions.
 			</Card.Root>
 		{:else}
@@ -189,7 +187,7 @@
 									{submission.vehicle_model}
 								</h3>
 
-								<p class="text-sm text-muted-foreground">
+								<p class="text-sm text-muted">
 									{submission.participant_name}
 								</p>
 							</div>
@@ -202,7 +200,7 @@
 						</Card.Header>
 
 						{#if submission.price_nickname || submission.price_id}
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								Tier:
 								<span class="font-medium text-foreground">
 									{submission.price_nickname ||
@@ -219,21 +217,21 @@
 							/>
 						{:else}
 							<div
-								class="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+								class="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted"
 							>
 								No vehicle images
 							</div>
 						{/if}
 
 						<Card.Footer class="flex-col items-start">
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								Submitted:
 								{formatDate(submission.submitted_at, {
 									dateStyle: "medium",
 								})}
 							</p>
 							{#if submission.reviewed_at}
-								<p class="text-sm text-muted-foreground">
+								<p class="text-sm text-muted">
 									Reviewed:
 									{formatDate(submission.reviewed_at, {
 										dateStyle: "medium",
@@ -262,7 +260,7 @@
 							{selectedSubmission.vehicle_model}
 						</h2>
 
-						<p class="text-sm text-muted-foreground">
+						<p class="text-sm text-muted">
 							Submitted by
 							{selectedSubmission.participant_name}
 						</p>
@@ -339,7 +337,7 @@
 							{selectedSubmission.vehicle_model}
 						</p>
 
-						<p class="text-sm text-muted-foreground">
+						<p class="text-sm text-muted">
 							Submitted
 							{formatDate(selectedSubmission.submitted_at, {
 								dateStyle: "medium",
@@ -347,7 +345,7 @@
 						</p>
 
 						{#if selectedSubmission.price_nickname || selectedSubmission.price_id}
-							<p class="mt-2 text-sm text-muted-foreground">
+							<p class="mt-2 text-sm text-muted">
 								Tier:
 								<span class="font-medium text-foreground">
 									{selectedSubmission.price_nickname ||
@@ -362,9 +360,7 @@
 					<div>
 						<h3 class="font-semibold">Description</h3>
 
-						<p
-							class="whitespace-pre-wrap text-sm text-muted-foreground"
-						>
+						<p class="whitespace-pre-wrap text-sm text-muted">
 							{selectedSubmission.vehicle_description}
 						</p>
 					</div>
@@ -374,9 +370,7 @@
 					<div>
 						<h3 class="font-semibold">Modifications</h3>
 
-						<p
-							class="whitespace-pre-wrap text-sm text-muted-foreground"
-						>
+						<p class="whitespace-pre-wrap text-sm text-muted">
 							{selectedSubmission.vehicle_modifications}
 						</p>
 					</div>
@@ -404,7 +398,7 @@
 									class="rounded-xl border border-white/10 p-3"
 								>
 									<p
-										class="text-xs uppercase tracking-wide text-muted-foreground"
+										class="text-xs uppercase tracking-wide text-muted"
 									>
 										{answer.label}
 									</p>
@@ -426,7 +420,7 @@
 								submission
 							</h3>
 
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								{action === "approve"
 									? "Approval notes are optional."
 									: "A reason is required when denying a submission."}

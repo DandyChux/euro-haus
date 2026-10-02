@@ -146,27 +146,34 @@
 				]}
 			/>
 		</div>
+
 		<div class="feature-copy">
 			<p class="eyebrow light">The signature event</p>
 			<p class="feature-number">{new Date().getFullYear()}</p>
+
 			<h2>Oktoberfest</h2>
+
 			<p>
 				European and exotic cars meet the heart of Oktoberfest
 				tradition. A full afternoon of rare builds, good food, music,
 				and community.
 			</p>
+
 			{#if data.signatureEvent}
 				<div class="feature-meta">
 					<span>{data.signatureEvent.location}</span><span
 						>{formatDate(data.signatureEvent.date)}</span
 					>
 				</div>
+
 				<a
 					class={buttonVariants({ variant: "outline" })}
 					href={resolve("/event/[id]", {
 						id: data.signatureEvent.id,
-					})}>Event details <span aria-hidden="true">↗</span></a
+					})}
 				>
+					Event details <span aria-hidden="true">↗</span>
+				</a>
 			{/if}
 		</div>
 	</section>

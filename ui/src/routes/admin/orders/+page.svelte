@@ -125,17 +125,13 @@
 	<div class="space-y-4">
 		<div class="grid gap-3 sm:grid-cols-3">
 			<div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-				<p
-					class="text-xs uppercase tracking-wider text-muted-foreground"
-				>
+				<p class="text-xs uppercase tracking-wider text-muted">
 					Orders shown
 				</p>
 				<p class="mt-2 text-2xl font-semibold">{data.orders.length}</p>
 			</div>
 			<div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-				<p
-					class="text-xs uppercase tracking-wider text-muted-foreground"
-				>
+				<p class="text-xs uppercase tracking-wider text-muted">
 					Needs action
 				</p>
 				<p class="mt-2 text-2xl font-semibold">
@@ -144,9 +140,7 @@
 				</p>
 			</div>
 			<div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-				<p
-					class="text-xs uppercase tracking-wider text-muted-foreground"
-				>
+				<p class="text-xs uppercase tracking-wider text-muted">
 					Shipping / pickup
 				</p>
 				<p class="mt-2 text-2xl font-semibold">
@@ -164,7 +158,7 @@
 		>
 			<table class="w-full min-w-[64rem] text-left text-sm">
 				<thead
-					class="border-b border-white/10 text-xs uppercase tracking-wider text-muted-foreground"
+					class="border-b border-white/10 text-xs uppercase tracking-wider text-muted"
 					><tr
 						><th class="px-5 py-4">Product</th><th class="px-5 py-4"
 							>Customer</th
@@ -186,18 +180,18 @@
 								</div>
 								{#if order.price_nickname}
 									<div
-										class="mt-1 inline-flex rounded-full border border-white/10 px-2 py-1 text-xs text-muted-foreground"
+										class="mt-1 inline-flex rounded-full border border-white/10 px-2 py-1 text-xs text-muted"
 									>
 										Size: {order.price_nickname}
 									</div>
 								{/if}
-								<div class="mt-1 text-xs text-muted-foreground">
+								<div class="mt-1 text-xs text-muted">
 									Qty {order.quantity} · {order.type}
 								</div></td
 							>
 							<td class="px-5 py-4"
 								><div>{order.customer_name || "—"}</div>
-								<div class="text-xs text-muted-foreground">
+								<div class="text-xs text-muted">
 									{order.customer_email}
 								</div></td
 							>
@@ -206,7 +200,7 @@
 									class="rounded-full border border-white/10 px-3 py-1 text-xs"
 									>{fulfillmentMethod(order)}</span
 								>{#if fulfillmentMethod(order) === "Shipping" && order.shipping_address}<div
-										class="mt-2 max-w-48 whitespace-pre-line text-xs text-muted-foreground"
+										class="mt-2 max-w-48 whitespace-pre-line text-xs text-muted"
 									>
 										{order.shipping_address}
 									</div>{/if}</td
@@ -216,11 +210,11 @@
 									class={`rounded-full border px-3 py-1 text-xs capitalize ${statusClass(order.status)}`}
 									>{order.status}</span
 								>{#if order.shipped_at}<div
-										class="mt-2 text-xs text-muted-foreground"
+										class="mt-2 text-xs text-muted"
 									>
 										Shipped {formatDate(order.shipped_at)}
 									</div>{/if}{#if order.delivered_at}<div
-										class="mt-1 text-xs text-muted-foreground"
+										class="mt-1 text-xs text-muted"
 									>
 										Delivered {formatDate(
 											order.delivered_at,
@@ -228,7 +222,7 @@
 									</div>{/if}</td
 							>
 							<td
-								class="whitespace-nowrap px-5 py-4 text-xs text-muted-foreground"
+								class="whitespace-nowrap px-5 py-4 text-xs text-muted"
 								>{formatDate(order.created_at)}
 								<div class="mt-1 font-mono">
 									{order.order_id}
@@ -257,7 +251,7 @@
 											updateOrder(order, event)}
 									>
 										<label
-											class="text-xs uppercase tracking-wider text-muted-foreground"
+											class="text-xs uppercase tracking-wider text-muted"
 											>Status<select
 												name="status"
 												value={order.status}
@@ -271,7 +265,7 @@
 													>{/each}</select
 											></label
 										><label
-											class="text-xs uppercase tracking-wider text-muted-foreground"
+											class="text-xs uppercase tracking-wider text-muted"
 											>Carrier<input
 												name="tracking_carrier"
 												value={order.tracking_carrier ??
@@ -280,7 +274,7 @@
 												class="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-foreground"
 											/></label
 										><label
-											class="text-xs uppercase tracking-wider text-muted-foreground"
+											class="text-xs uppercase tracking-wider text-muted"
 											>Tracking number<input
 												name="tracking_number"
 												value={order.tracking_number ??
@@ -295,7 +289,7 @@
 												? "Saving…"
 												: "Save"}</button
 										><label
-											class="text-xs uppercase tracking-wider text-muted-foreground lg:col-span-4"
+											class="text-xs uppercase tracking-wider text-muted lg:col-span-4"
 											>Internal notes<textarea
 												name="notes"
 												rows="2"

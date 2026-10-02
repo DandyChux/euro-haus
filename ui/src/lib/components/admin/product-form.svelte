@@ -308,9 +308,7 @@
 						<Form.Label>Price</Form.Label>
 
 						<div class="flex items-center gap-2">
-							<span class="text-sm text-muted-foreground">
-								$
-							</span>
+							<span class="text-sm text-muted"> $ </span>
 
 							<Input
 								{...props}
@@ -532,7 +530,7 @@
 				{:else}
 					<p class="font-medium">Choose product images</p>
 
-					<p class="mt-1 text-sm text-muted-foreground">
+					<p class="mt-1 text-sm text-muted">
 						You can select multiple images. The first image is the
 						default.
 					</p>

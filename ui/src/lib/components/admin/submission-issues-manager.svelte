@@ -390,7 +390,7 @@
 			<div>
 				<h2 class="font-semibold">Submission filters</h2>
 
-				<p class="text-sm text-muted-foreground">
+				<p class="text-sm text-muted">
 					Control which issue records are loaded and displayed.
 				</p>
 			</div>
@@ -523,7 +523,7 @@
 	</div>
 
 	{#if visibleSubmissions.length === 0}
-		<Card class="p-8 text-center text-muted-foreground">
+		<Card class="p-8 text-center text-muted">
 			No submission issues found.
 		</Card>
 	{:else}
@@ -538,11 +538,11 @@
 								{submission.participant_name}
 							</h2>
 
-							<p class="text-sm text-muted-foreground">
+							<p class="text-sm text-muted">
 								{submission.participant_email}
 							</p>
 
-							<p class="mt-1 text-xs text-muted-foreground">
+							<p class="mt-1 text-xs text-muted">
 								{submission.id}
 							</p>
 						</div>
@@ -590,14 +590,14 @@
 
 					<div class="grid gap-4 text-sm md:grid-cols-4">
 						<div>
-							<p class="text-muted-foreground">Event</p>
+							<p class="text-muted">Event</p>
 							<p class="font-medium">
 								{getEventName(submission)}
 							</p>
 						</div>
 
 						<div>
-							<p class="text-muted-foreground">Vehicle</p>
+							<p class="text-muted">Vehicle</p>
 							<p class="font-medium">
 								{submission.vehicle_year}
 								{submission.vehicle_make}
@@ -606,7 +606,7 @@
 						</div>
 
 						<div>
-							<p class="text-muted-foreground">Submitted</p>
+							<p class="text-muted">Submitted</p>
 							<p class="font-medium">
 								{formatDate(submission.submitted_at, {
 									dateStyle: "medium",
@@ -615,7 +615,7 @@
 						</div>
 
 						<div>
-							<p class="text-muted-foreground">Ticket Type</p>
+							<p class="text-muted">Ticket Type</p>
 							<p class="font-medium">
 								{submission.ticket_type || "N/A"}
 							</p>
@@ -674,7 +674,7 @@
 					</div>
 
 					<div
-						class="flex flex-wrap gap-3 border-t pt-3 text-xs text-muted-foreground"
+						class="flex flex-wrap gap-3 border-t pt-3 text-xs text-muted"
 					>
 						{#if submission.checkout_session_id}
 							<span>
@@ -706,7 +706,7 @@
 					<div>
 						<h2 class="text-lg font-semibold">Payment status</h2>
 
-						<p class="text-sm text-muted-foreground">
+						<p class="text-sm text-muted">
 							{selectedSubmission?.participant_name}
 						</p>
 					</div>
@@ -722,7 +722,7 @@
 
 				<div class="space-y-3 text-sm">
 					<div class="flex justify-between">
-						<span class="text-muted-foreground"> Has payment </span>
+						<span class="text-muted"> Has payment </span>
 
 						<strong>
 							{paymentStatus.has_payment ? "Yes" : "No"}
@@ -731,7 +731,7 @@
 
 					{#if paymentStatus.payment_status}
 						<div class="flex justify-between">
-							<span class="text-muted-foreground"> Status </span>
+							<span class="text-muted"> Status </span>
 
 							<strong>
 								{paymentStatus.payment_status}
@@ -741,7 +741,7 @@
 
 					{#if paymentStatus.payment_amount}
 						<div class="flex justify-between">
-							<span class="text-muted-foreground"> Amount </span>
+							<span class="text-muted"> Amount </span>
 
 							<strong>
 								{(paymentStatus.payment_amount / 100).toFixed(
@@ -754,9 +754,7 @@
 
 					{#if paymentStatus.email_sent_at}
 						<div class="flex justify-between">
-							<span class="text-muted-foreground">
-								Email sent
-							</span>
+							<span class="text-muted"> Email sent </span>
 
 							<strong>
 								{formatDate(paymentStatus.email_sent_at, {
@@ -791,7 +789,7 @@
 							Create payment link
 						</h2>
 
-						<p class="text-sm text-muted-foreground">
+						<p class="text-sm text-muted">
 							{selectedSubmission.participant_name}
 						</p>
 					</div>
@@ -806,7 +804,7 @@
 				</div>
 
 				{#if loadingPrices}
-					<p class="py-6 text-center text-sm text-muted-foreground">
+					<p class="py-6 text-center text-sm text-muted">
 						Loading ticket prices…
 					</p>
 				{:else}

@@ -6,14 +6,14 @@
       "devDependencies": {
         "@fontsource-variable/roboto": "^5.2.10",
         "@internationalized/date": "^3.12.0",
-        "@lucide/svelte": "^1.24.0",
+        "@lucide/svelte": "^1.50.0",
         "@sveltejs/adapter-auto": "^7.0.1",
         "@sveltejs/adapter-static": "^3.0.10",
         "@sveltejs/kit": "2.55.0",
         "@sveltejs/vite-plugin-svelte": "6.2.4",
         "@tailwindcss/vite": "4.2.2",
         "@types/node": "^26.1.1",
-        "bits-ui": "^2.16.3",
+        "bits-ui": "^2.18.0",
         "clsx": "^2.1.1",
         "esbuild": "0.27.4",
         "formsnap": "^2.0.1",
@@ -118,7 +118,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@lucide/svelte": ["@lucide/svelte@1.28.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-C1Ge84KW2z4q44/WDIEo/2KC2jby5u6mSlta7q+p6g7u0ld8sC/w1fMBiSswF+4bxAl9jlzzaVTpp79qqkiy5g=="],
+    "@lucide/svelte": ["@lucide/svelte@1.50.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-0VGYwm1YgZd7UMv/DLZIUV0QXj9QbVds3b/ElkoTj9TwpI5GIHAV1Yk74TQ3dAzY0ShT4X/2xq7pihzBNVnvxQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

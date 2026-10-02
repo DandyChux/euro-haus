@@ -227,7 +227,7 @@
 <section class="space-y-6">
 	<div class="grid gap-4 md:grid-cols-3">
 		<Card class="p-4">
-			<p class="text-sm text-muted-foreground">Total tickets</p>
+			<p class="text-sm text-muted">Total tickets</p>
 
 			<p class="mt-2 text-3xl font-semibold">
 				{isLoading ? "—" : attendees.length}
@@ -235,7 +235,7 @@
 		</Card>
 
 		<Card class="p-4">
-			<p class="text-sm text-muted-foreground">Checked in</p>
+			<p class="text-sm text-muted">Checked in</p>
 
 			<p class="mt-2 text-3xl font-semibold text-emerald-600">
 				{isLoading ? "—" : checkedInCount}
@@ -243,7 +243,7 @@
 		</Card>
 
 		<Card class="p-4">
-			<p class="text-sm text-muted-foreground">Remaining</p>
+			<p class="text-sm text-muted">Remaining</p>
 
 			<p class="mt-2 text-3xl font-semibold">
 				{isLoading ? "—" : remainingCount}
@@ -285,7 +285,7 @@
 					class="mx-auto aspect-video w-full max-w-md rounded-2xl bg-black object-cover"
 				></video>
 
-				<p class="text-center text-sm text-muted-foreground">
+				<p class="text-center text-sm text-muted">
 					Point the camera at the ticket QR code.
 				</p>
 			</div>
@@ -325,7 +325,7 @@
 				{lastCheckedIn.customer_name}
 			</p>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				{lastCheckedIn.ticket_type}
 				·
 				{lastCheckedIn.ticket_code}

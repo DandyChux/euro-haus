@@ -257,7 +257,7 @@
 		<div>
 			<h2 class="text-lg font-semibold">Upload media</h2>
 
-			<p class="text-sm text-muted-foreground">
+			<p class="text-sm text-muted">
 				Select an event folder and upload images or videos to its
 				gallery.
 			</p>
@@ -296,13 +296,9 @@
 		>
 			<p class="text-3xl" aria-hidden="true">↥</p>
 
-			<p class="text-sm text-muted-foreground">
-				Click to upload or drag and drop
-			</p>
+			<p class="text-sm text-muted">Click to upload or drag and drop</p>
 
-			<p class="mt-1 text-xs text-muted-foreground">
-				Images and videos only
-			</p>
+			<p class="mt-1 text-xs text-muted">Images and videos only</p>
 		</div>
 
 		<input
@@ -408,18 +404,18 @@
 			<div>
 				<h2 class="text-lg font-semibold">Existing gallery</h2>
 
-				<p class="text-sm text-muted-foreground">
+				<p class="text-sm text-muted">
 					{existingFiles.length} file(s) in
 					{selectedEventSlug}/gallery
 				</p>
 			</div>
 
 			{#if loadingFiles}
-				<p class="py-8 text-center text-sm text-muted-foreground">
+				<p class="py-8 text-center text-sm text-muted">
 					Loading gallery…
 				</p>
 			{:else if existingFiles.length === 0}
-				<p class="py-8 text-center text-sm text-muted-foreground">
+				<p class="py-8 text-center text-sm text-muted">
 					No files in this gallery yet.
 				</p>
 			{:else}
