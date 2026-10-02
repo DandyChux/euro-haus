@@ -3520,13 +3520,23 @@ func createFulfillmentRecordsForSession(
 	}
 
 	if fullSession.LineItems == nil || len(fullSession.LineItems.Data) == 0 {
-		lineItems, lineErr := session.ListLineItems(sessionID, &stripe.CheckoutSessionLineItemListParams{
-			CheckoutSession: stripe.String(sessionID),
+		lineItems := session.ListLineItems(&stripe.CheckoutSessionListLineItemsParams{
+			Session: stripe.String(sessionID),
+			Expand:  []*string{stripe.String("data.price.product")},
 		})
-		if lineErr != nil {
-			return fmt.Errorf("list line items for session %s: %w", sessionID, lineErr)
+		if lineItems == nil {
+			return fmt.Errorf("list line items for session %s returned no iterator", sessionID)
 		}
-		fullSession.LineItems = lineItems
+
+		for lineItems.Next() {
+			// Advance the iterator so all pages are fetched. The iterator's
+			// LineItemList is assigned after iteration below.
+			_ = lineItems.LineItem()
+		}
+		if lineItems.Err() != nil {
+			return fmt.Errorf("list line items for session %s: %w", sessionID, lineItems.Err())
+		}
+		fullSession.LineItems = lineItems.LineItemList()
 	}
 
 	log.Printf(
