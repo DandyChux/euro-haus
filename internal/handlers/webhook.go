@@ -857,7 +857,6 @@ func handleNonSubmissionCheckoutCompleted(
 		) / 100.0
 	}
 
-	// Persist physical fulfillment orders to GORM database
 	if hasPhysicalProducts {
 		if err := createFulfillmentRecords(ctx, fullSession, isPickup); err != nil {
 			log.Printf("Error processing fulfillment records for session %s: %v", fullSession.ID, err)
@@ -873,18 +872,6 @@ func handleNonSubmissionCheckoutCompleted(
 	customerName := ""
 	if fullSession.CustomerDetails != nil {
 		customerName = fullSession.CustomerDetails.Name
-	}
-
-	if err := ProcessBundledProducts(
-		fullSession.ID,
-		customerEmail,
-		customerName,
-	); err != nil {
-		log.Printf(
-			"Error processing bundled products for session %s: %v",
-			fullSession.ID,
-			err,
-		)
 	}
 
 	if customerEmail == "" {
@@ -3471,8 +3458,10 @@ func createSubmissionRecoverySession(
 func formatShippingAddressString(session *stripe.CheckoutSession) string {
 	var addr *stripe.Address
 
-	if session.Customer != nil && session.Customer.Address != nil {
-		addr = session.Customer.Address
+	if session.Customer != nil && session.Customer.Shipping != nil && session.Customer.Shipping.Address != nil {
+		addr = session.Customer.Shipping.Address
+	} else if session.CustomerDetails != nil && session.CustomerDetails.Address != nil {
+		addr = session.CustomerDetails.Address
 	} else if session.Customer != nil && session.Customer.Address != nil {
 		addr = session.Customer.Address
 	}

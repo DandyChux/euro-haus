@@ -72,7 +72,7 @@ func ProcessBundledProducts(sessionID string, customerEmail string, customerName
 		}
 
 		fulfillmentID := fmt.Sprintf(
-			"bundled:%s:%s",
+			"bundle:%s:%s",
 			sessionID,
 			included.ProductID,
 		)
@@ -181,12 +181,4 @@ func sendBundledProductsEmail(email, name string, products []map[string]interfac
 			err,
 		)
 	}
-}
-
-// GetEventAddons retrieves available add-on products for an event
-func GetEventAddons(eventID string) ([]map[string]interface{}, error) {
-	// This would fetch the linked products for display during checkout
-	// Implementation depends on how you want to structure the checkout flow
-
-	return []map[string]interface{}{}, nil
 }
