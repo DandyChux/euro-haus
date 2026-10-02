@@ -719,6 +719,18 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 						)
 					}
 
+					if fulfillmentErr := createFulfillmentRecordsForSession(
+						ctx,
+						checkoutSession.ID,
+						participantSubmission.EventID,
+					); fulfillmentErr != nil {
+						log.Printf(
+							"Failed to create participant fulfillment records for session %s: %v",
+							checkoutSession.ID,
+							fulfillmentErr,
+						)
+					}
+
 					log.Printf(
 						"Submission %s checkout completed; awaiting approval",
 						participantSubmission.ID,
@@ -3598,6 +3610,8 @@ func createFulfillmentRecords(
 		}
 	}
 
+	createdCount := 0
+	physicalCount := 0
 	for _, lineItem := range fullSession.LineItems.Data {
 		if lineItem.Price == nil {
 			log.Printf("Skipping fulfillment line item without price for session %s", fullSession.ID)
@@ -3618,6 +3632,7 @@ func createFulfillmentRecords(
 			productName = lineItem.Description
 		}
 
+		physicalCount++
 		priceID := lineItem.Price.ID
 		fulfillment := models.Fulfillment{
 			ID:              fmt.Sprintf("ful_%s_%s", fullSession.ID, priceID),
@@ -3639,8 +3654,16 @@ func createFulfillmentRecords(
 				return fmt.Errorf("create fulfillment for session %s, product %s: %w", fullSession.ID, productID, err)
 			}
 			log.Printf("Fulfillment already exists for session %s, product %s", fullSession.ID, productID)
+		} else {
+			createdCount++
 		}
 	}
 
+	log.Printf(
+		"Fulfillment persistence complete session=%s physical_items=%d created=%d",
+		fullSession.ID,
+		physicalCount,
+		createdCount,
+	)
 	return nil
 }
