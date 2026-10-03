@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,6 +133,50 @@ type TaxBreakdownItem struct {
 	Percentage   string `json:"percentage,omitempty"`
 }
 
+func validateCheckoutInventory(ctx context.Context, req CreateCheckoutSessionRequest) error {
+	quantities := make(map[string]int64)
+	add := func(priceID string, quantity int64) error {
+		if priceID == "" || quantity <= 0 {
+			return fmt.Errorf("invalid price quantity")
+		}
+		quantities[priceID] += quantity
+		return nil
+	}
+
+	for _, item := range req.LineItems {
+		if item.Price != "" {
+			if err := add(item.Price, item.Quantity); err != nil {
+				return err
+			}
+		}
+	}
+	if req.PriceID != "" {
+		if err := add(req.PriceID, req.Quantity); err != nil {
+			return err
+		}
+	}
+	for _, addon := range req.AddOns {
+		if err := add(addon.PriceID, addon.Quantity); err != nil {
+			return err
+		}
+	}
+
+	for priceID, quantity := range quantities {
+		var available *int
+		if err := services.GetDB().WithContext(ctx).
+			Model(&models.PriceInfo{}).
+			Select("stock_quantity").
+			Where("id = ?", priceID).
+			Scan(&available).Error; err != nil {
+			return fmt.Errorf("failed to validate inventory")
+		}
+		if available != nil && *available < int(quantity) {
+			return fmt.Errorf("item is sold out or has insufficient stock")
+		}
+	}
+	return nil
+}
+
 // CreatePaymentIntent creates a new payment intent for custom payment flows
 func CreatePaymentIntent(w http.ResponseWriter, r *http.Request) {
 	var req CreatePaymentIntentRequest
@@ -171,6 +216,13 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate server-owned inventory before creating a Stripe session. Stripe's
+	// active flag is not sufficient because stock can be exhausted independently.
+	if err := validateCheckoutInventory(r.Context(), req); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 
@@ -542,6 +594,33 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError,
 		)
 		return
+	}
+
+	// Validate inventory for every physical price included by the event tier.
+	// The included quantity is per event ticket, so multiply it by the number
+	// of tickets being purchased.
+	for _, included := range includedProducts {
+		if included.Product.ID == "" || len(included.Product.Prices) == 0 || included.Quantity <= 0 {
+			continue
+		}
+
+		selectedPrice := included.Product.Prices[0]
+		for _, requested := range req.AddOnProducts {
+			for _, candidate := range included.Product.Prices {
+				if candidate.ID == requested.PriceID {
+					selectedPrice = candidate
+					break
+				}
+			}
+		}
+
+		if selectedPrice.StockQuantity != nil {
+			required := int64(included.Quantity) * requestedQuantity
+			if *selectedPrice.StockQuantity < int(required) {
+				http.Error(w, "An included product is sold out or has insufficient stock", http.StatusConflict)
+				return
+			}
+		}
 	}
 
 	hasIncludedProducts := len(includedProducts) > 0

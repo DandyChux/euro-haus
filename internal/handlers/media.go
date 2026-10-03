@@ -476,7 +476,7 @@ func UploadEventGalleryBatch(w http.ResponseWriter, r *http.Request) {
 		file, err := fileHeader.Open()
 		if err != nil {
 			errMsg := fmt.Sprintf("Failed to open file %s: %v", fileHeader.Filename, err)
-			log.Printf(errMsg)
+			log.Printf("%s", errMsg)
 			errors = append(errors, errMsg)
 			continue
 		}
@@ -493,7 +493,7 @@ func UploadEventGalleryBatch(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			errMsg := fmt.Sprintf("Failed to upload file %s: %v", fileHeader.Filename, err)
-			log.Printf(errMsg)
+			log.Printf("%s", errMsg)
 			errors = append(errors, errMsg)
 			continue
 		}

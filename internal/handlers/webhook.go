@@ -2319,7 +2319,17 @@ func updateProductVariantStock(
 		Scan(&remainingStock)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		// Either unlimited inventory or insufficient inventory.
+		// NULL stock means unlimited inventory. A non-NULL row with too
+		// little stock is a failed inventory reservation; report it rather
+		// than silently accepting a purchase that cannot be fulfilled.
+		var stock *int
+		if lookupErr := db.Raw(`SELECT stock_quantity FROM prices WHERE id = ?`, priceID).Scan(&stock).Error; lookupErr != nil {
+			log.Printf("Failed to inspect stock for price %s: %v", priceID, lookupErr)
+			return
+		}
+		if stock != nil {
+			log.Printf("Insufficient stock for price %s: requested %d, remaining %d", priceID, quantitySold, *stock)
+		}
 		return
 	}
 
