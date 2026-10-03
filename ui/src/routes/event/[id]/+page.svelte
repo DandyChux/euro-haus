@@ -484,6 +484,7 @@
 									price,
 									String(getPriceQuantity(price)),
 								);
+								selectedAddOns = [];
 							}
 						}}
 					>
@@ -593,17 +594,22 @@
 																				: addOn,
 																	)
 																: [
-																		...selectedAddOns,
-																		{
-																			product_id:
-																				product.id,
-																			price_id:
-																				nextPrice.id,
-																			quantity:
-																				product.quantity ??
-																				1,
-																		},
-																	];
+																		selectedAddOns = selectedAddOns.some(
+																			(addOn) => addOn.product_id === product.id,
+																		)
+																			? selectedAddOns.map((addOn) =>
+																				addOn.product_id === product.id
+																					? { ...addOn, price_id: nextPrice.id }
+																					: addOn,
+																				)
+																			: [
+																				...selectedAddOns,
+																				{
+																				product_id: product.id,
+																				price_id: nextPrice.id,
+																				quantity: product.quantity ?? 1,
+																			},
+																		];
 													}}
 												>
 													<Select.Trigger>
