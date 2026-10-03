@@ -162,15 +162,21 @@ func validateCheckoutInventory(ctx context.Context, req CreateCheckoutSessionReq
 	}
 
 	for priceID, quantity := range quantities {
-		var available *int
-		if err := services.GetDB().WithContext(ctx).
-			Model(&models.PriceInfo{}).
+		var stock struct {
+			StockQuantity *int `gorm:"column:stock_quantity"`
+		}
+		result := services.GetDB().WithContext(ctx).
+			Table("prices").
 			Select("stock_quantity").
 			Where("id = ?", priceID).
-			Scan(&available).Error; err != nil {
+			Scan(&stock)
+		if result.Error != nil {
 			return fmt.Errorf("failed to validate inventory")
 		}
-		if available != nil && *available < int(quantity) {
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("price not found")
+		}
+		if stock.StockQuantity != nil && *stock.StockQuantity < int(quantity) {
 			return fmt.Errorf("item is sold out or has insufficient stock")
 		}
 	}
@@ -222,7 +228,11 @@ func CreateCheckoutSession(w http.ResponseWriter, r *http.Request) {
 	// Validate server-owned inventory before creating a Stripe session. Stripe's
 	// active flag is not sufficient because stock can be exhausted independently.
 	if err := validateCheckoutInventory(r.Context(), req); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		status := http.StatusConflict
+		if err.Error() == "price not found" {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 
@@ -525,6 +535,11 @@ func CreateEventCheckoutSession(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, "Unable to validate event price", http.StatusInternalServerError)
+		return
+	}
+
+	if eventPrice.StockQuantity != nil && *eventPrice.StockQuantity < int(req.Quantity) {
+		http.Error(w, "Ticket is sold out or has insufficient stock", http.StatusConflict)
 		return
 	}
 
