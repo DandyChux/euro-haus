@@ -313,22 +313,15 @@ func loadEventPrices(
 		return err
 	}
 
-	// Product prices are loaded explicitly below as a fallback for deployments
-	// where nested GORM preloading does not hydrate the association reliably.
 	for priceIndex := range prices {
-		for linkIndex := range prices[priceIndex].IncludedProductLinks {
-			product := &prices[priceIndex].IncludedProductLinks[linkIndex].Product
-			if product.ID == "" {
-				continue
-			}
-
-			if err := db.WithContext(ctx).
-				Where("stripe_product_id = ? AND active = ?", product.ID, true).
-				Order("unit_amount ASC, id ASC").
-				Find(&product.Prices).Error; err != nil {
-				return err
-			}
+		requirements, err := loadPriceRequirementsForPrice(
+			prices[priceIndex].ID,
+		)
+		if err != nil {
+			return err
 		}
+
+		prices[priceIndex].Requirements = requirements
 	}
 
 	if prices == nil {

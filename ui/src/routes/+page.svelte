@@ -127,9 +127,9 @@
 	</section>
 
 	<section class="feature">
-		<div class="feature-image">
+		<div class="feature-image" id="feature-image">
 			<Picture
-				src="https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/PANA1640.jpg"
+				src="https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/eurohaus%20flyer.JPEG"
 				alt="Blue GT4"
 				loading="lazy"
 				sizes="(max-width: 800px) 100vw, 40vw"
@@ -137,7 +137,7 @@
 					{
 						type: "image/webp",
 						srcset: generateSrcSet(
-							"https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/PANA1640.jpg",
+							"https://euro-haus.nyc3.cdn.digitaloceanspaces.com/images/eurohaus%20flyer.JPEG",
 							[800, 1800],
 							"webp",
 							85,

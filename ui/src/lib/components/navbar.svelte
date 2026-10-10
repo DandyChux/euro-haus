@@ -35,12 +35,22 @@
 </script>
 
 <header class="site-header">
-	<!-- <div class="event-bar">
-		<p><span>Next up</span> 2026 Oktoberfest · Tampa, FL</p>
-		<a href={resolve("/events")}
-			>See event <span aria-hidden="true">↗</span></a
-		>
-	</div> -->
+	<div
+		class="announcement-bar"
+		role="region"
+		aria-label="Announcement"
+		aria-live="polite"
+	>
+		<p>
+			<span>Event update</span>
+			2026 Oktoberfest has been postponed
+		</p>
+
+		<a href={resolve("/#feature-image")}>
+			Read update <span aria-hidden="true">↗</span>
+		</a>
+	</div>
+
 	<div class="nav-shell">
 		<a
 			class="wordmark"
@@ -134,29 +144,36 @@
 		width: 100%;
 		@apply backdrop-blur supports-backdrop-filter:bg-background/30;
 	}
-	.event-bar {
-		height: 35px;
+
+	.announcement-bar {
+		min-height: 35px;
 		padding-inline: 24px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		gap: 20px;
 		background: var(--foreground);
 		color: var(--background);
 		font-size: 10px;
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
-	.event-bar p {
+
+	.announcement-bar p {
 		margin: 0;
 	}
-	.event-bar p span {
+
+	.announcement-bar p span {
 		margin-right: 18px;
 		color: var(--accent);
 	}
-	.event-bar a {
+
+	.announcement-bar a {
 		border-bottom: 1px solid
 			color-mix(in srgb, var(--background) 42%, var(--primary));
+		white-space: nowrap;
 	}
+
 	.nav-shell {
 		height: 88px;
 		padding-inline: 24px;
@@ -241,10 +258,10 @@
 	}
 
 	@media (max-width: 800px) {
-		.event-bar {
+		.announcement-bar {
 			padding-inline: 16px;
 		}
-		.event-bar p span {
+		.announcement-bar p span {
 			display: none;
 		}
 		.nav-shell {
