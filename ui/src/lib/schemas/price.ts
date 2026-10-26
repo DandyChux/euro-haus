@@ -68,5 +68,5 @@ export function priceRequiresVehicleSubmission(price: Price): boolean {
 }
 
 export function priceIsSoldOut(price: Price): boolean {
-	return price.sold_out === true;
+	return price.sold_out || price.stock_quantity === 0;
 }
