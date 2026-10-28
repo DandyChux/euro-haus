@@ -73,8 +73,8 @@ COPY --from=frontend /ui/build ./static/
 
 ENV STATIC_DIR=./static
 
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:8080/healthcheck || exit 1
+# HEALTHCHECK --interval=30s --timeout=3s \
+#   CMD curl -f http://localhost:8080/healthcheck || exit 1
 
 EXPOSE 8080
 CMD ["./euro-haus"]
