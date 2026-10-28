@@ -129,7 +129,7 @@ export function getOptimizedImageUrl(
 		quality?: number;
 	},
 ): string {
-	const IMGPROXY_URL = "https://img.theeurohaus.com";
+	const IMGPROXY_URL = "https://img.ceokoroji.dev";
 
 	// If no width is provided, default to 0 (Imgproxy keeps original width)
 	const width = options?.width === "auto" ? 0 : options?.width || 0;
