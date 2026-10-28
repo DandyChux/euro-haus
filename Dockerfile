@@ -62,6 +62,9 @@ FROM alpine:latest AS prod
 
 WORKDIR /app
 
+# Install curl for the container healthcheck
+RUN apk add --no-cache curl
+
 # Copy the Go binary
 COPY --from=builder /app/euro-haus .
 COPY --from=builder /app/create-admin .
@@ -73,8 +76,8 @@ COPY --from=frontend /ui/build ./static/
 
 ENV STATIC_DIR=./static
 
-# HEALTHCHECK --interval=30s --timeout=3s \
-#   CMD curl -f http://localhost:8080/healthcheck || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl --fail --silent http://127.0.0.1:8080/api/healthcheck || exit 1
 
 EXPOSE 8080
 CMD ["./euro-haus"]
