@@ -215,8 +215,8 @@ export function generateSrcSet(
 	quality: number = 85,
 ): string {
 	return widths
-		.map((width) => {
-			const url = getOptimizedImageUrl(src, {
+		.map(async (width) => {
+			const url = await getOptimizedImageUrl(src, {
 				width,
 				format,
 				quality,
