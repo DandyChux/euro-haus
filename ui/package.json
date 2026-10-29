@@ -13,6 +13,7 @@
 	},
 	"devDependencies": {
 		"@fontsource-variable/roboto": "^5.2.10",
+		"@imgproxy/imgproxy-node": "^1.1.0",
 		"@internationalized/date": "^3.12.0",
 		"@lucide/svelte": "^1.50.0",
 		"@sveltejs/adapter-auto": "^7.0.1",

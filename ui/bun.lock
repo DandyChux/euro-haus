@@ -5,6 +5,7 @@
       "name": "ui",
       "devDependencies": {
         "@fontsource-variable/roboto": "^5.2.10",
+        "@imgproxy/imgproxy-node": "^1.1.0",
         "@internationalized/date": "^3.12.0",
         "@lucide/svelte": "^1.50.0",
         "@sveltejs/adapter-auto": "^7.0.1",
@@ -105,6 +106,10 @@
     "@hapi/hoek": ["@hapi/hoek@9.3.0", "", {}, "sha512-/c6rf4UJlmHlC9b5BaNvzAcFv7HZ2QHaV0D4/HNlBdvFnvQq8RI4kYdhyPCl7Xj+oWvTWQ8ujhqS53LIgAe6KQ=="],
 
     "@hapi/topo": ["@hapi/topo@5.1.0", "", { "dependencies": { "@hapi/hoek": "^9.0.0" } }, "sha512-foQZKJig7Ob0BMAYBfcJk8d77QtOe7Wo4ox7ff1lQYoNNAb6jwcY1ncdoy2e9wQZzvNy7ODZCYJkK8kzmcAnAg=="],
+
+    "@imgproxy/imgproxy-js-core": ["@imgproxy/imgproxy-js-core@1.9.0", "", {}, "sha512-bfnl6sLt7qoimwd9dx8QLOH5C69tir2KGcx+g51IxGZWVJk32RUk/8+1oUh+T+H6MPrN9ts//V8a7fQ6bUlXow=="],
+
+    "@imgproxy/imgproxy-node": ["@imgproxy/imgproxy-node@1.1.0", "", { "dependencies": { "@imgproxy/imgproxy-js-core": "^1.3.0" } }, "sha512-oxet1AVhvZbnBjZrq/moaLAb3LnJN1xDR2oQMam5lJy4equMngH3bfE7ePJ++Yz65tmNcINt9/X4oesJInAEjw=="],
 
     "@internationalized/date": ["@internationalized/date@3.12.3", "", { "dependencies": { "@swc/helpers": "^0.5.0" } }, "sha512-fuLX+3ZKLsxI73y8b01EG/WjHb6gE6weCqlfawPO27kBWGMh9G1yH6Csv1uU7/cac9H2GHmOMt6CjmuQ1aia4Q=="],
 
