@@ -141,8 +141,8 @@ export function getOptimizedImageUrl(
 			value: src,
 			displayAs: "plain",
 		},
-		key: import.meta.env.IMGPROXY_KEY,
-		salt: import.meta.env.IMGPROXY_SALT,
+		key: import.meta.env.VITE_IMGPROXY_KEY,
+		salt: import.meta.env.VITE_IMGPROXY_SALT,
 		options: {
 			resizing_type: "fill",
 			width: width,
