@@ -163,8 +163,8 @@ export async function getOptimizedImageUrl(
 	const format = options?.format || "webp";
 	const quality = options?.quality || 85;
 
-	const keyHex = import.meta.env.IMGPROXY_KEY;
-	const saltHex = import.meta.env.IMGPROXY_SALT;
+	const keyHex = import.meta.env.VITE_IMGPROXY_KEY;
+	const saltHex = import.meta.env.VITE_IMGPROXY_SALT;
 
 	// Imgproxy processing options:
 	// rs:fill:WIDTH:HEIGHT / q:QUALITY / f:FORMAT
