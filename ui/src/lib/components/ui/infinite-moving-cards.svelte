@@ -15,9 +15,13 @@
 </script>
 
 <script lang="ts">
-	type Direction = 'left' | 'right';
-	type Speed = 'fast' | 'normal' | 'slow';
-	type Variant = 'testimonial' | 'logo';
+	import { generateSrcSet } from "$lib/utils";
+
+	import Picture from "../picture.svelte";
+
+	type Direction = "left" | "right";
+	type Speed = "fast" | "normal" | "slow";
+	type Variant = "testimonial" | "logo";
 
 	interface Props {
 		items: InfiniteMovingItem[];
@@ -30,60 +34,85 @@
 
 	let {
 		items,
-		direction = 'left',
-		speed = 'fast',
+		direction = "left",
+		speed = "fast",
 		pauseOnHover = true,
-		className = '',
-		variant = 'testimonial'
+		className = "",
+		variant = "testimonial",
 	}: Props = $props();
 
 	const durationMap: Record<Speed, string> = {
-		fast: '20s',
-		normal: '40s',
-		slow: '80s'
+		fast: "20s",
+		normal: "40s",
+		slow: "80s",
 	};
 
 	let duplicatedItems = $derived([...items, ...items]);
 	let animationDuration = $derived(durationMap[speed]);
-	let animationDirection = $derived(direction === 'left' ? 'normal' : 'reverse');
+	let animationDirection = $derived(
+		direction === "left" ? "normal" : "reverse",
+	);
 
 	function isLogoItem(item: InfiniteMovingItem): item is LogoItem {
-		return 'logoUrl' in item;
+		return "logoUrl" in item;
 	}
 </script>
 
 <div
 	class={[
-		'scroller relative z-20 max-w-7xl overflow-hidden [mask-image:linear-gradient(to_right,transparent,white_20%,white_80%,transparent)]',
-		pauseOnHover && 'pause-on-hover',
-		className
+		"scroller relative z-20 max-w-7xl overflow-hidden [mask-image:linear-gradient(to_right,transparent,white_20%,white_80%,transparent)]",
+		pauseOnHover && "pause-on-hover",
+		className,
 	]}
 	style={`--animation-duration: ${animationDuration}; --animation-direction: ${animationDirection}; --gap: 1rem;`}
 >
 	<ul class="track">
 		{#each duplicatedItems as item, idx (`${isLogoItem(item) ? item.name : item.name}-${idx}`)}
-			{#if variant === 'logo' && isLogoItem(item)}
+			{#if variant === "logo" && isLogoItem(item)}
 				{@const logo = item}
 				<li
 					aria-hidden={idx >= items.length}
 					class="relative shrink-0 rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
 				>
 					{#if logo.link}
-						<a href={logo.link} target="_blank" rel="noopener noreferrer" class="block">
-							<div class="flex h-40 w-60 items-center justify-center p-4">
-								<img
+						<a
+							href={logo.link}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="block"
+						>
+							<div
+								class="flex h-40 w-60 items-center justify-center p-4"
+							>
+								<Picture
 									src={logo.logoUrl}
 									alt={logo.name}
 									class="max-h-full max-w-full object-contain transition-all duration-300 hover:grayscale"
+									sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+									srcset={generateSrcSet(
+										logo.logoUrl,
+										[400, 800, 1200],
+										"webp",
+										85,
+									)}
 								/>
 							</div>
 						</a>
 					{:else}
-						<div class="flex h-40 w-60 items-center justify-center p-4">
-							<img
+						<div
+							class="flex h-40 w-60 items-center justify-center p-4"
+						>
+							<Picture
 								src={logo.logoUrl}
 								alt={logo.name}
 								class="max-h-full max-w-full object-contain transition-all duration-300 hover:grayscale"
+								sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+								srcset={generateSrcSet(
+									logo.logoUrl,
+									[400, 800, 1200],
+									"webp",
+									85,
+								)}
 							/>
 						</div>
 					{/if}
@@ -100,16 +129,24 @@
 							class="pointer-events-none absolute -left-0.5 -top-0.5 -z-1 h-[calc(100%_+_4px)] w-[calc(100%_+_4px)] select-none"
 						></div>
 
-						<span class="relative z-20 text-sm leading-[1.6] font-normal text-neutral-800 dark:text-gray-100">
+						<span
+							class="relative z-20 text-sm leading-[1.6] font-normal text-neutral-800 dark:text-gray-100"
+						>
 							{testimonial.quote}
 						</span>
 
-						<div class="relative z-20 mt-6 flex flex-row items-center">
+						<div
+							class="relative z-20 mt-6 flex flex-row items-center"
+						>
 							<span class="flex flex-col gap-1">
-								<span class="text-sm leading-[1.6] font-normal text-neutral-500 dark:text-gray-400">
+								<span
+									class="text-sm leading-[1.6] font-normal text-neutral-500 dark:text-gray-400"
+								>
 									{testimonial.name}
 								</span>
-								<span class="text-sm leading-[1.6] font-normal text-neutral-500 dark:text-gray-400">
+								<span
+									class="text-sm leading-[1.6] font-normal text-neutral-500 dark:text-gray-400"
+								>
 									{testimonial.title}
 								</span>
 							</span>

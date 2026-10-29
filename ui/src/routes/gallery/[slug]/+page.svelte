@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { resolve } from "$app/paths";
 	import Newsletter from "$lib/components/newsletter.svelte";
+	import Picture from "$lib/components/picture.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import { buttonVariants } from "$lib/components/ui/button";
-	import { formatDate } from "$lib/utils";
+	import { formatDate, generateSrcSet } from "$lib/utils";
 
 	let { data } = $props();
 
@@ -67,10 +68,22 @@
 		>
 			{#each data.images as photo, index (photo.url)}
 				<figure class:wide={index % 11 === 0 || index % 11 === 6}>
-					<img
+					<Picture
 						src={photo.url}
 						alt={photo.key}
 						loading={index < 2 ? "eager" : "lazy"}
+						sizes="(max-width: 640px) 100vw, (max-width: 1280px) 80vw, 768px"
+						sources={[
+							{
+								type: "image/webp",
+								srcset: generateSrcSet(
+									photo.url,
+									[400, 800, 1200],
+									"webp",
+									85,
+								),
+							},
+						]}
 					/>
 					<figcaption>
 						<span

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { generateSrcSet } from "$lib/utils";
+	import Picture from "./picture.svelte";
+
 	let {
 		eyebrow,
 		title,
@@ -27,7 +30,19 @@
 			<p>{intro}</p>
 		</div>
 	</div>
-	<div class="page-masthead-image"><img src={image} {alt} /></div>
+	<div class="page-masthead-image">
+		<Picture
+			src={image}
+			{alt}
+			sizes="100vw"
+			srcset={generateSrcSet(
+				image,
+				[400, 800, 1200, 1600, 2000, 2400],
+				"webp",
+				85,
+			)}
+		/>
+	</div>
 </section>
 
 <style>

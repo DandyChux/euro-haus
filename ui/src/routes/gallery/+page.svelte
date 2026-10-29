@@ -3,11 +3,12 @@
 	import { resolve } from "$app/paths";
 	import { page } from "$app/state";
 	import Newsletter from "$lib/components/newsletter.svelte";
+	import Picture from "$lib/components/picture.svelte";
 	import { Badge } from "$lib/components/ui/badge";
 	import { buttonVariants } from "$lib/components/ui/button";
 	import * as Select from "$lib/components/ui/select";
 	import type { EventGallery } from "$lib/schemas/media";
-	import { formatDate } from "$lib/utils";
+	import { formatDate, generateSrcSet } from "$lib/utils";
 	import type { PageProps } from "./$types";
 
 	let { data }: PageProps = $props();
@@ -172,10 +173,17 @@
 					<div class="photo-grid">
 						{#each album.images.slice(0, 6) as photo, photoIndex (photo.url)}
 							<figure class:featured={photoIndex === 0}>
-								<img
+								<Picture
 									src={photo.url}
 									alt={photo.key}
 									loading="lazy"
+									sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+									srcset={generateSrcSet(
+										photo.url,
+										[400, 800, 1200],
+										"webp",
+										85,
+									)}
 								/>
 								<figcaption>
 									<span

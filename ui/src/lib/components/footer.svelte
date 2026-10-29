@@ -4,6 +4,7 @@
 	import Youtube from "$lib/assets/youtube.svg";
 	import Instagram from "$lib/assets/instagram.svg";
 	import { buttonVariants } from "./ui/button";
+	import { generateSrcSet } from "$lib/utils";
 
 	const socialLinks = [
 		{
@@ -64,7 +65,15 @@
 							})}
 							aria-label={social.name}
 						>
-							<img src={Icon} alt={social.name} class="size-5" />
+							<img
+								src={Icon}
+								alt={social.name}
+								height={20}
+								width={20}
+								class="size-5"
+								sizes="20px"
+								srcset={generateSrcSet(Icon, [20], "webp", 100)}
+							/>
 						</a>
 					{/each}
 				</div>

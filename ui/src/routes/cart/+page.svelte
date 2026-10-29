@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Picture from "$lib/components/picture.svelte";
 	import { Button } from "$lib/components/ui/button";
 	import {
 		cart,
@@ -141,7 +142,7 @@
 							class="aspect-square overflow-hidden rounded-2xl bg-zinc-900"
 						>
 							{#if item.imageUrl}
-								<img
+								<Picture
 									src={item.imageUrl}
 									alt={item.title}
 									class="h-full w-full object-cover"

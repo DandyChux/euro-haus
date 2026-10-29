@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Newsletter from "$lib/components/newsletter.svelte";
+	import Picture from "$lib/components/picture.svelte";
 	import { buttonVariants } from "$lib/components/ui/button";
-	import { formatCurrency } from "$lib/utils";
+	import { formatCurrency, generateSrcSet } from "$lib/utils";
 	import type { PageProps } from "./$types";
 
 	let { data }: PageProps = $props();
@@ -47,9 +48,16 @@
 				</p>
 			</div>
 			<div class="catalog-hero-image">
-				<img
+				<Picture
 					src="https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?auto=format&fit=crop&w=2400&q=85"
 					alt="Classic European car detail in a workshop"
+					sizes="100vw"
+					srcset={generateSrcSet(
+						"https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?auto=format&fit=crop&w=2400&q=85",
+						[400, 800, 1200, 1600],
+						"webp",
+						85,
+					)}
 				/>
 			</div>
 		</section>
