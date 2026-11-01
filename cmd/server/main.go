@@ -91,6 +91,10 @@ func init() {
 	// Initialize event listeners
 	handlers.InitEventListeners()
 
+	// Initialize IMGProxy config
+	if err := handlers.InitImageConfig(); err != nil {
+		log.Fatalf("initialize image config: %v", err)
+	}
 }
 
 // loggingMiddleware logs each request with method, path, status, and duration
@@ -197,6 +201,9 @@ func main() {
 
 	// Public media management endpoint
 	api.HandleFunc("/media", handlers.ListMedia).Methods("GET")
+
+	// Images
+	api.HandleFunc("/images/{width}", handlers.RedirectImage).Methods("GET")
 
 	// -----------------------------------------
 	// Admin endpoints (requires authentication)
