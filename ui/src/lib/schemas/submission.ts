@@ -70,6 +70,7 @@ export const vehicleSubmissionSchema = z.object({
 	payment_succeeded_at: z.string().optional(),
 	payment_captured: z.boolean(),
 	payment_captured_at: z.string().optional(),
+	payment_status: z.string().optional(),
 
 	price_id: z.string().optional(),
 	price_nickname: z.string().optional(),

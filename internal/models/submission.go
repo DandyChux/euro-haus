@@ -46,6 +46,7 @@ type VehicleSubmission struct {
 	PaymentSucceededAt             *time.Time
 	PaymentCaptured                bool
 	PaymentCapturedAt              *time.Time
+	PaymentStatus string `gotm:"type:varchar(50);index:idx_submissions_payment_status"`
 
 	PriceID       string `gorm:"index:idx_submissions_price"`
 	PromotionCode string
@@ -203,6 +204,7 @@ type VehicleSubmissionDTO struct {
 	PaymentSucceededAt             string `json:"payment_succeeded_at,omitempty"`
 	PaymentCaptured                bool   `json:"payment_captured"`
 	PaymentCapturedAt              string `json:"payment_captured_at,omitempty"`
+	PaymentStatus                  string `json:"payment_status,omitempty"`
 
 	PriceID       string `json:"price_id,omitempty"`
 	PriceNickname string `json:"price_nickname,omitempty"`

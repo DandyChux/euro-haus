@@ -1301,6 +1301,12 @@ func GetSubmissionPaymentStatus(w http.ResponseWriter, r *http.Request) {
 			status.PaymentStatus = string(pi.Status)
 			status.PaymentAmount = pi.Amount
 			status.PaymentCurrency = string(pi.Currency)
+
+			_ = services.GetDB().WithContext(r.Context()).Exec(`
+				UPDATE vehicle_submissions
+				SET payment_status = ?
+				WHERE id = ?
+			`, string(pi.Status), submissionID)
 		} else if status.ErrorMessage == "" {
 			status.ErrorMessage = fmt.Sprintf(
 				"PaymentIntent not found: %v",
@@ -1373,6 +1379,7 @@ func CreateSubmissionPayment(
 			"submission_id": submission.ID,
 			"event_id":      submission.EventID,
 			"event_name":    req.EventName,
+			"participant":   "true",
 			"type":          "participant_registration",
 		},
 		CustomerEmail:       stripe.String(submission.ParticipantEmail),
@@ -1398,16 +1405,19 @@ func CreateSubmissionPayment(
 
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`
-			UPDATE vehicle_submissions
-			SET
-				checkout_session_id = ?,
-				price_id = NULLIF(?, ''),
-				checkout_created_at = NOW()
-			WHERE id = ?
-		`,
-			checkoutSession.ID,
-			req.PriceID,
-			submissionID)
+		    UPDATE vehicle_submissions
+		    SET
+		        checkout_session_id = ?,
+		        payment_intent_id = NULL,
+		        checkout_completed = FALSE,
+		        checkout_completed_at = NULL,
+		        payment_captured = FALSE,
+		        payment_captured_at = NULL,
+		        payment_status = 'unpaid',
+		        price_id = NULLIF(?, ''),
+		        checkout_created_at = NOW()
+		    WHERE id = ?
+		`, checkoutSession.ID, req.PriceID, submissionID)
 
 		if result.Error != nil {
 			return fmt.Errorf(
@@ -1691,44 +1701,37 @@ func GetAllSubmissionsWithIssues(w http.ResponseWriter, r *http.Request) {
 				submission.PaymentIntentID != ""
 
 		if status == "approved" {
-			if !hasPaymentData {
+			isCanceled := submission.PaymentStatus == "canceled" || submission.PaymentStatus == "cancelled"
+			isExpired := submission.PaymentStatus == "expired"
+
+			if isCanceled {
 				hasIssue = true
-				issues = appendUniqueIssue(issues, "no_payment")
+				issues = appendUniqueIssue(issues, "payment_canceled")
+			} else if isExpired {
+				hasIssue = true
+				issues = appendUniqueIssue(issues, "payment_expired")
 			}
 
-			// Payment provider state is checked on demand by the page action.
-			// Stored flags are sufficient to identify records needing review.
-			if !submission.CheckoutCompleted || !hasPaymentData {
+			if !submission.PaymentCaptured && submission.TicketID == "" {
 				hasIssue = true
-				if !hasPaymentData {
-					issues = appendUniqueIssue(issues, "no_payment")
+				if isCanceled {
+					// Already flagged payment_canceled
+				} else if isExpired {
+					// Already flagged payment_expired
+				} else if submission.PaymentIntentID != "" {
+					issues = appendUniqueIssue(issues, "payment_requires_capture")
 				} else {
 					issues = appendUniqueIssue(issues, "payment_incomplete")
 				}
 			}
-			if submission.PaymentIntentID != "" &&
-				!submission.PaymentCaptured &&
-				submission.AwaitingApproval {
-				hasIssue = true
-				issues = appendUniqueIssue(issues, "payment_requires_capture")
-			}
 
-			if submission.CheckoutSessionID == "" &&
-				submission.PaymentIntentID != "" {
+			if submission.CheckoutCompleted && submission.TicketID == "" {
 				hasIssue = true
-				issues = appendUniqueIssue(issues, "incomplete_payment_process")
-			}
-
-			if submission.CheckoutCompleted &&
-				submission.TicketID == "" &&
-				submission.PaymentIntentID != "" {
-				hasIssue = true
-				issues = appendUniqueIssue(issues, "no_ticket_created")
-			}
-
-			if submission.CheckoutSessionID == "" {
-				hasIssue = true
-				issues = appendUniqueIssue(issues, "missing_checkout_data")
+				if submission.PaymentCaptured || submission.PaymentSucceededBeforeApproval {
+					issues = appendUniqueIssue(issues, "no_ticket_created")
+				} else if !isCanceled && !isExpired {
+					issues = appendUniqueIssue(issues, "payment_not_succeeded")
+				}
 			}
 		}
 
@@ -2305,6 +2308,21 @@ func RetrySubmissionTicket(
 	case stripe.PaymentIntentStatusSucceeded:
 		// Already captured. Continue.
 
+	case stripe.PaymentIntentStatusCanceled:
+		_ = services.GetDB().WithContext(ctx).Exec(`
+			UPDATE vehicle_submissions
+			SET payment_status = 'canceled'
+			WHERE id = ?
+		`, submissionID)
+		http.Error(
+			w,
+			fmt.Sprintf(
+				"Payment authorization has expired or was canceled; please create a new payment link",
+			),
+			http.StatusUnprocessableEntity,
+		)
+		return
+
 	default:
 		http.Error(
 			w,
@@ -2876,6 +2894,7 @@ func getSubmissionByID(
 			payment_succeeded_at,
 			COALESCE(payment_captured, FALSE),
 			payment_captured_at,
+			COALESCE(payment_status, ''),
 
 			COALESCE(price_id, ''),
 			COALESCE(
@@ -2948,6 +2967,7 @@ func getSubmissionByID(
 		&paymentSucceededAt,
 		&submission.PaymentCaptured,
 		&paymentCapturedAt,
+		&submission.PaymentStatus,
 
 		&submission.PriceID,
 		&submission.PriceNickname,
@@ -3173,6 +3193,14 @@ func captureSubmissionPayment(submissionID string) (bool, bool, error) {
 
 	case stripe.PaymentIntentStatusProcessing:
 		return false, true, nil
+
+	case stripe.PaymentIntentStatusCanceled:
+		_ = services.GetDB().WithContext(ctx).Exec(`
+        UPDATE vehicle_submissions
+        SET payment_status = 'canceled'
+        WHERE id = ?
+    `, submissionID)
+		return false, false, fmt.Errorf("payment authorization has expired or was canceled; please create a new payment link")
 
 	default:
 		return false, false, fmt.Errorf(

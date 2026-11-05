@@ -64,6 +64,8 @@
 		"no_payment",
 		"payment_check_failed",
 		"payment_expired",
+		"payment_canceled",
+		"payment_cancelled",
 		"payment_incomplete",
 		"missing_payment_intent",
 		"payment_intent_check_failed",
@@ -213,8 +215,31 @@
 	}
 
 	function hasPaymentIssue(submission: IssueSubmission): boolean {
+		return (
+			(submission.issues ?? []).some((issue) =>
+				paymentIssueTypes.includes(issue),
+			) ||
+			(submission.status === "approved" &&
+				!submission.ticket_id &&
+				!submission.payment_captured)
+		);
+	}
+
+	function isPaymentExpiredOrCanceled(submission: IssueSubmission): boolean {
+		const status = submission.payment_status?.toLowerCase();
+		if (
+			status === "canceled" ||
+			status === "cancelled" ||
+			status === "expired"
+		) {
+			return true;
+		}
 		return (submission.issues ?? []).some((issue) =>
-			paymentIssueTypes.includes(issue),
+			[
+				"payment_canceled",
+				"payment_cancelled",
+				"payment_expired",
+			].includes(issue),
 		);
 	}
 
@@ -272,11 +297,20 @@
 
 	async function openCreatePayment(submission: IssueSubmission) {
 		selectedSubmission = submission;
-		selectedPriceId = "";
+		selectedPriceId = submission.price_id ?? "";
 		prices = [];
 		showCreatePayment = true;
 
 		await loadPrices(submission.event_id);
+
+		if (
+			submission.price_id &&
+			prices.some((p) => p.id === submission.price_id)
+		) {
+			selectedPriceId = submission.price_id;
+		} else if (prices.length === 1 && !selectedPriceId) {
+			selectedPriceId = prices[0].id;
+		}
 	}
 
 	async function loadPrices(eventId: string) {
@@ -553,17 +587,27 @@
 							</Badge>
 
 							{#if submission.status === "approved" && (submission.checkout_session_id || submission.payment_intent_id)}
-								<Button
-									type="button"
-									variant="outline"
-									disabled={busyAction !== null}
-									onclick={() => retryApproval(submission)}
-								>
-									Retry approval/capture
-								</Button>
+								{#if isPaymentExpiredOrCanceled(submission)}
+									<Badge
+										variant="outline"
+										class="text-xs text-destructive border-destructive/40 bg-destructive/10"
+									>
+										Payment expired / canceled
+									</Badge>
+								{:else}
+									<Button
+										type="button"
+										variant="outline"
+										disabled={busyAction !== null}
+										onclick={() =>
+											retryApproval(submission)}
+									>
+										Retry approval/capture
+									</Button>
+								{/if}
 							{/if}
 
-							{#if hasTicketIssue(submission)}
+							{#if hasTicketIssue(submission) && !isPaymentExpiredOrCanceled(submission)}
 								<Button
 									type="button"
 									variant="outline"
@@ -639,7 +683,7 @@
 					{/if}
 
 					<div class="flex flex-wrap gap-2">
-						{#if hasPaymentIssue(submission)}
+						{#if submission.checkout_session_id || submission.payment_intent_id || hasPaymentIssue(submission)}
 							<Button
 								type="button"
 								variant="outline"
@@ -650,7 +694,9 @@
 									? "Checking…"
 									: "Check payment"}
 							</Button>
+						{/if}
 
+						{#if submission.status === "approved" && (!submission.ticket_id || !submission.payment_captured || hasPaymentIssue(submission))}
 							<Button
 								type="button"
 								onclick={() => openCreatePayment(submission)}
