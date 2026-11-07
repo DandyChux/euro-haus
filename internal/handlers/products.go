@@ -14,7 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-
 type ProductResponse struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -28,7 +27,7 @@ type ProductResponse struct {
 	CompareAtPrice *int64 `json:"compare_at_price"`
 
 	IsNew    bool `json:"is_new"`
-	InStock bool `json:"in_stock"`
+	InStock  bool `json:"in_stock"`
 	Featured bool `json:"featured"`
 
 	Category    string   `json:"category"`
@@ -36,25 +35,24 @@ type ProductResponse struct {
 	Tags        []string `json:"tags"`
 	MaxQuantity *int     `json:"max_quantity"`
 
-	Active       bool         `json:"active"`
-	DefaultPrice *models.PriceInfo `json:"default_price,omitempty"`
-	Prices []models.PriceInfo `json:"prices"`
+	Active       bool               `json:"active"`
+	DefaultPrice *models.PriceInfo  `json:"default_price,omitempty"`
+	Prices       []models.PriceInfo `json:"prices"`
 
-	BundleItems  []BundleItemResponse `json:"bundle_items,omitempty"`
-	DiscountType string               `json:"discount_type,omitempty"`
-	DiscountValue float64             `json:"discount_value,omitempty"`
+	BundleItems   []BundleItemResponse `json:"bundle_items,omitempty"`
+	DiscountType  string               `json:"discount_type,omitempty"`
+	DiscountValue float64              `json:"discount_value,omitempty"`
 
 	Created int64 `json:"created"`
 	Updated int64 `json:"updated"`
 }
 
 type BundleItemResponse struct {
-	ProductID string  `json:"productId"`
+	ProductID   string `json:"productId"`
 	ProductName string `json:"productName"`
-	Quantity  int     `json:"quantity"`
-	Price     int64   `json:"price"`
+	Quantity    int    `json:"quantity"`
+	Price       int64  `json:"price"`
 }
-
 
 func GetProducts(w http.ResponseWriter, r *http.Request) {
 	includeInactive := r.URL.Query().Get("include_inactive") == "true"
@@ -424,27 +422,27 @@ func productToResponse(
 	updated := product.UpdatedAt.Unix()
 
 	response := ProductResponse{
-		ID:            product.ID,
-		Name:          product.Title,
-		Description:   product.Description,
-		Images:        []string(product.Images),
-		Type:          product.Type,
-		Price:         product.Price,
-		Currency:      product.Currency,
+		ID:             product.ID,
+		Name:           product.Title,
+		Description:    product.Description,
+		Images:         []string(product.Images),
+		Type:           product.Type,
+		Price:          product.Price,
+		Currency:       product.Currency,
 		CompareAtPrice: product.CompareAtPrice,
-		IsNew:         product.IsNew,
-		InStock:       product.InStock,
-		Featured:      product.Featured,
-		Category:      product.Category,
-		Subcategory:   product.Subcategory,
-		Tags:          []string(product.Tags),
-		MaxQuantity:   product.MaxQuantity,
-		Active:        product.Active,
-		DefaultPrice:  defaultProductPrice(prices),
-		Prices:        prices,
-		BundleItems:   bundleItems,
-		Created:       created,
-		Updated:       updated,
+		IsNew:          product.IsNew,
+		InStock:        product.InStock,
+		Featured:       product.Featured,
+		Category:       product.Category,
+		Subcategory:    product.Subcategory,
+		Tags:           []string(product.Tags),
+		MaxQuantity:    product.MaxQuantity,
+		Active:         product.Active,
+		DefaultPrice:   defaultProductPrice(prices),
+		Prices:         prices,
+		BundleItems:    bundleItems,
+		Created:        created,
+		Updated:        updated,
 	}
 
 	return response

@@ -310,6 +310,10 @@ func main() {
 			http.HandlerFunc(handlers.UpdateTierIncludedProducts),
 		),
 	).Methods("PUT")
+	api.Handle(
+		"/admin/events/{id}/prices",
+		middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetAdminEventPrices)),
+	).Methods("GET")
 
 	// Fulfillment management (admin only)
 	api.Handle("/admin/fulfillments", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetFulfillments))).Methods("GET")
@@ -351,6 +355,17 @@ func main() {
 	api.Handle("/admin/submissions/{submissionId}/resend-email", middleware.RequireAdminAuth(http.HandlerFunc(handlers.ResendApprovalEmail))).Methods("POST")
 	api.Handle("/admin/submissions/{submissionId}/update-email", middleware.RequireAdminAuth(http.HandlerFunc(handlers.UpdateSubmissionEmail))).Methods("PUT")
 	api.Handle("/admin/submissions/{submissionId}/revoke", middleware.RequireAdminAuth(http.HandlerFunc(handlers.RevokeSubmission))).Methods("POST")
+	api.Handle(
+		"/admin/submissions/{submissionId}/upgrade",
+		middleware.RequireAdminAuth(
+			http.HandlerFunc(handlers.UpgradeSubmissionTier),
+		),
+	).Methods("POST")
+
+	// Email jobs
+	api.Handle("/admin/emails", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetEmailJobs))).Methods("GET")
+	api.Handle("/admin/emails/{id:[0-9]+}", middleware.RequireAdminAuth(http.HandlerFunc(handlers.GetEmailJobByID))).Methods("GET")
+	api.Handle("/admin/emails/{id:[0-9]+}/resend", middleware.RequireAdminAuth(http.HandlerFunc(handlers.ResendEmailJob))).Methods("POST")
 
 	// Webhook endpoint (no CORS needed)
 	api.HandleFunc("/webhook", handlers.HandleWebhook).Methods("POST")

@@ -36,26 +36,26 @@ type ProductWriteRequest struct {
 	Subcategory string `json:"subcategory"`
 
 	Tags        models.ProductStringList `json:"tags"`
-	MaxQuantity *int                   `json:"max_quantity"`
+	MaxQuantity *int                     `json:"max_quantity"`
 
 	Prices []ProductPriceRequest `json:"prices"`
 }
 
 type ProductPriceRequest struct {
-	ID            string   `json:"id"`
-	UnitAmount    int64    `json:"unit_amount"`
-	Currency      string   `json:"currency"`
-	Nickname      string   `json:"nickname"`
-	Description   string   `json:"description"`
-	Active        bool     `json:"active"`
-	Features      []string `json:"features"`
-	MostPopular   bool     `json:"most_popular"`
-	RequiresApproval bool `json:"requires_approval"`
-	RequiresSubmission bool `json:"requires_submission"`
-	Quantity      int      `json:"quantity"`
-	StockQuantity *int     `json:"stock_quantity"`
-	Size          string   `json:"size"`
-	Color         string   `json:"color"`
+	ID                 string   `json:"id"`
+	UnitAmount         int64    `json:"unit_amount"`
+	Currency           string   `json:"currency"`
+	Nickname           string   `json:"nickname"`
+	Description        string   `json:"description"`
+	Active             bool     `json:"active"`
+	Features           []string `json:"features"`
+	MostPopular        bool     `json:"most_popular"`
+	RequiresApproval   bool     `json:"requires_approval"`
+	RequiresSubmission bool     `json:"requires_submission"`
+	Quantity           int      `json:"quantity"`
+	StockQuantity      *int     `json:"stock_quantity"`
+	Size               string   `json:"size"`
+	Color              string   `json:"color"`
 }
 
 // CreateProductResponse represents the response body for creating a product
@@ -183,22 +183,22 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	localProduct := models.Product{
-		ID:            stripeProduct.ID,
-		Title:         req.Name,
-		Description:   req.Description,
-		Type:          req.Type,
-		Images:        models.ProductStringList(req.Images),
-		Price:         req.Price,
-		Currency:      req.Currency,
+		ID:             stripeProduct.ID,
+		Title:          req.Name,
+		Description:    req.Description,
+		Type:           req.Type,
+		Images:         models.ProductStringList(req.Images),
+		Price:          req.Price,
+		Currency:       req.Currency,
 		CompareAtPrice: req.CompareAtPrice,
-		IsNew:         req.IsNew,
-		InStock:       req.InStock,
-		Active:        req.Active,
-		Featured:      req.Featured,
-		Category:      req.Category,
-		Subcategory:   req.Subcategory,
-		Tags:          req.Tags,
-		MaxQuantity:   req.MaxQuantity,
+		IsNew:          req.IsNew,
+		InStock:        req.InStock,
+		Active:         req.Active,
+		Featured:       req.Featured,
+		Category:       req.Category,
+		Subcategory:    req.Subcategory,
+		Tags:           req.Tags,
+		MaxQuantity:    req.MaxQuantity,
 	}
 
 	if err := services.GetDB().
@@ -309,8 +309,8 @@ func UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		Where("id = ?", productID).
 		Updates(map[string]interface{}{
 			"title":            req.Name,
-			"description":     req.Description,
-			"images":          models.ProductStringList(req.Images),
+			"description":      req.Description,
+			"images":           models.ProductStringList(req.Images),
 			"type":             req.Type,
 			"price":            req.Price,
 			"currency":         req.Currency,
@@ -488,20 +488,20 @@ func DeleteProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 type CreatePriceRequest struct {
-	Product           string   `json:"product"`
-	UnitAmount        int64    `json:"unit_amount"`
-	Currency          string   `json:"currency"`
-	Nickname          string   `json:"nickname"`
-	Description       string   `json:"description"`
-	Features          []string `json:"features"`
-	Default           bool     `json:"default"`
-	MostPopular       bool     `json:"most_popular"`
-	RequiresApproval  bool     `json:"requires_approval"`
-	RequiresSubmission bool    `json:"requires_submission"`
-	Quantity          int      `json:"quantity"`
-	StockQuantity     *int     `json:"stock_quantity"`
-	Size              string   `json:"size"`
-	Color             string   `json:"color"`
+	Product            string   `json:"product"`
+	UnitAmount         int64    `json:"unit_amount"`
+	Currency           string   `json:"currency"`
+	Nickname           string   `json:"nickname"`
+	Description        string   `json:"description"`
+	Features           []string `json:"features"`
+	Default            bool     `json:"default"`
+	MostPopular        bool     `json:"most_popular"`
+	RequiresApproval   bool     `json:"requires_approval"`
+	RequiresSubmission bool     `json:"requires_submission"`
+	Quantity           int      `json:"quantity"`
+	StockQuantity      *int     `json:"stock_quantity"`
+	Size               string   `json:"size"`
+	Color              string   `json:"color"`
 }
 
 // CreatePrice creates a new price for a product
@@ -539,7 +539,7 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 
 	priceInfo := &models.PriceInfo{
 		ID:                 newPrice.ID,
-		StripeProductID:   req.Product,
+		StripeProductID:    req.Product,
 		UnitAmount:         newPrice.UnitAmount,
 		Currency:           string(newPrice.Currency),
 		Nickname:           req.Nickname,
@@ -569,9 +569,9 @@ func CreatePrice(w http.ResponseWriter, r *http.Request) {
 		"id":          newPrice.ID,
 		"product":     req.Product,
 		"unit_amount": newPrice.UnitAmount,
-		"currency": req.Currency,
+		"currency":    req.Currency,
 		"nickname":    newPrice.Nickname,
-		"description":    req.Description,
+		"description": req.Description,
 	}
 
 	w.WriteHeader(http.StatusCreated)

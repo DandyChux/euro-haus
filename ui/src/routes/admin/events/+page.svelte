@@ -109,6 +109,13 @@
 						</a>
 
 						<a
+							href={`/admin/events/${encodeURIComponent(event.id)}/check-in`}
+							class={buttonVariants({ variant: "circle" })}
+						>
+							Check-in
+						</a>
+
+						<a
 							href={`/event/${encodeURIComponent(event.id)}`}
 							target="_blank"
 							rel="noreferrer"

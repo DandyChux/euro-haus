@@ -17,15 +17,15 @@ func CreateCoupon(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers
 
 	var req struct {
-		Name             string            `json:"name"`
-		PercentOff       *float64          `json:"percent_off"`
-		AmountOff        *int64            `json:"amount_off"`
-		Currency         string            `json:"currency"`
-		Duration         string            `json:"duration"` // "once", "repeating", or "forever"
-		DurationInMonths *int64            `json:"duration_in_months"`
-		MaxRedemptions   *int64            `json:"max_redemptions"`
-		RedeemBy         *int64            `json:"redeem_by"`
-		AppliesTo        []string          `json:"applies_to_products"`
+		Name             string   `json:"name"`
+		PercentOff       *float64 `json:"percent_off"`
+		AmountOff        *int64   `json:"amount_off"`
+		Currency         string   `json:"currency"`
+		Duration         string   `json:"duration"` // "once", "repeating", or "forever"
+		DurationInMonths *int64   `json:"duration_in_months"`
+		MaxRedemptions   *int64   `json:"max_redemptions"`
+		RedeemBy         *int64   `json:"redeem_by"`
+		AppliesTo        []string `json:"applies_to_products"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -110,8 +110,8 @@ func CreatePromotionCode(w http.ResponseWriter, r *http.Request) {
 
 	// Create promotion code params
 	params := &stripe.PromotionCodeParams{
-		Coupon:   stripe.String(req.CouponID),
-		Code:     stripe.String(req.Code),
+		Coupon: stripe.String(req.CouponID),
+		Code:   stripe.String(req.Code),
 	}
 
 	// Set optional parameters

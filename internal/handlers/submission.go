@@ -600,8 +600,11 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 	submissionID := mux.Vars(r)["submissionId"]
 
 	var req struct {
-		Notes string `json:"notes"`
+		Notes   string `json:"notes"`
+		PriceID string `json:"price_id"`
 	}
+
+	db := services.GetDB()
 
 	// An empty request body is allowed because notes are optional.
 	if r.Body != nil {
@@ -663,6 +666,14 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.TrimSpace(req.PriceID) != "" && req.PriceID != submission.PriceID {
+		var targetPrice models.PriceInfo
+		if err := db.Where("id = ?", req.PriceID).First(&targetPrice).Error; err == nil {
+			submission.PriceID = targetPrice.ID
+			submission.PriceNickname = targetPrice.Nickname
+		}
+	}
+
 	submission.Status = "approved"
 	submission.ReviewNotes = strings.TrimSpace(req.Notes)
 
@@ -699,20 +710,20 @@ func ApproveSubmission(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	db := services.GetDB()
-
 	reviewedBy := authenticatedAdminName(r)
 
 	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`
 			UPDATE vehicle_submissions
 			SET status = 'approved',
+				price_id = COALESCE(NULLIF(?, ''), price_id),
 				reviewed_at = NOW(),
 				reviewed_by = ?,
 				review_notes = ?
 			WHERE id = ?
 				AND status NOT IN ('approved', 'revoked')
 		`,
+			req.PriceID,
 			reviewedBy,
 			submissionNullableString(submission.ReviewNotes),
 			submissionID,
@@ -2791,7 +2802,241 @@ func SendSubmissionPaymentLink(
 	})
 }
 
+// UpgradeSubmissionTier handles paid difference or complimentary tier upgrades
+func UpgradeSubmissionTier(w http.ResponseWriter, r *http.Request) {
+	submissionID := mux.Vars(r)["submissionId"]
+
+	var req struct {
+		TargetPriceID string `json:"target_price_id"`
+		Complimentary bool   `json:"complimentary"`
+		AutoApprove   bool   `json:"auto_approve"`
+		Notes         string `json:"notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.TargetPriceID = strings.TrimSpace(req.TargetPriceID)
+	if req.TargetPriceID == "" {
+		http.Error(w, "Target price ID is required", http.StatusBadRequest)
+		return
+	}
+
+	submission, err := getSubmissionByID(submissionID)
+	if err != nil {
+		http.Error(w, "Submission not found", http.StatusNotFound)
+		return
+	}
+
+	db := services.GetDB()
+	event, err := findEventByID(r.Context(), submission.EventID)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Retrieve target tier (finds active or hidden/inactive event tiers)
+	var targetPrice models.PriceInfo
+	if err := db.WithContext(r.Context()).
+		Where("id = ? AND stripe_product_id = ?", req.TargetPriceID, event.StripeProductID).
+		First(&targetPrice).Error; err != nil {
+		http.Error(w, "Target ticket tier not found for this event", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve current tier to calculate difference
+	var currentPrice models.PriceInfo
+	if submission.PriceID != "" {
+		_ = db.WithContext(r.Context()).Where("id = ?", submission.PriceID).First(&currentPrice)
+	}
+
+	difference := targetPrice.UnitAmount - currentPrice.UnitAmount
+	adminName := authenticatedAdminName(r)
+	targetTierName := targetPrice.Nickname
+	if targetTierName == "" {
+		targetTierName = "Top 25"
+	}
+
+	// Common audit note preparation
+	auditAction := fmt.Sprintf("Upgraded to %s by %s on %s", targetTierName, adminName, time.Now().Format("2006-01-02 15:04"))
+	if req.Complimentary || difference <= 0 {
+		auditAction = fmt.Sprintf("Upgraded to %s (complimentary) by %s on %s", targetTierName, adminName, time.Now().Format("2006-01-02 15:04"))
+	} else {
+		auditAction = fmt.Sprintf("Upgraded to %s (payment link for $%.2f difference sent) by %s on %s", targetTierName, float64(difference)/100.0, adminName, time.Now().Format("2006-01-02 15:04"))
+	}
+	if strings.TrimSpace(req.Notes) != "" {
+		auditAction += ". Note: " + strings.TrimSpace(req.Notes)
+	}
+
+	// Case 1: Complimentary or no difference -> upgrade immediately
+	if req.Complimentary || difference <= 0 {
+		err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+			updates := map[string]interface{}{
+				"price_id": targetPrice.ID,
+				"review_notes": gorm.Expr(`
+					CASE
+						WHEN review_notes IS NULL OR review_notes = '' THEN ?
+						ELSE review_notes || E'\n' || ?
+					END
+				`, auditAction, auditAction),
+			}
+
+			// Approve submission if requested or if already approved
+			if req.AutoApprove && submission.Status == "pending" {
+				updates["status"] = "approved"
+				updates["reviewed_at"] = time.Now().UTC()
+				updates["reviewed_by"] = adminName
+			}
+
+			if err := tx.Model(&models.VehicleSubmission{}).Where("id = ?", submissionID).Updates(updates).Error; err != nil {
+				return err
+			}
+
+			// If ticket already exists, update ticket type immediately and re-send ticket email
+			if submission.TicketID != "" {
+				if err := tx.Exec(`UPDATE tickets SET ticket_type = ? WHERE token = ?`, targetTierName, submission.TicketID).Error; err != nil {
+					return err
+				}
+
+				ticketMsg, err := buildParticipantTicketEmail(submission, submission.TicketID, event.Name)
+				if err == nil {
+					_ = services.QueueEmailTx(r.Context(), tx, submissionID, ticketMsg)
+				}
+			}
+			return nil
+		})
+
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Upgrade failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		updated, _ := getSubmissionByID(submissionID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":    true,
+			"message":    fmt.Sprintf("Submission upgraded to %s (Complimentary)", targetTierName),
+			"submission": updated,
+		})
+		return
+	}
+
+	// Case 2: Paid difference -> Create Stripe Checkout Session for the difference amount
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://eurohaus.shop"
+	}
+
+	params := &stripe.CheckoutSessionParams{
+		Mode:          stripe.String(string(stripe.CheckoutSessionModePayment)),
+		CustomerEmail: stripe.String(submission.ParticipantEmail),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+					Currency:   stripe.String(targetPrice.Currency),
+					UnitAmount: stripe.Int64(difference),
+					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+						Name: stripe.String(fmt.Sprintf("%s Upgrade to %s", event.Name, targetTierName)),
+						Description: stripe.String(fmt.Sprintf(
+							"Vehicle upgrade difference for %s %s %s from %s to %s",
+							submission.VehicleYear, submission.VehicleMake, submission.VehicleModel,
+							currentPrice.Nickname, targetTierName,
+						)),
+					},
+				},
+				Quantity: stripe.Int64(1),
+			},
+		},
+		SuccessURL: stripe.String(fmt.Sprintf("%s/checkout/success?session_id={CHECKOUT_SESSION_ID}", baseURL)),
+		CancelURL:  stripe.String(fmt.Sprintf("%s/event/%s", baseURL, submission.EventID)),
+		Metadata: map[string]string{
+			"type":              "submission_upgrade",
+			"submission_id":     submission.ID,
+			"target_price_id":   targetPrice.ID,
+			"target_tier":       targetTierName,
+			"event_id":          submission.EventID,
+			"participant":       "true",
+			"difference_amount": strconv.FormatInt(difference, 10),
+		},
+		AllowPromotionCodes: stripe.Bool(true),
+	}
+
+	sess, err := session.New(params)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create upgrade checkout session: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Update database: Approve submission and record review info + checkout session ID
+	err = db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{
+			"checkout_session_id": sess.ID,
+			"review_notes": gorm.Expr(`
+				CASE
+					WHEN review_notes IS NULL OR review_notes = '' THEN ?
+					ELSE review_notes || E'\n' || ?
+				END
+			`, auditAction, auditAction),
+		}
+
+		if req.AutoApprove && submission.Status == "pending" {
+			updates["status"] = "approved"
+			updates["reviewed_at"] = time.Now().UTC()
+			updates["reviewed_by"] = adminName
+		}
+
+		return tx.Model(&models.VehicleSubmission{}).Where("id = ?", submissionID).Updates(updates).Error
+	})
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update submission record: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Email the upgrade checkout link to the participant
+	emailMsg := buildUpgradePaymentEmail(submission, targetTierName, difference, targetPrice.Currency, sess.URL, event.Name)
+	if err := services.QueueEmail(r.Context(), submissionID, emailMsg); err != nil {
+		log.Printf("Failed to queue upgrade payment email for %s: %v", submissionID, err)
+	}
+
+	updated, _ := getSubmissionByID(submissionID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"message":      fmt.Sprintf("Submission approved and upgrade payment link for $%.2f sent.", float64(difference)/100.0),
+		"checkout_url": sess.URL,
+		"difference":   difference,
+		"submission":   updated,
+	})
+}
+
 // Helper functions
+
+func buildUpgradePaymentEmail(
+	sub *models.VehicleSubmissionDTO,
+	targetTier string,
+	difference int64,
+	currency string,
+	paymentURL string,
+	eventName string,
+) *services.EmailMessage {
+	formattedDiff := fmt.Sprintf("$%.2f %s", float64(difference)/100.0, strings.ToUpper(currency))
+	html := fmt.Sprintf(`
+		<p>Hello %s,</p>
+		<p>Great news! Your vehicle (<strong>%s %s %s</strong>) has been selected for an upgrade to <strong>%s</strong> for <strong>%s</strong>!</p>
+		<p>To confirm your upgraded spot, please complete the upgrade difference of <strong>%s</strong>:</p>
+		<p><a href="%s" style="display:inline-block;padding:12px 24px;background:#111;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Pay Upgrade Difference (%s)</a></p>
+		<p>Euro Haus</p>
+	`, sub.ParticipantName, sub.VehicleYear, sub.VehicleMake, sub.VehicleModel, targetTier, eventName, formattedDiff, paymentURL, formattedDiff)
+
+	return &services.EmailMessage{
+		To:       []string{sub.ParticipantEmail},
+		Subject:  fmt.Sprintf("Upgrade Confirmation: %s at %s", targetTier, eventName),
+		BodyHTML: html,
+	}
+}
 
 func buildSubmissionPaymentLinkEmail(
 	submission models.VehicleSubmissionDTO,

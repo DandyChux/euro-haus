@@ -648,6 +648,44 @@ func handleParticipantPaymentSucceeded(pi stripe.PaymentIntent, submissionID str
 func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 	ctx := context.Background()
 
+	// Handle paid submission tier upgrade
+	if checkoutSession.Metadata != nil && checkoutSession.Metadata["type"] == "submission_upgrade" {
+		submissionID := checkoutSession.Metadata["submission_id"]
+		targetPriceID := checkoutSession.Metadata["target_price_id"]
+		targetTier := checkoutSession.Metadata["target_tier"]
+
+		db := services.GetDB()
+		sub, err := getSubmissionByID(submissionID)
+		if err == nil && sub != nil {
+			_ = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				// Update submission tier and audit log
+				_ = tx.Exec(`
+					UPDATE vehicle_submissions
+					SET price_id = ?,
+						review_notes = CASE
+							WHEN review_notes IS NULL OR review_notes = '' THEN ?
+							ELSE review_notes || E'\n' || ?
+						END
+					WHERE id = ?
+				`, targetPriceID, "Paid upgrade to "+targetTier, "Paid upgrade to "+targetTier, submissionID)
+
+				// Update ticket type if ticket exists
+				if sub.TicketID != "" {
+					_ = tx.Exec(`UPDATE tickets SET ticket_type = ? WHERE token = ?`, targetTier, sub.TicketID)
+
+					event, _ := findEventByID(ctx, sub.EventID)
+					ticketMsg, err := buildParticipantTicketEmail(sub, sub.TicketID, event.Name)
+					if err == nil {
+						_ = services.QueueEmailTx(ctx, tx, submissionID, ticketMsg)
+					}
+				}
+				return nil
+			})
+		}
+
+		return
+	}
+
 	log.Printf(
 		"Checkout session completed: %s",
 		checkoutSession.ID,

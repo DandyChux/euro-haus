@@ -35,7 +35,7 @@
 </script>
 
 <header class="site-header">
-	<div
+	<!-- <div
 		class="announcement-bar"
 		role="region"
 		aria-label="Announcement"
@@ -49,7 +49,7 @@
 		<a href={resolve("/#feature-image")}>
 			Read update <span aria-hidden="true">↗</span>
 		</a>
-	</div>
+	</div> -->
 
 	<div class="nav-shell">
 		<a

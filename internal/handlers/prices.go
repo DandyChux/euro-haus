@@ -190,8 +190,8 @@ func GetProductPrices(w http.ResponseWriter, r *http.Request) {
 // CreateCheckoutSessionWithPrice creates a checkout session for a specific price
 func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PriceID  string            `json:"price_id"`
-		Quantity int64             `json:"quantity"`
+		PriceID  string `json:"price_id"`
+		Quantity int64  `json:"quantity"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -212,9 +212,9 @@ func CreateCheckoutSessionWithPrice(w http.ResponseWriter, r *http.Request) {
 				Quantity: stripe.Int64(req.Quantity),
 			},
 		},
-		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
-		SuccessURL: stripe.String(fmt.Sprintf("%s/success?session_id={CHECKOUT_SESSION_ID}", baseUrl)),
-		CancelURL:  stripe.String(fmt.Sprintf("%s/cancel", baseUrl)),
+		Mode:                stripe.String(string(stripe.CheckoutSessionModePayment)),
+		SuccessURL:          stripe.String(fmt.Sprintf("%s/success?session_id={CHECKOUT_SESSION_ID}", baseUrl)),
+		CancelURL:           stripe.String(fmt.Sprintf("%s/cancel", baseUrl)),
 		AllowPromotionCodes: stripe.Bool(true),
 	}
 

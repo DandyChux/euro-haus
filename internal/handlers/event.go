@@ -1330,6 +1330,36 @@ func GetEventPrices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetAdminEventPrices returns all ticket tiers for an event (including hidden/inactive tiers) for admins only.
+func GetAdminEventPrices(w http.ResponseWriter, r *http.Request) {
+	eventID := mux.Vars(r)["id"]
+
+	event, err := findEventByID(r.Context(), eventID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Unable to retrieve event", http.StatusInternalServerError)
+		return
+	}
+
+	db := services.GetDB()
+	var prices []models.PriceInfo
+	if err := db.WithContext(r.Context()).
+		Where("stripe_product_id = ?", event.StripeProductID).
+		Order("unit_amount ASC, id ASC").
+		Find(&prices).Error; err != nil {
+		http.Error(w, "Failed to load prices", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"prices": normalizedEventPrices(prices),
+	})
+}
+
 // CleanupEventTickets cleans up tickets
 func CleanupEventTickets(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

@@ -1,13 +1,21 @@
 <script lang="ts">
 	import { toast } from "svelte-sonner";
-
 	import apiClient from "$lib/api";
 	import type { VehicleSubmission } from "$lib/schemas/submission";
-
 	import { Button } from "$lib/components/ui/button";
 	import * as Card from "$lib/components/ui/card";
+	import * as Dialog from "$lib/components/ui/dialog";
 	import { Textarea } from "$lib/components/ui/textarea";
+	import { Badge } from "$lib/components/ui/badge";
 	import { formatDate } from "$lib/utils";
+
+	interface Price {
+		id: string;
+		nickname?: string;
+		unit_amount: number;
+		currency: string;
+		active: boolean;
+	}
 
 	interface Props {
 		eventName: string;
@@ -26,14 +34,26 @@
 	}: Props = $props();
 
 	let selectedSubmission = $state<VehicleSubmission | null>(null);
+	let isDetailOpen = $derived(selectedSubmission !== null);
 
 	let activeTab = $state<"pending" | "reviewed">("pending");
 	let currentImageIndex = $state(0);
-
 	let processing = $state(false);
 
 	let action = $state<"approve" | "deny" | null>(null);
 	let actionNotes = $state("");
+
+	// Tier editing & upgrade modal
+	let eventPrices = $state<Price[]>([]);
+	let loadingPrices = $state(false);
+	let selectedApprovalPriceId = $state("");
+
+	let showUpgradeModal = $state(false);
+	let selectedTargetPriceId = $state("");
+	let isComplimentary = $state(false);
+	let autoApproveOnUpgrade = $state(true);
+	let upgradeNotes = $state("");
+	let upgrading = $state(false);
 
 	const pendingSubmissions = $derived(
 		submissions.filter((submission) => submission.status === "pending"),
@@ -53,22 +73,38 @@
 		activeTab === "pending" ? pendingSubmissions : reviewedSubmissions,
 	);
 
+	async function loadEventTiers(eventId: string) {
+		loadingPrices = true;
+		try {
+			const res = await apiClient.get<{ prices: Price[] }>(
+				`/admin/events/${eventId}/prices`,
+			);
+			eventPrices = res.prices ?? [];
+		} catch (err) {
+			console.error("Failed to load event tiers:", err);
+		} finally {
+			loadingPrices = false;
+		}
+	}
+
 	function openSubmission(submission: VehicleSubmission) {
 		selectedSubmission = submission;
 		currentImageIndex = 0;
 		action = null;
 		actionNotes = "";
+		selectedApprovalPriceId = submission.price_id ?? "";
+		void loadEventTiers(submission.event_id);
 	}
 
 	function closeSubmission() {
 		selectedSubmission = null;
 		action = null;
 		actionNotes = "";
+		showUpgradeModal = false;
 	}
 
 	function showPreviousImage() {
 		if (!selectedSubmission) return;
-
 		currentImageIndex =
 			currentImageIndex === 0
 				? selectedSubmission.images.length - 1
@@ -77,7 +113,6 @@
 
 	function showNextImage() {
 		if (!selectedSubmission) return;
-
 		currentImageIndex =
 			currentImageIndex === selectedSubmission.images.length - 1
 				? 0
@@ -93,7 +128,6 @@
 		}
 
 		processing = true;
-
 		try {
 			const endpoint =
 				action === "approve"
@@ -102,6 +136,8 @@
 
 			await apiClient.put(endpoint, {
 				notes: actionNotes.trim(),
+				price_id:
+					action === "approve" ? selectedApprovalPriceId : undefined,
 			});
 
 			toast.success(
@@ -113,7 +149,6 @@
 			closeSubmission();
 			await onSubmissionUpdated?.();
 		} catch (error) {
-			console.error("Failed to update submission:", error);
 			toast.error(
 				action === "approve"
 					? "Failed to approve submission."
@@ -121,6 +156,60 @@
 			);
 		} finally {
 			processing = false;
+		}
+	}
+
+	// Upgrade calculations
+	let currentPrice = $derived(
+		eventPrices.find((p) => p.id === selectedSubmission?.price_id),
+	);
+
+	let targetPrice = $derived(
+		eventPrices.find((p) => p.id === selectedTargetPriceId),
+	);
+
+	let priceDifference = $derived.by(() => {
+		if (!targetPrice) return 0;
+		const currentAmount = currentPrice ? currentPrice.unit_amount : 0;
+		const diff = targetPrice.unit_amount - currentAmount;
+		return diff > 0 ? diff : 0;
+	});
+
+	function openUpgrade() {
+		if (!selectedSubmission) return;
+		selectedTargetPriceId = "";
+		isComplimentary = false;
+		autoApproveOnUpgrade = selectedSubmission.status === "pending";
+		upgradeNotes = "";
+		showUpgradeModal = true;
+	}
+
+	async function submitUpgrade() {
+		if (!selectedSubmission || !selectedTargetPriceId) {
+			toast.error("Select a target tier");
+			return;
+		}
+
+		upgrading = true;
+		try {
+			const res = await apiClient.post<{ message?: string }>(
+				`/admin/submissions/${selectedSubmission.id}/upgrade`,
+				{
+					target_price_id: selectedTargetPriceId,
+					complimentary: isComplimentary,
+					auto_approve: autoApproveOnUpgrade,
+					notes: upgradeNotes.trim(),
+				},
+			);
+
+			toast.success(res.message ?? "Tier updated successfully");
+			showUpgradeModal = false;
+			closeSubmission();
+			await onSubmissionUpdated?.();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Upgrade failed");
+		} finally {
+			upgrading = false;
 		}
 	}
 </script>
@@ -131,114 +220,89 @@
 	</div>
 {:else}
 	<div class="space-y-6">
-		<div>
-			<h2 class="text-2xl font-bold">Vehicle submissions</h2>
+		<div class="flex items-center justify-between">
+			<div>
+				<h2 class="text-2xl font-bold">Vehicle submissions</h2>
+				<p class="text-muted">
+					Review and approve participant vehicles for {eventName}.
+				</p>
+			</div>
 
-			<p class="text-muted">
-				Review and approve participant vehicles for {eventName}.
-			</p>
+			<div class="flex gap-2">
+				<Button
+					variant={activeTab === "pending" ? "default" : "outline"}
+					onclick={() => (activeTab = "pending")}
+				>
+					Pending ({pendingSubmissions.length})
+				</Button>
+				<Button
+					variant={activeTab === "reviewed" ? "default" : "outline"}
+					onclick={() => (activeTab = "reviewed")}
+				>
+					Reviewed ({reviewedSubmissions.length})
+				</Button>
+			</div>
 		</div>
 
 		{#if errorMessage}
 			<p
-				role="alert"
 				class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
 			>
 				{errorMessage}
 			</p>
 		{/if}
 
-		<div class="flex gap-2 border-b">
-			<Button
-				type="button"
-				variant={activeTab === "pending" ? "default" : "ghost"}
-				onclick={() => (activeTab = "pending")}
-			>
-				Pending review ({pendingSubmissions.length})
-			</Button>
-
-			<Button
-				type="button"
-				variant={activeTab === "reviewed" ? "default" : "ghost"}
-				onclick={() => (activeTab = "reviewed")}
-			>
-				Reviewed ({reviewedSubmissions.length})
-			</Button>
-		</div>
-
 		{#if visibleSubmissions.length === 0}
 			<Card.Root class="p-8 text-center text-muted">
-				No {activeTab} submissions.
+				No {activeTab} submissions found.
 			</Card.Root>
 		{:else}
-			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+			<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				{#each visibleSubmissions as submission (submission.id)}
 					<Card.Root
-						class="h-full space-y-4 p-4 transition-shadow hover:shadow-lg text-left"
-						onclick={() => openSubmission(submission)}
+						class="cursor-pointer overflow-hidden transition-all hover:ring-2 hover:ring-primary"
 					>
-						<Card.Header
-							class="flex items-start justify-between gap-3"
+						<button
+							type="button"
+							class="w-full text-left"
+							onclick={() => openSubmission(submission)}
 						>
-							<div>
-								<h3 class="font-semibold">
-									{submission.vehicle_year}
-									{submission.vehicle_make}
-									{submission.vehicle_model}
-								</h3>
-
-								<p class="text-sm text-muted">
-									{submission.participant_name}
-								</p>
-							</div>
-
-							<span
-								class="rounded-full border px-2 py-1 text-xs capitalize"
-							>
-								{submission.status}
-							</span>
-						</Card.Header>
-
-						{#if submission.price_nickname || submission.price_id}
-							<p class="text-sm text-muted">
-								Tier:
-								<span class="font-medium text-foreground">
-									{submission.price_nickname ||
-										submission.price_id}
-								</span>
-							</p>
-						{/if}
-
-						{#if submission.images[0]}
-							<img
-								src={submission.images[0]}
-								alt={`${submission.vehicle_make} ${submission.vehicle_model}`}
-								class="aspect-video w-full rounded-lg object-cover"
-							/>
-						{:else}
-							<div
-								class="flex aspect-video items-center justify-center rounded-lg bg-muted text-sm text-muted"
-							>
-								No vehicle images
-							</div>
-						{/if}
-
-						<Card.Footer class="flex-col items-start">
-							<p class="text-sm text-muted">
-								Submitted:
-								{formatDate(submission.submitted_at, {
-									dateStyle: "medium",
-								})}
-							</p>
-							{#if submission.reviewed_at}
-								<p class="text-sm text-muted">
-									Reviewed:
-									{formatDate(submission.reviewed_at, {
-										dateStyle: "medium",
-									})}
-								</p>
+							{#if submission.images?.[0]}
+								<img
+									src={submission.images[0]}
+									alt={`${submission.vehicle_year} ${submission.vehicle_make} ${submission.vehicle_model}`}
+									class="h-48 w-full object-cover"
+								/>
+							{:else}
+								<div
+									class="flex h-48 w-full items-center justify-center bg-muted text-muted-foreground"
+								>
+									No image
+								</div>
 							{/if}
-						</Card.Footer>
+
+							<Card.Header class="space-y-1 p-4 pb-2">
+								<div class="flex items-center justify-between">
+									<Card.Title class="text-base font-semibold">
+										{submission.vehicle_year}
+										{submission.vehicle_make}
+										{submission.vehicle_model}
+									</Card.Title>
+									<Badge class="capitalize" variant="outline"
+										>{submission.status}</Badge
+									>
+								</div>
+								<Card.Description class="text-sm text-muted">
+									{submission.participant_name}
+								</Card.Description>
+							</Card.Header>
+
+							<Card.Footer
+								class="p-4 pt-0 text-xs font-medium text-muted"
+							>
+								Tier: {submission.price_nickname || "General"}
+							</Card.Footer>
+						</button>
 					</Card.Root>
 				{/each}
 			</div>
@@ -246,121 +310,87 @@
 	</div>
 {/if}
 
-{#if selectedSubmission}
-	<div
-		class="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-4 backdrop-blur-sm"
-	>
-		<div class="mx-auto max-w-4xl">
-			<Card.Root class="space-y-6 p-5">
-				<div class="flex items-start justify-between gap-4">
+<!-- Submission Detail Dialog -->
+<Dialog.Root
+	open={isDetailOpen}
+	onOpenChange={(open) => {
+		if (!open) closeSubmission();
+	}}
+>
+	{#if selectedSubmission}
+		<Dialog.Content
+			class="max-h-[92vh] max-w-3xl overflow-y-auto sm:max-w-3xl"
+		>
+			<Dialog.Header>
+				<div
+					class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"
+				>
 					<div>
-						<h2 class="text-xl font-semibold">
+						<Dialog.Title class="text-xl font-bold">
 							{selectedSubmission.vehicle_year}
 							{selectedSubmission.vehicle_make}
 							{selectedSubmission.vehicle_model}
-						</h2>
-
-						<p class="text-sm text-muted">
-							Submitted by
-							{selectedSubmission.participant_name}
-						</p>
+						</Dialog.Title>
+						<Dialog.Description>
+							Submitted by {selectedSubmission.participant_name} ({selectedSubmission.participant_email})
+						</Dialog.Description>
 					</div>
 
-					<Button
-						type="button"
-						variant="ghost"
-						onclick={closeSubmission}
-					>
-						Close
+					<!-- Available for both pending and reviewed submissions -->
+					<Button variant="outline" size="sm" onclick={openUpgrade}>
+						Upgrade / Change Tier
 					</Button>
 				</div>
+			</Dialog.Header>
 
-				{#if selectedSubmission.images.length > 0}
-					<div class="space-y-3">
+			<div class="space-y-5">
+				<!-- Image Gallery -->
+				{#if selectedSubmission.images?.length}
+					<div class="relative overflow-hidden rounded-xl bg-black">
 						<img
 							src={selectedSubmission.images[currentImageIndex]}
-							alt={`Vehicle image ${currentImageIndex + 1}`}
-							class="max-h-[28rem] w-full rounded-lg object-contain"
+							alt={`${selectedSubmission.vehicle_year} ${selectedSubmission.vehicle_make} ${selectedSubmission.vehicle_model}`}
+							class="max-h-96 w-full object-contain"
 						/>
-
 						{#if selectedSubmission.images.length > 1}
-							<div class="flex items-center justify-center gap-3">
+							<div
+								class="absolute inset-0 flex items-center justify-between p-2"
+							>
 								<Button
-									type="button"
 									variant="outline"
-									onclick={showPreviousImage}
+									size="sm"
+									onclick={showPreviousImage}>←</Button
 								>
-									Previous
-								</Button>
-
-								<span class="text-sm">
-									{currentImageIndex + 1} /
-									{selectedSubmission.images.length}
-								</span>
-
 								<Button
-									type="button"
 									variant="outline"
-									onclick={showNextImage}
+									size="sm"
+									onclick={showNextImage}>→</Button
 								>
-									Next
-								</Button>
 							</div>
 						{/if}
 					</div>
 				{/if}
 
-				<div class="grid gap-6 md:grid-cols-2">
+				<div class="grid gap-3 sm:grid-cols-2 text-sm">
 					<div>
-						<h3 class="font-semibold">Participant</h3>
-
-						<p>{selectedSubmission.participant_name}</p>
-
-						<a
-							class="text-sm text-primary hover:underline"
-							href={`mailto:${selectedSubmission.participant_email}`}
+						<span class="text-muted">Current Tier:</span>
+						<strong class="ml-1"
+							>{selectedSubmission.price_nickname ||
+								selectedSubmission.price_id}</strong
 						>
-							{selectedSubmission.participant_email}
-						</a>
-
-						{#if selectedSubmission.participant_phone}
-							<p>{selectedSubmission.participant_phone}</p>
-						{/if}
 					</div>
-
 					<div>
-						<h3 class="font-semibold">Vehicle</h3>
-
-						<p>
-							{selectedSubmission.vehicle_year}
-							{selectedSubmission.vehicle_make}
-							{selectedSubmission.vehicle_model}
-						</p>
-
-						<p class="text-sm text-muted">
-							Submitted
-							{formatDate(selectedSubmission.submitted_at, {
-								dateStyle: "medium",
-							})}
-						</p>
-
-						{#if selectedSubmission.price_nickname || selectedSubmission.price_id}
-							<p class="mt-2 text-sm text-muted">
-								Tier:
-								<span class="font-medium text-foreground">
-									{selectedSubmission.price_nickname ||
-										selectedSubmission.price_id}
-								</span>
-							</p>
-						{/if}
+						<span class="text-muted">Status:</span>
+						<strong class="ml-1 capitalize"
+							>{selectedSubmission.status}</strong
+						>
 					</div>
 				</div>
 
 				{#if selectedSubmission.vehicle_description}
 					<div>
-						<h3 class="font-semibold">Description</h3>
-
-						<p class="whitespace-pre-wrap text-sm text-muted">
+						<h3 class="font-semibold text-sm">Description</h3>
+						<p class="text-sm text-muted whitespace-pre-wrap">
 							{selectedSubmission.vehicle_description}
 						</p>
 					</div>
@@ -368,123 +398,246 @@
 
 				{#if selectedSubmission.vehicle_modifications}
 					<div>
-						<h3 class="font-semibold">Modifications</h3>
-
-						<p class="whitespace-pre-wrap text-sm text-muted">
+						<h3 class="font-semibold text-sm">Modifications</h3>
+						<p class="text-sm text-muted whitespace-pre-wrap">
 							{selectedSubmission.vehicle_modifications}
 						</p>
 					</div>
 				{/if}
 
-				{#if selectedSubmission.review_notes}
-					<div
-						class="rounded-xl border border-primary/30 bg-primary/5 p-4"
-					>
-						<h3 class="font-semibold">Review notes</h3>
-
-						<p class="whitespace-pre-wrap text-sm">
-							{selectedSubmission.review_notes}
-						</p>
-					</div>
-				{/if}
-
-				{#if selectedSubmission.requirement_answers?.length}
-					<div>
-						<h3 class="font-semibold">Included item details</h3>
-
-						<div class="mt-3 grid gap-3 sm:grid-cols-2">
-							{#each selectedSubmission.requirement_answers as answer (answer.requirement_id)}
-								<div
-									class="rounded-xl border border-white/10 p-3"
-								>
-									<p
-										class="text-xs uppercase tracking-wide text-muted"
-									>
-										{answer.label}
-									</p>
-
-									<p class="mt-1 whitespace-pre-wrap text-sm">
-										{String(answer.value)}
-									</p>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
+				<!-- Action for Pending Submissions: Quick Approve / Deny -->
 				{#if selectedSubmission.status === "pending"}
 					{#if action}
-						<div class="space-y-3 rounded-xl border p-4">
-							<h3 class="font-semibold">
-								{action === "approve" ? "Approve" : "Deny"}
-								submission
-							</h3>
+						<Card.Root class="border bg-muted/20">
+							<Card.Header class="pb-2">
+								<Card.Title class="text-base font-semibold">
+									{action === "approve"
+										? "Approve Submission"
+										: "Deny Submission"}
+								</Card.Title>
+								<Card.Description>
+									{action === "approve"
+										? "Select confirmed ticket tier and add optional approval notes."
+										: "A reason is required when denying a submission."}
+								</Card.Description>
+							</Card.Header>
 
-							<p class="text-sm text-muted">
-								{action === "approve"
-									? "Approval notes are optional."
-									: "A reason is required when denying a submission."}
-							</p>
+							<Card.Content class="space-y-3">
+								{#if action === "approve"}
+									<div class="space-y-1">
+										<label
+											for="approval-tier-select"
+											class="text-xs font-semibold uppercase text-muted"
+										>
+											Confirmed Ticket Tier
+										</label>
+										<select
+											id="approval-tier-select"
+											bind:value={selectedApprovalPriceId}
+											class="w-full rounded-md border bg-background px-3 py-2 text-sm"
+										>
+											{#each eventPrices as price (price.id)}
+												<option value={price.id}>
+													{price.nickname || "Tier"} — {(
+														price.unit_amount / 100
+													).toFixed(2)}
+													{price.currency.toUpperCase()}
+													{!price.active
+														? " (Internal/Hidden)"
+														: ""}
+												</option>
+											{/each}
+										</select>
+									</div>
+								{/if}
 
-							<Textarea
-								bind:value={actionNotes}
-								placeholder={action === "approve"
-									? "Optional approval notes"
-									: "Reason for denial"}
-								rows={4}
-							/>
+								<Textarea
+									bind:value={actionNotes}
+									placeholder={action === "approve"
+										? "Optional approval notes"
+										: "Reason for denial"}
+									rows={3}
+								/>
+							</Card.Content>
 
-							<div class="flex justify-end gap-2">
+							<Card.Footer class="justify-end gap-2 pt-2">
 								<Button
-									type="button"
 									variant="ghost"
-									onclick={() => {
-										action = null;
-										actionNotes = "";
-									}}
-									disabled={processing}
+									onclick={() => (action = null)}
+									disabled={processing}>Cancel</Button
 								>
-									Cancel
-								</Button>
-
 								<Button
-									type="button"
 									variant={action === "deny"
 										? "destructive"
 										: "default"}
 									onclick={submitAction}
-									disabled={processing ||
-										(action === "deny" &&
-											!actionNotes.trim())}
+									disabled={processing}
 								>
 									{processing
-										? "Processing…"
+										? "Saving…"
 										: action === "approve"
-											? "Approve"
-											: "Deny"}
+											? "Confirm Approval"
+											: "Confirm Denial"}
 								</Button>
-							</div>
-						</div>
+							</Card.Footer>
+						</Card.Root>
 					{:else}
-						<div class="flex justify-end gap-2">
+						<Dialog.Footer class="border-t pt-4">
 							<Button
-								type="button"
 								variant="outline"
 								onclick={() => (action = "deny")}
 							>
 								Deny
 							</Button>
-
-							<Button
-								type="button"
-								onclick={() => (action = "approve")}
-							>
+							<Button onclick={() => (action = "approve")}>
 								Approve
 							</Button>
-						</div>
+						</Dialog.Footer>
 					{/if}
+				{:else}
+					<Dialog.Footer
+						class="flex items-center justify-between border-t pt-4 sm:justify-between"
+					>
+						<p class="text-xs text-muted">
+							Reviewed on {formatDate(
+								selectedSubmission.reviewed_at ?? "",
+							)}
+						</p>
+					</Dialog.Footer>
 				{/if}
-			</Card.Root>
-		</div>
-	</div>
-{/if}
+			</div>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
+<!-- Upgrade / Change Tier Dialog (Usable on BOTH Pending & Reviewed Submissions) -->
+<Dialog.Root
+	open={showUpgradeModal}
+	onOpenChange={(open) => {
+		showUpgradeModal = open;
+	}}
+>
+	{#if selectedSubmission}
+		<Dialog.Content class="max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title class="text-lg font-bold"
+					>Upgrade / Change Vehicle Tier</Dialog.Title
+				>
+				<Dialog.Description>
+					Update tier for {selectedSubmission.participant_name}
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="space-y-3 text-sm py-2">
+				<div class="flex justify-between">
+					<span class="text-muted">Current Tier:</span>
+					<strong
+						>{selectedSubmission.price_nickname ||
+							"General"}</strong
+					>
+				</div>
+
+				<div class="space-y-1">
+					<label
+						for="upgrade-tier-select"
+						class="text-xs font-semibold uppercase text-muted"
+					>
+						Target Tier
+					</label>
+					<select
+						id="upgrade-tier-select"
+						bind:value={selectedTargetPriceId}
+						class="w-full rounded-md border bg-background px-3 py-2 text-sm"
+					>
+						<option value=""
+							>Select target tier (e.g. Top 25)</option
+						>
+						{#each eventPrices as price (price.id)}
+							{#if price.id !== selectedSubmission.price_id}
+								<option value={price.id}>
+									{price.nickname || "Tier"} — ${(
+										price.unit_amount / 100
+									).toFixed(2)}
+									{!price.active
+										? " [Hidden / Invite Only]"
+										: ""}
+								</option>
+							{/if}
+						{/each}
+					</select>
+				</div>
+
+				{#if targetPrice}
+					<div
+						class="rounded-xl border border-primary/40 bg-primary/10 p-3 space-y-1"
+					>
+						<div class="flex justify-between font-semibold">
+							<span>Price Difference:</span>
+							<span>${(priceDifference / 100).toFixed(2)}</span>
+						</div>
+						<p class="text-xs text-muted">
+							{!isComplimentary && priceDifference > 0
+								? `Participant will be emailed a Stripe link to pay the $${(priceDifference / 100).toFixed(2)} difference.`
+								: "Tier will be updated immediately without charging additional funds."}
+						</p>
+					</div>
+				{/if}
+
+				<!-- If still pending, offer one-click approval with the upgrade -->
+				{#if selectedSubmission.status === "pending"}
+					<label class="flex items-center gap-2 pt-2 text-xs">
+						<input
+							type="checkbox"
+							bind:checked={autoApproveOnUpgrade}
+							class="rounded"
+						/>
+						<span>Also mark submission as approved</span>
+					</label>
+				{/if}
+
+				<label class="flex items-center gap-2 text-xs">
+					<input
+						type="checkbox"
+						bind:checked={isComplimentary}
+						class="rounded"
+					/>
+					<span>Complimentary (skip charging difference)</span>
+				</label>
+
+				<div>
+					<label
+						for="upgrade-notes"
+						class="text-xs font-semibold uppercase text-muted"
+					>
+						Notes / Reason
+					</label>
+					<Textarea
+						id="upgrade-notes"
+						bind:value={upgradeNotes}
+						placeholder="e.g. Selected for Top 25 showcase"
+						rows={2}
+					/>
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Button
+					variant="outline"
+					onclick={() => (showUpgradeModal = false)}
+				>
+					Cancel
+				</Button>
+				<Button
+					onclick={submitUpgrade}
+					disabled={!selectedTargetPriceId || upgrading}
+				>
+					{upgrading
+						? "Processing…"
+						: !isComplimentary && priceDifference > 0
+							? `Send Payment Link ($${(priceDifference / 100).toFixed(2)})`
+							: "Apply Update"}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>

@@ -23,14 +23,14 @@ var allowedRequirementTypes = map[string]bool{
 }
 
 type RequirementInput struct {
-	ID       string   `json:"id"`
-	Key      string   `json:"key"`
-	Label    string   `json:"label"`
-	Type     string   `json:"type"`
-	Required bool     `json:"required"`
-	Options  []string `json:"options"`
-	SortOrder int     `json:"sort_order"`
-	Active   bool     `json:"active"`
+	ID        string   `json:"id"`
+	Key       string   `json:"key"`
+	Label     string   `json:"label"`
+	Type      string   `json:"type"`
+	Required  bool     `json:"required"`
+	Options   []string `json:"options"`
+	SortOrder int      `json:"sort_order"`
+	Active    bool     `json:"active"`
 }
 
 func validateRequirementInput(input RequirementInput) error {

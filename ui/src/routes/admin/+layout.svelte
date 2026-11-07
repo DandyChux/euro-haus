@@ -19,6 +19,7 @@
 		{ href: "/admin/media", label: "Media" },
 		{ href: "/admin/submissions", label: "Submissions" },
 		{ href: "/admin/submission-issues", label: "Submission issues" },
+		{ href: "/admin/emails", label: "Emails" },
 		{ href: "/admin/users", label: "Users" },
 	];
 
