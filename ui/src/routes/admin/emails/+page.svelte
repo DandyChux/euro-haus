@@ -33,8 +33,15 @@
 
 	let jobs = $state<EmailJobItem[]>([]);
 	let loading = $state(false);
+	let loadingMore = $state(false);
 	let statusFilter = $state<string>("all");
 	let searchTerm = $state("");
+
+	// Pagination & lazy loading state
+	let currentPage = $state(1);
+	const pageSize = 25;
+	let totalJobs = $state(0);
+	let hasMore = $state(false);
 
 	let selectedJob = $state<EmailJobDetail | null>(null);
 	let loadingDetail = $state(false);
@@ -47,21 +54,61 @@
 	let previewMode = $state<"edit" | "preview">("edit");
 	let resending = $state(false);
 
-	async function loadEmails() {
-		loading = true;
+	let searchTimeout: ReturnType<typeof setTimeout>;
+
+	async function loadEmails(page = 1, append = false) {
+		if (append) {
+			loadingMore = true;
+		} else {
+			loading = true;
+		}
+
 		try {
-			const params = new URLSearchParams();
+			const params = new URLSearchParams({
+				page: String(page),
+				limit: String(pageSize),
+			});
+
 			if (statusFilter !== "all") params.set("status", statusFilter);
 			if (searchTerm.trim()) params.set("search", searchTerm.trim());
 
-			const res = await apiClient.get<{ jobs: EmailJobItem[] }>(
-				`/admin/emails?${params.toString()}`,
-			);
-			jobs = res.jobs ?? [];
+			const res = await apiClient.get<{
+				jobs: EmailJobItem[];
+				total?: number;
+				has_more?: boolean;
+			}>(`/admin/emails?${params.toString()}`);
+
+			const newJobs = res.jobs ?? [];
+			totalJobs =
+				res.total ??
+				(append ? jobs.length + newJobs.length : newJobs.length);
+			hasMore = res.has_more ?? newJobs.length === pageSize;
+			currentPage = page;
+
+			if (append) {
+				jobs = [...jobs, ...newJobs];
+			} else {
+				jobs = newJobs;
+			}
 		} catch (err) {
+			console.error("Failed to load email jobs:", err);
 			toast.error("Failed to load email jobs");
 		} finally {
 			loading = false;
+			loadingMore = false;
+		}
+	}
+
+	function handleSearchInput() {
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(() => {
+			void loadEmails(1, false);
+		}, 300);
+	}
+
+	function loadNextPage() {
+		if (hasMore && !loadingMore) {
+			void loadEmails(currentPage + 1, true);
 		}
 	}
 
@@ -79,6 +126,7 @@
 			editBodyHTML = res.message?.body_html ?? "";
 			updateSubmission = Boolean(res.submission_id);
 		} catch (err) {
+			console.error(err);
 			toast.error("Failed to load email details");
 			showModal = false;
 		} finally {
@@ -103,7 +151,7 @@
 			});
 			toast.success("New email row created and queued!");
 			showModal = false;
-			await loadEmails();
+			await loadEmails(1, false);
 		} catch (err) {
 			toast.error(
 				err instanceof Error ? err.message : "Failed to queue resend",
@@ -114,7 +162,7 @@
 	}
 
 	onMount(() => {
-		void loadEmails();
+		void loadEmails(1, false);
 	});
 </script>
 
@@ -130,26 +178,37 @@
 			<p class="text-sm uppercase tracking-[0.3em] text-muted">Admin</p>
 			<h1 class="mt-2 text-3xl font-semibold">Email Queue & Resend</h1>
 			<p class="mt-2 text-sm text-muted">
-				View recent outgoing emails, correct recipient addresses, and
-				re-queue duplicates.
+				Search, inspect, and re-queue all system emails from the queue.
 			</p>
 		</div>
 
-		<Button onclick={loadEmails} disabled={loading} variant="outline">
-			{loading ? "Refreshing…" : "Refresh"}
-		</Button>
+		<div class="flex items-center gap-3">
+			<span class="text-xs text-muted">
+				Total records: <strong class="text-foreground"
+					>{totalJobs}</strong
+				>
+			</span>
+
+			<Button
+				onclick={() => void loadEmails(1, false)}
+				disabled={loading}
+				variant="outline"
+			>
+				{loading ? "Refreshing…" : "Refresh"}
+			</Button>
+		</div>
 	</header>
 
 	<div class="flex flex-wrap items-center justify-between gap-4">
 		<div class="flex flex-wrap gap-2">
-			{#each ["all", "sent", "failed", "pending", "processing"] as status}
+			{#each ["all", "sent", "failed", "pending", "processing"] as status (status)}
 				<Button
 					type="button"
 					variant={statusFilter === status ? "default" : "outline"}
 					class="capitalize"
 					onclick={() => {
 						statusFilter = status;
-						void loadEmails();
+						void loadEmails(1, false);
 					}}
 				>
 					{status}
@@ -159,13 +218,17 @@
 
 		<div class="flex w-full max-w-sm gap-2">
 			<Input
-				placeholder="Search recipient, submission ID, type…"
+				placeholder="Search recipient, submission ID, subject, content…"
 				bind:value={searchTerm}
+				oninput={handleSearchInput}
 				onkeydown={(e) => {
-					if (e.key === "Enter") void loadEmails();
+					if (e.key === "Enter") void loadEmails(1, false);
 				}}
 			/>
-			<Button onclick={loadEmails} variant="secondary">Search</Button>
+			<Button
+				onclick={() => void loadEmails(1, false)}
+				variant="secondary">Search</Button
+			>
 		</div>
 	</div>
 
@@ -227,6 +290,26 @@
 					</Button>
 				</Card>
 			{/each}
+		</div>
+
+		<!-- Pagination / Lazy Loading Footer -->
+		<div
+			class="flex flex-col items-center justify-between gap-4 border-t pt-4 sm:flex-row"
+		>
+			<p class="text-xs text-muted">
+				Showing <strong class="text-foreground">{jobs.length}</strong>
+				of <strong class="text-foreground">{totalJobs}</strong> jobs
+			</p>
+
+			{#if hasMore}
+				<Button
+					variant="outline"
+					disabled={loadingMore}
+					onclick={loadNextPage}
+				>
+					{loadingMore ? "Loading more…" : "Load more emails"}
+				</Button>
+			{/if}
 		</div>
 	{/if}
 </div>

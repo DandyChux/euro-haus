@@ -35,7 +35,7 @@ type EmailJobDetailResponse struct {
 	Message services.EmailMessage `json:"message"`
 }
 
-// GetEmailJobs lists email jobs with filtering and search
+// GetEmailJobs lists email jobs with pagination, lazy loading, and deep search
 func GetEmailJobs(w http.ResponseWriter, r *http.Request) {
 	db := services.GetDB()
 	if db == nil {
@@ -53,21 +53,37 @@ func GetEmailJobs(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 	if search != "" {
 		searchTerm := "%" + strings.ToLower(search) + "%"
+		// Searches recipient, submission ID, email type, and deep inside payload JSON
 		query = query.Where(
-			"LOWER(recipient) LIKE ? OR LOWER(submission_id) LIKE ? OR LOWER(email_type) LIKE ?",
-			searchTerm, searchTerm, searchTerm,
+			"LOWER(recipient) LIKE ? OR LOWER(submission_id) LIKE ? OR LOWER(email_type) LIKE ? OR payload::text ILIKE ?",
+			searchTerm, searchTerm, searchTerm, searchTerm,
 		)
 	}
 
-	limit := 50
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Failed to count email jobs: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	page := 1
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	limit := 25
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
 			limit = parsed
 		}
 	}
 
+	offset := (page - 1) * limit
+
 	var jobs []models.EmailJob
-	if err := query.Order("created_at DESC").Limit(limit).Find(&jobs).Error; err != nil {
+	if err := query.Order("created_at DESC").Offset(offset).Limit(limit).Find(&jobs).Error; err != nil {
 		http.Error(w, fmt.Sprintf("Failed to list email jobs: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -94,7 +110,11 @@ func GetEmailJobs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"jobs": summaries,
+		"jobs":     summaries,
+		"total":    total,
+		"page":     page,
+		"limit":    limit,
+		"has_more": int64(page*limit) < total,
 	})
 }
 
