@@ -657,28 +657,87 @@ func handleCheckoutSessionCompleted(checkoutSession stripe.CheckoutSession) {
 		db := services.GetDB()
 		sub, err := getSubmissionByID(submissionID)
 		if err == nil && sub != nil {
+			event, _ := findEventByID(ctx, sub.EventID)
+
+			// Resolve PaymentIntent ID
+			paymentIntentID := paymentIntentIDFromSession(&checkoutSession)
+			if paymentIntentID == "" && checkoutSession.ID != "" {
+				params := &stripe.CheckoutSessionParams{}
+				params.AddExpand("payment_intent")
+				if expandedSess, err := session.Get(checkoutSession.ID, params); err == nil {
+					paymentIntentID = paymentIntentIDFromSession(expandedSess)
+				}
+			}
+
 			_ = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				// Update submission tier and audit log
-				_ = tx.Exec(`
-					UPDATE vehicle_submissions
-					SET price_id = ?,
-						review_notes = CASE
-							WHEN review_notes IS NULL OR review_notes = '' THEN ?
-							ELSE review_notes || E'\n' || ?
-						END
-					WHERE id = ?
-				`, targetPriceID, "Paid upgrade to "+targetTier, "Paid upgrade to "+targetTier, submissionID)
+				auditNote := "Paid upgrade to " + targetTier
+				sub.TicketType = targetTier
 
-				// Update ticket type if ticket exists
-				if sub.TicketID != "" {
+				// Case A: Submission does not have a ticket yet (was pending / unpaid) -> CREATE TICKET
+				if sub.TicketID == "" {
+					ticketToken, err := insertParticipantTicketTx(
+						ctx,
+						tx,
+						sub,
+						event.Name,
+						checkoutSession.ID,
+						paymentIntentID,
+						targetTier,
+						1,
+					)
+					if err != nil {
+						log.Printf("Failed to create upgraded ticket for submission %s: %v", submissionID, err)
+						return err
+					}
+
+					if err := tx.Exec(`
+						UPDATE vehicle_submissions
+						SET ticket_id = ?,
+							ticket_created_at = NOW(),
+							ticket_email_sent = TRUE,
+							ticket_email_sent_at = NOW(),
+							status = 'approved',
+							price_id = ?,
+							payment_captured = TRUE,
+							payment_captured_at = NOW(),
+							payment_status = 'succeeded',
+							review_notes = CASE
+								WHEN review_notes IS NULL OR review_notes = '' THEN ?
+								ELSE review_notes || E'\n' || ?
+							END
+						WHERE id = ?
+					`, ticketToken, targetPriceID, auditNote, auditNote, submissionID).Error; err != nil {
+						return err
+					}
+
+					sub.TicketID = ticketToken
+
+					ticketMsg, err := buildParticipantTicketEmail(sub, ticketToken, event.Name)
+					if err == nil {
+						_ = services.QueueEmailTx(ctx, tx, submissionID, ticketMsg)
+					}
+				} else {
+					// Case B: Ticket already existed -> UPDATE TIER & RE-SEND TICKET EMAIL
 					_ = tx.Exec(`UPDATE tickets SET ticket_type = ? WHERE token = ?`, targetTier, sub.TicketID)
+					_ = tx.Exec(`
+						UPDATE vehicle_submissions
+						SET price_id = ?,
+							status = 'approved',
+							payment_captured = TRUE,
+							payment_status = 'succeeded',
+							review_notes = CASE
+								WHEN review_notes IS NULL OR review_notes = '' THEN ?
+								ELSE review_notes || E'\n' || ?
+							END
+						WHERE id = ?
+					`, targetPriceID, auditNote, auditNote, submissionID)
 
-					event, _ := findEventByID(ctx, sub.EventID)
 					ticketMsg, err := buildParticipantTicketEmail(sub, sub.TicketID, event.Name)
 					if err == nil {
 						_ = services.QueueEmailTx(ctx, tx, submissionID, ticketMsg)
 					}
 				}
+
 				return nil
 			})
 		}
