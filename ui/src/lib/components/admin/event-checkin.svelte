@@ -8,6 +8,7 @@
 	import { Input } from "$lib/components/ui/input";
 	import { Button } from "$lib/components/ui/button";
 	import { Card } from "$lib/components/ui/card";
+	import { Badge } from "$lib/components/ui/badge";
 
 	import { apiClient } from "$lib/api";
 	import type {
@@ -53,9 +54,11 @@
 	let isLoading = $state(true);
 	let isChecking = $state(false);
 
-	let scanner: Html5Qrcode | null = null;
+	let scanner = $state<Html5Qrcode | null>(null);
 	let isScanning = $state(false);
 	let cameraError = $state("");
+	let lastScannedCode = $state("");
+	let fileInputRef = $state<HTMLInputElement | null>(null);
 
 	let checkedInCount = $derived(
 		attendees.filter((attendee) => attendee.checked_in).length,
@@ -81,12 +84,8 @@
 		}
 	}
 
-	async function checkInTicket(code: string) {
-		if (isChecking) return;
-
+	function cleanToken(code: string): string {
 		let token = code.trim();
-
-		// If a full check-in URL was scanned (from camera/email link), extract the token parameter
 		if (token.includes("ticket=")) {
 			try {
 				const url = new URL(token);
@@ -96,30 +95,54 @@
 				if (match) token = match[1];
 			}
 		}
+		return token;
+	}
 
+	async function checkInTicket(code: string) {
+		if (isChecking) return;
+
+		const token = cleanToken(code);
 		if (!token) return;
 
+		// Prevent re-processing identical code within 3 seconds
+		if (token === lastScannedCode && lastCheckedIn?.ticket_code === token) {
+			return;
+		}
+
 		isChecking = true;
+		lastScannedCode = token;
+
+		// Haptic vibration feedback on mobile
+		if (typeof navigator !== "undefined" && navigator.vibrate) {
+			navigator.vibrate([100, 50, 100]);
+		}
 
 		try {
+			// Pause camera stream while validating to prevent duplicate scans
+			if (scanner && isScanning) {
+				try {
+					scanner.pause(true);
+				} catch {}
+			}
+
 			const ticket = await apiClient.post<TicketInfo>(
 				"/events/ticket/validate",
 				{ token },
 			);
 
 			if (!ticket.valid) {
-				toast.error("Invalid ticket code.");
+				toast.error("Invalid ticket code: " + token);
 				return;
 			}
 
 			if (ticket.event_id !== eventId) {
-				toast.error("This ticket is for a different event.");
+				toast.error("Ticket is for a different event.");
 				return;
 			}
 
 			if (ticket.checked_in) {
 				lastCheckedIn = ticket;
-				toast.warning("This ticket has already been checked in.");
+				toast.warning(`Already checked in: ${ticket.customer_name}`);
 				return;
 			}
 
@@ -129,13 +152,23 @@
 			);
 
 			lastCheckedIn = checkedIn;
-			toast.success(`Checked in: ${checkedIn.customer_name}`);
+			toast.success(
+				`Checked in: ${checkedIn.customer_name} (${checkedIn.ticket_type})`,
+			);
 			await loadAttendees();
 		} catch (error) {
 			console.error("Ticket check-in failed:", error);
 			toast.error("Unable to check in ticket.");
 		} finally {
 			isChecking = false;
+			// Resume camera after 1.5 seconds so admin can scan next ticket
+			setTimeout(() => {
+				if (scanner && isScanning) {
+					try {
+						scanner.resume();
+					} catch {}
+				}
+			}, 1500);
 		}
 	}
 
@@ -152,22 +185,34 @@
 			await scanner.start(
 				{ facingMode: "environment" },
 				{
-					fps: 10,
-					qrbox: { width: 250, height: 250 },
+					fps: 15,
+					qrbox: (
+						viewfinderWidth: number,
+						viewfinderHeight: number,
+					) => {
+						const minEdge = Math.min(
+							viewfinderWidth,
+							viewfinderHeight,
+						);
+						const size = Math.floor(minEdge * 0.8);
+						return { width: size, height: size };
+					},
 					aspectRatio: 1.0,
+					experimentalFeatures: {
+						useBarCodeDetectorIfSupported: true,
+					},
 				},
 				async (decodedText) => {
-					if (isChecking) return;
 					await checkInTicket(decodedText);
 				},
 				() => {
-					// Frame parse misses are normal during active search
+					// Continuous frame scan errors are normal when QR is not in view
 				},
 			);
 		} catch (error) {
 			console.error("Starting QR scanner failed:", error);
 			cameraError =
-				"Unable to access camera. Please check camera permissions in your browser.";
+				"Unable to access camera. Please allow camera permissions in your browser.";
 			isScanning = false;
 		}
 	}
@@ -182,6 +227,26 @@
 			}
 			isScanning = false;
 			scanner = null;
+		}
+	}
+
+	async function handleImageFile(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		try {
+			toast.info("Scanning image…");
+			const tempScanner = new Html5Qrcode("qr-file-processor");
+			const result = await tempScanner.scanFile(file, true);
+			await checkInTicket(result);
+		} catch (err) {
+			console.error("File scan failed:", err);
+			toast.error(
+				"No QR code detected in this photo. Try again or enter code manually.",
+			);
+		} finally {
+			if (target) target.value = "";
 		}
 	}
 
@@ -262,14 +327,50 @@
 					</p>
 				{/if}
 
+				<!-- Video Viewfinder Container -->
 				<div
-					id="qr-reader"
-					class="mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-black"
-				></div>
+					class="relative mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-black"
+				>
+					<div id="qr-reader" class="w-full"></div>
+
+					{#if isChecking}
+						<div
+							class="absolute inset-0 flex items-center justify-center bg-black/60 text-white backdrop-blur-xs"
+						>
+							<Badge class="p-3 text-sm font-semibold"
+								>Checking in ticket…</Badge
+							>
+						</div>
+					{/if}
+				</div>
 
 				<p class="text-center text-sm text-muted">
-					Point the camera at the ticket QR code.
+					Point camera at the QR code. It will auto-detect and check
+					in immediately.
 				</p>
+
+				<!-- Manual Camera Photo Fallback -->
+				<div class="flex justify-center pt-2">
+					<input
+						type="file"
+						accept="image/*"
+						capture="environment"
+						bind:this={fileInputRef}
+						class="hidden"
+						onchange={handleImageFile}
+					/>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onclick={() => fileInputRef?.click()}
+					>
+						📷 Take Photo / Upload QR
+					</Button>
+				</div>
+
+				<!-- Hidden container for static file decoding -->
+				<div id="qr-file-processor" class="hidden"></div>
 			</div>
 		{:else}
 			<form
@@ -301,20 +402,24 @@
 
 	{#if lastCheckedIn}
 		<Card class="border-emerald-500/40 p-4">
-			<p class="font-semibold">
+			<p class="font-semibold text-lg">
 				{lastCheckedIn.customer_name}
 			</p>
 
 			<p class="text-sm text-muted">
 				{lastCheckedIn.ticket_type}
 				·
-				{lastCheckedIn.ticket_code}
+				<span class="font-mono">{lastCheckedIn.ticket_code}</span>
 			</p>
 
 			{#if lastCheckedIn.checked_in_at}
-				<p class="mt-1 text-sm">
-					Checked in at
-					{new Date(lastCheckedIn.checked_in_at).toLocaleString()}
+				<p class="mt-1 text-xs text-muted">
+					Checked in at {new Date(
+						lastCheckedIn.checked_in_at,
+					).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})}
 				</p>
 			{/if}
 		</Card>
