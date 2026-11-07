@@ -925,7 +925,7 @@ func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
 		SELECT token, ticket_type, customer_name, customer_email, quantity, checked_in, checked_in_at
 		FROM tickets
 		WHERE event_id = ? AND invalidated = FALSE
-		ORDER BY customer_name
+		ORDER BY checked_in DESC, checked_in_at DESC NULLS LAST, customer_name ASC
 	`, eventID).Rows()
 	if err != nil {
 		http.Error(w, "Error retrieving attendees", http.StatusInternalServerError)
@@ -947,7 +947,9 @@ func GetEventAttendees(w http.ResponseWriter, r *http.Request) {
 		}
 		a := map[string]interface{}{
 			"name":        name,
+			"customer_name": name,
 			"email":       email,
+			"customer_email": email,
 			"quantity":    quantity,
 			"ticket_type": ticketType,
 			"token":       token,

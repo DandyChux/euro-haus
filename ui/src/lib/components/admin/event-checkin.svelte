@@ -60,11 +60,75 @@
 	let lastScannedCode = $state("");
 	let fileInputRef = $state<HTMLInputElement | null>(null);
 
+	// Attendee search and filter state
+	let attendeeSearch = $state("");
+	let attendeeFilter = $state<"all" | "checked_in" | "pending">("all");
+
 	let checkedInCount = $derived(
 		attendees.filter((attendee) => attendee.checked_in).length,
 	);
 
 	let remainingCount = $derived(attendees.length - checkedInCount);
+
+	let filteredAttendees = $derived.by(() => {
+		const q = attendeeSearch.trim().toLowerCase();
+		return attendees
+			.filter((a) => {
+				if (attendeeFilter === "checked_in" && !a.checked_in)
+					return false;
+				if (attendeeFilter === "pending" && a.checked_in) return false;
+
+				if (!q) return true;
+
+				const name = (
+					a.customer_name ||
+					((a as Record<string, unknown>).name as string) ||
+					""
+				).toLowerCase();
+				const email = (
+					a.customer_email ||
+					((a as Record<string, unknown>).email as string) ||
+					""
+				).toLowerCase();
+				const token = (a.token || "").toLowerCase();
+				const tier = (a.ticket_type || "").toLowerCase();
+
+				return (
+					name.includes(q) ||
+					email.includes(q) ||
+					token.includes(q) ||
+					tier.includes(q)
+				);
+			})
+			.sort((a, b) => {
+				// Show checked in attendees sorted by checked_in_at desc (most recent first)
+				if (a.checked_in && b.checked_in) {
+					const timeA = a.checked_in_at
+						? new Date(a.checked_in_at).getTime()
+						: 0;
+					const timeB = b.checked_in_at
+						? new Date(b.checked_in_at).getTime()
+						: 0;
+					return timeB - timeA;
+				}
+				// Checked-in first if looking at all, or un-checked
+				if (a.checked_in !== b.checked_in) {
+					return a.checked_in ? -1 : 1;
+				}
+				// Both pending: sort alphabetically by name
+				const nameA = (
+					a.customer_name ||
+					((a as Record<string, unknown>).name as string) ||
+					""
+				).toLowerCase();
+				const nameB = (
+					b.customer_name ||
+					((b as Record<string, unknown>).name as string) ||
+					""
+				).toLowerCase();
+				return nameA.localeCompare(nameB);
+			});
+	});
 
 	async function loadAttendees() {
 		isLoading = true;
@@ -104,7 +168,6 @@
 		const token = cleanToken(code);
 		if (!token) return;
 
-		// Prevent re-processing identical code within 3 seconds
 		if (token === lastScannedCode && lastCheckedIn?.ticket_code === token) {
 			return;
 		}
@@ -112,13 +175,11 @@
 		isChecking = true;
 		lastScannedCode = token;
 
-		// Haptic vibration feedback on mobile
 		if (typeof navigator !== "undefined" && navigator.vibrate) {
 			navigator.vibrate([100, 50, 100]);
 		}
 
 		try {
-			// Pause camera stream while validating to prevent duplicate scans
 			if (scanner && isScanning) {
 				try {
 					scanner.pause(true);
@@ -161,7 +222,6 @@
 			toast.error("Unable to check in ticket.");
 		} finally {
 			isChecking = false;
-			// Resume camera after 1.5 seconds so admin can scan next ticket
 			setTimeout(() => {
 				if (scanner && isScanning) {
 					try {
@@ -205,9 +265,7 @@
 				async (decodedText) => {
 					await checkInTicket(decodedText);
 				},
-				() => {
-					// Continuous frame scan errors are normal when QR is not in view
-				},
+				() => {},
 			);
 		} catch (error) {
 			console.error("Starting QR scanner failed:", error);
@@ -277,6 +335,7 @@
 </svelte:head>
 
 <section class="space-y-6">
+	<!-- Top Statistics -->
 	<div class="grid gap-4 md:grid-cols-3">
 		<Card class="p-4">
 			<p class="text-sm text-muted">Total tickets</p>
@@ -300,6 +359,7 @@
 		</Card>
 	</div>
 
+	<!-- Mode Switcher -->
 	<div class="flex gap-2">
 		<Button
 			type="button"
@@ -318,6 +378,7 @@
 		</Button>
 	</div>
 
+	<!-- Check-In Scanner / Input Card -->
 	<Card class="p-6">
 		{#if scanMode === "camera"}
 			<div class="space-y-4">
@@ -349,7 +410,6 @@
 					in immediately.
 				</p>
 
-				<!-- Manual Camera Photo Fallback -->
 				<div class="flex justify-center pt-2">
 					<input
 						type="file"
@@ -369,7 +429,6 @@
 					</Button>
 				</div>
 
-				<!-- Hidden container for static file decoding -->
 				<div id="qr-file-processor" class="hidden"></div>
 			</div>
 		{:else}
@@ -400,28 +459,200 @@
 		{/if}
 	</Card>
 
+	<!-- Last Checked In Card -->
 	{#if lastCheckedIn}
-		<Card class="border-emerald-500/40 p-4">
-			<p class="font-semibold text-lg">
-				{lastCheckedIn.customer_name}
-			</p>
-
-			<p class="text-sm text-muted">
-				{lastCheckedIn.ticket_type}
-				·
-				<span class="font-mono">{lastCheckedIn.ticket_code}</span>
-			</p>
-
-			{#if lastCheckedIn.checked_in_at}
-				<p class="mt-1 text-xs text-muted">
-					Checked in at {new Date(
-						lastCheckedIn.checked_in_at,
-					).toLocaleTimeString([], {
-						hour: "2-digit",
-						minute: "2-digit",
-					})}
-				</p>
-			{/if}
+		<Card class="border-emerald-500/40 bg-emerald-500/5 p-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<p class="font-semibold text-lg text-emerald-400">
+						✓ Checked In: {lastCheckedIn.customer_name}
+					</p>
+					<p class="text-sm text-muted">
+						{lastCheckedIn.ticket_type} ·
+						<span class="font-mono"
+							>{lastCheckedIn.ticket_code}</span
+						>
+					</p>
+				</div>
+				{#if lastCheckedIn.checked_in_at}
+					<span class="text-xs text-muted">
+						{new Date(
+							lastCheckedIn.checked_in_at,
+						).toLocaleTimeString([], {
+							hour: "2-digit",
+							minute: "2-digit",
+						})}
+					</span>
+				{/if}
+			</div>
 		</Card>
 	{/if}
+
+	<!-- Attendees Ticket List with Search & Status Filter -->
+	<div class="space-y-4 pt-4">
+		<div
+			class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"
+		>
+			<div>
+				<h2 class="text-xl font-bold">Attendees & Tickets</h2>
+				<p class="text-xs text-muted">
+					Real-time attendee check-in roster
+				</p>
+			</div>
+
+			<div class="flex gap-1 rounded-xl border bg-muted/20 p-1 text-xs">
+				<button
+					type="button"
+					class="rounded-lg px-3 py-1 font-medium transition-colors {attendeeFilter ===
+					'all'
+						? 'bg-primary text-primary-foreground'
+						: 'text-muted-foreground'}"
+					onclick={() => (attendeeFilter = "all")}
+				>
+					All ({attendees.length})
+				</button>
+				<button
+					type="button"
+					class="rounded-lg px-3 py-1 font-medium transition-colors {attendeeFilter ===
+					'checked_in'
+						? 'bg-primary text-primary-foreground'
+						: 'text-muted-foreground'}"
+					onclick={() => (attendeeFilter = "checked_in")}
+				>
+					Checked In ({checkedInCount})
+				</button>
+				<button
+					type="button"
+					class="rounded-lg px-3 py-1 font-medium transition-colors {attendeeFilter ===
+					'pending'
+						? 'bg-primary text-primary-foreground'
+						: 'text-muted-foreground'}"
+					onclick={() => (attendeeFilter = "pending")}
+				>
+					Pending ({remainingCount})
+				</button>
+			</div>
+		</div>
+
+		<!-- Search Input -->
+		<Input
+			placeholder="Search by customer name, email, ticket code, or tier…"
+			bind:value={attendeeSearch}
+			class="w-full"
+		/>
+
+		<!-- Attendee Cards Grid -->
+		{#if isLoading}
+			<Card class="p-8 text-center text-muted">
+				Loading attendee records…
+			</Card>
+		{:else if filteredAttendees.length === 0}
+			<Card class="p-8 text-center text-muted">
+				{attendeeSearch
+					? "No attendees matching your search."
+					: "No attendees registered for this event."}
+			</Card>
+		{:else}
+			<div class="grid gap-2">
+				{#each filteredAttendees as attendee (attendee.token)}
+					<Card
+						class="flex items-center justify-between p-4 transition-all {attendee.checked_in
+							? 'border-white/5 bg-white/2 opacity-60 dark:bg-black/30'
+							: 'border-white/10 bg-white/5'}"
+					>
+						<div class="flex items-center gap-3">
+							<!-- Status Icon / Question Mark or Checkmark -->
+							{#if attendee.checked_in}
+								<div
+									class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold"
+								>
+									✓
+								</div>
+							{:else}
+								<div
+									class="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 font-bold"
+								>
+									?
+								</div>
+							{/if}
+
+							<div>
+								<div class="flex items-center gap-2">
+									<p
+										class="font-medium {attendee.checked_in
+											? 'text-muted-foreground line-through'
+											: 'text-foreground'}"
+									>
+										{attendee.customer_name ||
+											(
+												attendee as Record<
+													string,
+													unknown
+												>
+											).name ||
+											"Unnamed Attendee"}
+									</p>
+									<Badge
+										variant={attendee.checked_in
+											? "outline"
+											: "secondary"}
+										class="text-xs"
+									>
+										{attendee.ticket_type || "General"}
+									</Badge>
+								</div>
+
+								<p class="text-xs text-muted">
+									<span class="font-mono"
+										>{attendee.token}</span
+									>
+									{#if attendee.customer_email || (attendee as Record<string, unknown>).email}
+										· {attendee.customer_email ||
+											(
+												attendee as Record<
+													string,
+													unknown
+												>
+											).email}
+									{/if}
+								</p>
+							</div>
+						</div>
+
+						<!-- Check In Status or Action Button -->
+						<div class="flex items-center gap-3">
+							{#if attendee.checked_in}
+								<div class="text-right">
+									<span
+										class="text-xs font-semibold text-emerald-400"
+										>Checked In</span
+									>
+									{#if attendee.checked_in_at}
+										<p class="text-[11px] text-muted">
+											{new Date(
+												attendee.checked_in_at,
+											).toLocaleTimeString([], {
+												hour: "2-digit",
+												minute: "2-digit",
+											})}
+										</p>
+									{/if}
+								</div>
+							{:else}
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={isChecking}
+									onclick={() =>
+										checkInTicket(attendee.token)}
+								>
+									Check In
+								</Button>
+							{/if}
+						</div>
+					</Card>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </section>
