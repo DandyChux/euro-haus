@@ -821,19 +821,16 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 
 	err := tx.Raw(`
 		SELECT
-			t.customer_name,
-			t.customer_email,
-			COALESCE(NULLIF(t.event_id, ''), t.stripe_product_id),
-			t.quantity,
-			t.checked_in,
-			t.checked_in_at,
-			t.ticket_type
-		FROM tickets t
-		LEFT JOIN events e
-			ON e.stripe_product_id =
-			   COALESCE(NULLIF(t.event_id, ''), t.stripe_product_id)
-		WHERE t.token = ?
-		  AND t.invalidated = FALSE
+			customer_name,
+			customer_email,
+			COALESCE(NULLIF(event_id, ''), stripe_product_id),
+			quantity,
+			checked_in,
+			checked_in_at,
+			ticket_type
+		FROM tickets
+		WHERE token = ?
+		  AND invalidated = FALSE
 		FOR UPDATE
 	`, req.Token).Row().Scan(
 		&info.CustomerName,

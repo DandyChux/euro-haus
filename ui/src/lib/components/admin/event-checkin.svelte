@@ -1,10 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from "svelte";
-	import {
-		superForm,
-		type Infer,
-		type SuperValidated,
-	} from "sveltekit-superforms";
+	import { superForm, type SuperValidated } from "sveltekit-superforms";
 	import { zod4Client } from "sveltekit-superforms/adapters";
 	import { toast } from "svelte-sonner";
 
@@ -16,12 +12,12 @@
 	import { apiClient } from "$lib/api";
 	import type {
 		EventAttendee,
-		Ticket,
 		EventCheckIn,
 		TicketInfo,
 	} from "$lib/schemas/event";
 
 	import { eventCheckInSchema } from "$lib/schemas/event";
+	import { Html5Qrcode } from "html5-qrcode";
 
 	type ScanMode = "camera" | "manual";
 
@@ -57,9 +53,8 @@
 	let isLoading = $state(true);
 	let isChecking = $state(false);
 
-	let videoElement = $state<HTMLVideoElement | undefined>();
-
-	let stream = $state<MediaStream | null>(null);
+	let scanner: Html5Qrcode | null = null;
+	let isScanning = $state(false);
 	let cameraError = $state("");
 
 	let checkedInCount = $derived(
@@ -80,7 +75,6 @@
 			attendees = response.attendees ?? [];
 		} catch (error) {
 			console.error("Loading attendees failed:", error);
-
 			toast.error("Unable to load event attendees.");
 		} finally {
 			isLoading = false;
@@ -90,7 +84,18 @@
 	async function checkInTicket(code: string) {
 		if (isChecking) return;
 
-		const token = code.trim();
+		let token = code.trim();
+
+		// If a full check-in URL was scanned (from camera/email link), extract the token parameter
+		if (token.includes("ticket=")) {
+			try {
+				const url = new URL(token);
+				token = url.searchParams.get("ticket") || token;
+			} catch {
+				const match = token.match(/ticket=([A-Za-z0-9_-]+)/);
+				if (match) token = match[1];
+			}
+		}
 
 		if (!token) return;
 
@@ -114,9 +119,7 @@
 
 			if (ticket.checked_in) {
 				lastCheckedIn = ticket;
-
 				toast.warning("This ticket has already been checked in.");
-
 				return;
 			}
 
@@ -126,13 +129,10 @@
 			);
 
 			lastCheckedIn = checkedIn;
-
 			toast.success(`Checked in: ${checkedIn.customer_name}`);
-
 			await loadAttendees();
 		} catch (error) {
 			console.error("Ticket check-in failed:", error);
-
 			toast.error("Unable to check in ticket.");
 		} finally {
 			isChecking = false;
@@ -142,67 +142,52 @@
 	async function startCamera() {
 		cameraError = "";
 
-		if (!videoElement) return;
-
-		const BarcodeDetectorConstructor = (
-			window as typeof window & {
-				BarcodeDetector?: new () => {
-					detect(
-						source: HTMLVideoElement,
-					): Promise<Array<{ rawValue: string }>>;
-				};
-			}
-		).BarcodeDetector;
-
-		if (!BarcodeDetectorConstructor) {
-			cameraError = "QR scanning is not supported in this browser.";
-			return;
-		}
-
 		try {
-			stream = await navigator.mediaDevices.getUserMedia({
-				video: {
-					facingMode: "environment",
-				},
-				audio: false,
-			});
-
-			videoElement.srcObject = stream;
-			await videoElement.play();
-
-			const detector = new BarcodeDetectorConstructor();
-
-			while (scanMode === "camera" && stream) {
-				const codes = await detector.detect(videoElement);
-
-				const code = codes[0]?.rawValue;
-
-				if (code) {
-					await checkInTicket(code);
-				}
-
-				await new Promise((resolve) => setTimeout(resolve, 500));
+			if (!scanner) {
+				scanner = new Html5Qrcode("qr-reader");
 			}
+
+			isScanning = true;
+
+			await scanner.start(
+				{ facingMode: "environment" },
+				{
+					fps: 10,
+					qrbox: { width: 250, height: 250 },
+					aspectRatio: 1.0,
+				},
+				async (decodedText) => {
+					if (isChecking) return;
+					await checkInTicket(decodedText);
+				},
+				() => {
+					// Frame parse misses are normal during active search
+				},
+			);
 		} catch (error) {
 			console.error("Starting QR scanner failed:", error);
-
-			cameraError = "Unable to access the camera.";
+			cameraError =
+				"Unable to access camera. Please check camera permissions in your browser.";
+			isScanning = false;
 		}
 	}
 
-	function stopCamera() {
-		stream?.getTracks().forEach((track) => track.stop());
-
-		stream = null;
-
-		if (videoElement) {
-			videoElement.srcObject = null;
+	async function stopCamera() {
+		if (scanner && isScanning) {
+			try {
+				await scanner.stop();
+				scanner.clear();
+			} catch (err) {
+				console.error("Error stopping scanner:", err);
+			}
+			isScanning = false;
+			scanner = null;
 		}
 	}
 
 	function setMode(mode: ScanMode) {
 		if (mode !== "camera") {
-			stopCamera();
+			void stopCamera();
 		}
 
 		scanMode = mode;
@@ -216,7 +201,9 @@
 		void loadAttendees();
 		void startCamera();
 
-		return stopCamera;
+		return () => {
+			void stopCamera();
+		};
 	});
 </script>
 
@@ -228,7 +215,6 @@
 	<div class="grid gap-4 md:grid-cols-3">
 		<Card class="p-4">
 			<p class="text-sm text-muted">Total tickets</p>
-
 			<p class="mt-2 text-3xl font-semibold">
 				{isLoading ? "—" : attendees.length}
 			</p>
@@ -236,7 +222,6 @@
 
 		<Card class="p-4">
 			<p class="text-sm text-muted">Checked in</p>
-
 			<p class="mt-2 text-3xl font-semibold text-emerald-600">
 				{isLoading ? "—" : checkedInCount}
 			</p>
@@ -244,7 +229,6 @@
 
 		<Card class="p-4">
 			<p class="text-sm text-muted">Remaining</p>
-
 			<p class="mt-2 text-3xl font-semibold">
 				{isLoading ? "—" : remainingCount}
 			</p>
@@ -278,12 +262,10 @@
 					</p>
 				{/if}
 
-				<video
-					bind:this={videoElement}
-					muted
-					playsinline
-					class="mx-auto aspect-video w-full max-w-md rounded-2xl bg-black object-cover"
-				></video>
+				<div
+					id="qr-reader"
+					class="mx-auto w-full max-w-md overflow-hidden rounded-2xl bg-black"
+				></div>
 
 				<p class="text-center text-sm text-muted">
 					Point the camera at the ticket QR code.
@@ -299,7 +281,6 @@
 					<Form.Control>
 						{#snippet children({ props })}
 							<Form.Label>Ticket code</Form.Label>
-
 							<Input
 								{...props}
 								bind:value={$formData.code}
@@ -308,7 +289,6 @@
 							/>
 						{/snippet}
 					</Form.Control>
-
 					<Form.FieldErrors />
 				</Form.Field>
 
