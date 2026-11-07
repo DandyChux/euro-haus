@@ -823,7 +823,7 @@ func CheckInTicket(w http.ResponseWriter, r *http.Request) {
 		SELECT
 			customer_name,
 			customer_email,
-			COALESCE(NULLIF(event_id, ''), stripe_product_id),
+			COALESCE(event_id::text, stripe_product_id, ''),
 			quantity,
 			checked_in,
 			checked_in_at,
